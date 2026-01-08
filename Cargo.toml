@@ -3,30 +3,32 @@ debug = true
 
 [workspace]
 members = [
+  # Mobile-specific apps
   "coverage_map",
   "coverage_point_calculator",
+  "mobile_config",
+  "mobile_config_cli",
+  "mobile_packet_verifier",
+  "mobile_verifier",
+  "hex_assignments",
+
+  # Multi-mode apps (will be pruned later)
+  "ingest",
+  "poc_entropy",
+  "price",
+  "reward_index",
+
+  # Shared libraries (will become git dependencies in future)
   "custom_tracing",
   "db_store",
   "denylist",
   "file_store",
   "file_store_oracles",
-  "ingest",
-  "iot_config",
-  "iot_packet_verifier",
-  "iot_verifier",
   "metrics",
-  "mobile_config",
-  "mobile_config_cli",
-  "mobile_packet_verifier",
-  "mobile_verifier",
-  "poc_entropy",
-  "price",
   "price_tracker",
-  "reward_index",
   "reward_scheduler",
   "solana",
   "task_manager",
-  "hex_assignments",
   "tls_init",
 ]
 resolver = "2"

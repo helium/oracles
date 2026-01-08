@@ -12,9 +12,6 @@ on:
         options:
           - all
           - ingest
-          - iot-config
-          - iot-packet-verifier
-          - iot-verifier
           - mobile-config
           - mobile-packet-verifier
           - mobile-verifier
@@ -78,9 +75,6 @@ jobs:
         run: |
           case "${{ matrix.package }}" in
             ingest)                   echo "ECR_URL=${{ vars.INGEST_ECR_URL }}" >> $GITHUB_ENV ;;
-            iot-config)               echo "ECR_URL=${{ vars.IOT_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
-            iot-packet-verifier)      echo "ECR_URL=${{ vars.IOT_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
-            iot-verifier)             echo "ECR_URL=${{ vars.IOT_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
             mobile-config)            echo "ECR_URL=${{ vars.MOBILE_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
             mobile-packet-verifier)   echo "ECR_URL=${{ vars.MOBILE_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
             mobile-verifier)          echo "ECR_URL=${{ vars.MOBILE_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
