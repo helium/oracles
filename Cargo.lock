@@ -4909,6 +4909,7 @@ dependencies = [
  "csv",
  "custom-tracing",
  "db-store",
+ "derive_builder",
  "file-store",
  "file-store-oracles",
  "futures",

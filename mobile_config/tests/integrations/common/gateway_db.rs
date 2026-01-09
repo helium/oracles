@@ -1,7 +1,63 @@
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
-use mobile_config::gateway::db::GatewayType;
+use derive_builder::Builder;
+use helium_crypto::{PublicKey, PublicKeyBinary};
+use mobile_config::gateway::db::{Gateway, GatewayType};
 use sqlx::PgPool;
+
+#[derive(Builder)]
+#[builder(setter(into))]
+pub struct TestGateway {
+    pub address: PublicKey,
+    pub gateway_type: GatewayType,
+    #[builder(default)]
+    created_at: DateTime<Utc>,
+    #[builder(default)]
+    inserted_at: DateTime<Utc>,
+    #[builder(default)]
+    refreshed_at: DateTime<Utc>,
+    #[builder(default)]
+    last_changed_at: DateTime<Utc>,
+    #[builder(default)]
+    hash: String,
+    #[builder(default = "Some(18)")]
+    antenna: Option<u32>,
+    #[builder(default)]
+    elevation: Option<u32>,
+    #[builder(default)]
+    azimuth: Option<u32>,
+    #[builder(default)]
+    location: Option<u64>,
+    #[builder(default)]
+    location_changed_at: Option<DateTime<Utc>>,
+    #[builder(default)]
+    location_asserts: Option<u32>,
+    #[builder(default)]
+    owner: Option<String>,
+    #[builder(default)]
+    owner_changed_at: Option<DateTime<Utc>>,
+}
+
+impl From<TestGateway> for Gateway {
+    fn from(tg: TestGateway) -> Self {
+        Gateway {
+            address: tg.address.into(),
+            gateway_type: tg.gateway_type,
+            created_at: tg.created_at,
+            inserted_at: tg.inserted_at,
+            refreshed_at: tg.refreshed_at,
+            last_changed_at: tg.last_changed_at,
+            hash: tg.hash,
+            antenna: tg.antenna,
+            elevation: tg.elevation,
+            azimuth: tg.azimuth,
+            location: tg.location,
+            location_changed_at: tg.location_changed_at,
+            location_asserts: tg.location_asserts,
+            owner: tg.owner,
+            owner_changed_at: tg.owner_changed_at,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PreHistoricalGateway {

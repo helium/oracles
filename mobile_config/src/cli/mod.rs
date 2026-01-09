@@ -1,5 +1,5 @@
 use crate::{
-    cli::{api::Api, import::Import, server::Server},
+    cli::{api::Api, server::Server},
     settings::Settings,
 };
 use base64::{engine::general_purpose, Engine};
@@ -9,7 +9,6 @@ use std::io::Write;
 use std::{fs::File, path::PathBuf};
 
 pub mod api;
-pub mod import;
 pub mod server;
 
 #[derive(Debug, clap::Parser)]
@@ -55,10 +54,6 @@ impl Cli {
 
                 Ok(())
             }
-            Cmd::Import(import) => {
-                let settings = Settings::new(self.config)?;
-                import.run(&settings).await
-            }
             Cmd::Server(server) => {
                 let settings = Settings::new(self.config)?;
                 server.run(&settings).await
@@ -71,6 +66,5 @@ impl Cli {
 pub enum Cmd {
     Api(Api),
     GenerateKey,
-    Import(Import),
     Server(Server),
 }

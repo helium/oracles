@@ -108,6 +108,54 @@ pub async fn update_gateway(
     Ok(())
 }
 
+pub async fn insert_asset_owner(
+    pool: &PgPool,
+    asset: &str,
+    owner: &str,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO asset_owners (
+            asset, owner, created_at, updated_at, last_block
+        )
+        VALUES ($1, $2, $3, $4, 0)
+        "#,
+    )
+    .bind(asset)
+    .bind(owner)
+    .bind(created_at)
+    .bind(updated_at)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_asset_owner(
+    pool: &PgPool,
+    asset: &str,
+    owner: &str,
+    updated_at: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE asset_owners
+        SET owner = $1,
+            updated_at = $2
+        WHERE asset = $3
+        "#,
+    )
+    .bind(owner)
+    .bind(updated_at)
+    .bind(asset)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn create_tables(pool: &PgPool) {
     sqlx::query(
         r#"
@@ -133,6 +181,20 @@ pub async fn create_tables(pool: &PgPool) {
         CREATE TABLE key_to_assets (
             asset character varying(255) NULL,
             entity_key bytea NULL
+        );"#,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE asset_owners (
+            asset character varying(255) NULL,
+            owner character varying(255) NULL,
+            created_at timestamptz,
+            updated_at timestamptz,
+            last_block integer
         );"#,
     )
     .execute(pool)
