@@ -13,7 +13,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 h3o = { workspace = true }
-helium-crypto = { workspace = true }
+helium-crypto = { workspace = true, features = ["rsa"] }
 helium-proto = { workspace = true }
 prost = { workspace = true }
 rust_decimal = { workspace = true }
