@@ -271,8 +271,7 @@ where
             reward_info.epoch_emissions,
         );
 
-        // process rewards for poc and data transfer
-        let poc_dc_shares = reward_poc_and_dc(
+        let poc_dc_shares = distribute_rewards(
             &self.pool,
             &self.hex_service_client,
             self.mobile_rewards.clone(),
@@ -280,9 +279,6 @@ where
             price_info.clone(),
         )
         .await?;
-
-        // process rewards for service providers
-        reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
@@ -346,13 +342,51 @@ where
     }
 }
 
-pub async fn reward_poc_and_dc(
+pub async fn distribute_rewards(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
+    // process rewards for poc and data transfer
+    let (poc_dc_shares, poc_unallocated_amount) = reward_poc_and_dc(
+        pool,
+        hex_service_client,
+        mobile_rewards.clone(),
+        reward_info,
+        price_info.clone(),
+    )
+    .await?;
+
+    // process rewards for service providers
+    let sp_unallocated_amount =
+        reward_service_providers(mobile_rewards.clone(), reward_info).await?;
+
+    // write combined poc and sp unallocated reward
+    let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::PocAndServiceProvider,
+        total_unallocated_amount,
+        reward_info,
+    )
+    .await?;
+
+    Ok(poc_dc_shares)
+}
+
+pub async fn reward_poc_and_dc(
+    pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
+) -> anyhow::Result<(CalculatedPocRewardShares, Decimal)> {
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
@@ -391,20 +425,7 @@ pub async fn reward_poc_and_dc(
     )
     .await?;
 
-    let poc_unallocated_amount = poc_unallocated_amount
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::Poc,
-        poc_unallocated_amount,
-        reward_info,
-    )
-    .await?;
-
-    Ok(calculated_poc_reward_shares)
+    Ok((calculated_poc_reward_shares, poc_unallocated_amount))
 }
 
 pub async fn reward_poc(
@@ -500,7 +521,7 @@ pub async fn reward_dc(
 pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Decimal> {
     let total_sp_rewards = get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions);
     let sp_reward_amount = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
@@ -509,6 +530,7 @@ pub async fn reward_service_providers(
 
     let subscriber_reward = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
     let network_reward = sp_reward_amount.saturating_sub(subscriber_reward);
+    let unallocated_reward = total_sp_rewards - Decimal::from(subscriber_reward + network_reward);
 
     // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
     write_service_provider_reward(
@@ -530,11 +552,11 @@ pub async fn reward_service_providers(
     )
     .await?;
 
-    Ok(())
+    Ok(unallocated_reward)
 }
 
 async fn write_unallocated_reward(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_info: &'_ EpochRewardInfo,
