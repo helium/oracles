@@ -147,7 +147,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Cache Cargo Target Directory
         # Anything above 4min run
-        if: contains('["ingest", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
+        if: contains('["ingest", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
         uses: actions/cache@v4
         with:
           path: target
@@ -190,68 +190,4 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}
           build-args: |
             PACKAGE=${{ matrix.package }}
-  upload-iot-releases:
-    needs: [fmt, clippy, tests]
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-upload-release
-      cancel-in-progress: true
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Show Inputs
-        run: |
-          echo "Release Version: ${{ github.event.inputs.release_version }}"
-
-      - name: Install Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
-          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
-          dpkg-reconfigure -f noninteractive tzdata
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Rust install
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache-shared-key: release
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Release
-        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p reward-index -p price -p ingest -p iot-config -p iot-packet-verifier -p iot-verifier -p poc-entropy
-
-      - name: Extract binaries and cleanup
-        run: |
-          mkdir -p /tmp/binaries
-          mv target/release/reward-index /tmp/binaries/
-          mv target/release/price /tmp/binaries/
-          mv target/release/ingest /tmp/binaries/
-          mv target/release/iot-config /tmp/binaries/
-          mv target/release/iot-packet-verifier /tmp/binaries/
-          mv target/release/iot-verifier /tmp/binaries/
-          mv target/release/poc-entropy /tmp/binaries/
-          echo "Before cleanup:"
-          df -h
-          rm -rf target/
-          echo "After cleanup:"
-          df -h
-          mkdir -p target/release
-          mv /tmp/binaries/* target/release/
-          echo "Binaries restored to target/release/"
-
-      - name: Debian packaging
-        env:
-          PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
-          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
-        run: |
-          chmod +x ./.github/scripts/make_debian.sh
-          ./.github/scripts/make_debian.sh
 
