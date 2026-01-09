@@ -14,7 +14,6 @@ members = [
 
   # Multi-mode apps (will be pruned later)
   "ingest",
-  "poc_entropy",
   "price",
   "reward_index",
 
