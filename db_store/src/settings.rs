@@ -88,6 +88,13 @@ impl Settings {
     }
 
     pub fn pool_options(&self) -> PgPoolOptions {
-        PgPoolOptions::new().max_connections(self.max_connections)
+        let acquire_timeout_secs = std::env::var("SQLX_ACQUIRE_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(30);
+
+        PgPoolOptions::new()
+            .max_connections(self.max_connections)
+            .acquire_timeout(std::time::Duration::from_secs(acquire_timeout_secs))
     }
 }
