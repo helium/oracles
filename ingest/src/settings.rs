@@ -85,7 +85,6 @@ fn default_log() -> String {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    Iot,
     Mobile,
     Chain,
 }
