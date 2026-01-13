@@ -403,7 +403,7 @@ pub async fn reward_poc_and_dc(
     .await?;
 
     reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
-    let (poc_allocated_amount, unallocated_poc_amount, calculated_poc_reward_shares) = reward_poc(
+    let (poc_allocated_amount, poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
         hex_service_client,
         &mobile_rewards,
@@ -415,7 +415,7 @@ pub async fn reward_poc_and_dc(
     Ok((
         calculated_poc_reward_shares,
         poc_allocated_amount + dc_allocated_amount,
-        unallocated_poc_amount,
+        poc_unallocated_amount,
     ))
 }
 
@@ -469,6 +469,7 @@ pub async fn reward_poc(
                     .await??;
             }
             telemetry::poc_rewarded_radios(count_rewarded_radios);
+            // calculate any unallocated poc reward
             (
                 allocated_poc_rewards,
                 total_poc_rewards - Decimal::from(allocated_poc_rewards),
@@ -476,6 +477,7 @@ pub async fn reward_poc(
             )
         } else {
             telemetry::poc_rewarded_radios(0);
+            // default unallocated poc reward to the total poc reward
             let total_poc_rewards = total_poc_rewards.to_u64().unwrap_or(0);
             (
                 0_u64,

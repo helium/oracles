@@ -30,10 +30,10 @@ mod radio_reward_v2;
 
 /// Maximum amount of the total emissions pool allocated for data transfer
 /// rewards
-pub const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.7);
+const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.7);
 
 /// Percentage of total emissions pool allocated for proof of coverage
-pub const POC_REWARDS_PERCENT: Decimal = dec!(0.0);
+const POC_REWARDS_PERCENT: Decimal = dec!(0.0);
 
 /// The fixed price of a mobile data credit
 const DC_USD_PRICE: Decimal = dec!(0.00001);
@@ -42,7 +42,7 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 pub const DEFAULT_PREC: u32 = 15;
 
 // Percent of total emissions allocated for service provider rewards
-pub const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 
 // Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
 pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;

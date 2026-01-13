@@ -422,7 +422,7 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
     let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(dec!(1000000));
 
     // Test the reward_poc function directly with zero POC allocation
-    let (unallocated_amount, _unallocated_poc_amount, _calculated_shares) = rewarder::reward_poc(
+    let (_allocated_amount, unallocated_amount, _calculated_shares) = rewarder::reward_poc(
         &pool,
         &hex_boosting_client,
         &mobile_rewards_client,
@@ -446,7 +446,8 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
 
     // The unallocated amount should be zero since there was no POC pool to begin with
     assert_eq!(
-        unallocated_amount, 0,
+        unallocated_amount,
+        dec!(0),
         "Unallocated amount should be zero when POC pool is zero"
     );
 
