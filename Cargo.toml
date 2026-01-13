@@ -7,7 +7,6 @@ members = [
   "coverage_point_calculator",
   "custom_tracing",
   "db_store",
-  "denylist",
   "file_store",
   "file_store_oracles",
   "ingest",
