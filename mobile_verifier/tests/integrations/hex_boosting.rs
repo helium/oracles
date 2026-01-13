@@ -134,7 +134,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     let price_info = default_price_info();
 
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -291,7 +291,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -423,7 +423,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     ];
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -561,7 +561,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -666,7 +666,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -806,7 +806,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     ];
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -972,7 +972,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     ];
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,

@@ -50,7 +50,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -270,7 +270,7 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -323,7 +323,7 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     txn.commit().await?;
 
     // run rewards for poc and dc
-    let (_, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -422,7 +422,7 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
     let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(dec!(1000000));
 
     // Test the reward_poc function directly with zero POC allocation
-    let (unallocated_amount, _calculated_shares) = rewarder::reward_poc(
+    let (unallocated_amount, _unallocated_poc_amount, _calculated_shares) = rewarder::reward_poc(
         &pool,
         &hex_boosting_client,
         &mobile_rewards_client,
@@ -446,8 +446,7 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
 
     // The unallocated amount should be zero since there was no POC pool to begin with
     assert_eq!(
-        unallocated_amount,
-        dec!(0),
+        unallocated_amount, 0,
         "Unallocated amount should be zero when POC pool is zero"
     );
 

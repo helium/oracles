@@ -1,6 +1,6 @@
 use crate::common::{self, reward_info_24_hours};
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
-use mobile_verifier::reward_shares::RewardableEntityKey;
+use mobile_verifier::reward_shares::{get_scheduled_tokens_for_poc, RewardableEntityKey};
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -11,8 +11,12 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
+    let poc_allocated_amount = get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+        .to_u64()
+        .unwrap_or(0);
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, poc_allocated_amount)
+        .await?;
 
     let rewards = mobile_rewards.finish().await?;
 
@@ -79,7 +83,12 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
     // Total reward amount of 350 HNT
     reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+    let poc_allocated_amount = get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+        .to_u64()
+        .unwrap_or(0);
+
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, poc_allocated_amount)
+        .await?;
 
     let rewards = mobile_rewards.finish().await?;
 
