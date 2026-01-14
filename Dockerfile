@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y \
 
 ARG PACKAGE
 
+COPY artifacts /opt/${PACKAGE}
+
 COPY --from=builder /app/target/release/${PACKAGE} /opt/${PACKAGE}/bin/${PACKAGE}
 
 ENV PACKAGE=${PACKAGE}
