@@ -3,9 +3,9 @@
 #
 # log = "ingest=debug,poc_store=info"
 
-# Mode to run the ingest in. This adjustst the allowed grpc endpoints. "iot", 
+# Mode to run the ingest in. This adjustst the allowed grpc endpoints.
 # "mobile" or "chain". Required
-mode = "iot"
+mode = "mobile"
 
 # Token for ingest grpc endpoint bearer authentication. This is required for
 # "mobile" mode and ignored for iot.

@@ -1,1 +1,0 @@
-alter type key_type add value 'oracle';
