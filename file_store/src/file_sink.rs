@@ -275,39 +275,21 @@ impl<T: prost::Message> FileSink<T> {
 
         // Notify all existing completed sinks via file uploads
         let mut dir = fs::read_dir(&self.target_path).await?;
-        loop {
-            match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
-                    self.file_upload.upload_file(&entry.path()).await?;
-                }
-                Ok(None) => break,
-                _ => continue,
+        while let Some(entry) = dir.next_entry().await? {
+            if starts_with_prefix(&entry, &self.prefix) {
+                self.file_upload.upload_file(&entry.path()).await?;
             }
         }
 
         // Move any partial previous sink files to the target
         let mut dir = fs::read_dir(&self.tmp_path).await?;
-        loop {
-            match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
-                    if self.auto_commit {
-                        let _ = self.deposit_sink(&entry.path()).await;
-                    } else {
-                        let _ = fs::remove_file(&entry.path()).await;
-                    }
+        while let Some(entry) = dir.next_entry().await? {
+            if starts_with_prefix(&entry, &self.prefix) {
+                if self.auto_commit {
+                    let _ = self.deposit_sink(&entry.path()).await;
+                } else {
+                    let _ = fs::remove_file(&entry.path()).await;
                 }
-                Ok(None) => break,
-                _ => continue,
             }
         }
 
@@ -466,6 +448,10 @@ pub fn file_name(path_buf: &Path) -> Result<String> {
                 "expected sink filename",
             ))
         })
+}
+
+fn starts_with_prefix(entry: &tokio::fs::DirEntry, prefix: &str) -> bool {
+    entry.file_name().to_string_lossy().starts_with(prefix)
 }
 
 #[cfg(test)]
