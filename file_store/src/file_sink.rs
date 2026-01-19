@@ -165,33 +165,41 @@ impl<T> FileSinkClient<T> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let labels = labels.into_iter().map(Label::from);
 
-        tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into()), SEND_TIMEOUT) => match result {
-                Ok(_) => {
-                    metrics::counter!(
-                        self.metric.clone(),
-                        labels
-                            .chain(std::iter::once(OK_LABEL))
-                            .collect::<Vec<Label>>()
-                    ).increment(1);
-                    tracing::debug!("file_sink write succeeded for {:?}", self.metric);
-                    Ok(on_write_rx)
-                }
-                Err(SendTimeoutError::Closed(_)) => {
-                    metrics::counter!(
-                        self.metric.clone(),
-                        labels
-                            .chain(std::iter::once(ERROR_LABEL))
-                            .collect::<Vec<Label>>()
-                    ).increment(1);
-                    tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
-                    Err(ChannelError::sink_closed(&self.metric))
-                }
-                Err(SendTimeoutError::Timeout(_)) => {
-                    tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
-                    Err(ChannelError::sink_timeout(&self.metric))
-                }
-            },
+        let msg = Message::Data(on_write_tx, item.into());
+
+        match self.sender.send_timeout(msg, SEND_TIMEOUT).await {
+            Ok(_) => {
+                metrics::counter!(
+                    self.metric.clone(),
+                    labels
+                        .chain(std::iter::once(OK_LABEL))
+                        .collect::<Vec<Label>>()
+                )
+                .increment(1);
+                tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                Ok(on_write_rx)
+            }
+            Err(SendTimeoutError::Closed(_)) => {
+                metrics::counter!(
+                    self.metric.clone(),
+                    labels
+                        .chain(std::iter::once(ERROR_LABEL))
+                        .collect::<Vec<Label>>()
+                )
+                .increment(1);
+                tracing::error!(
+                    "file_sink write failed for {:?} channel closed",
+                    self.metric
+                );
+                Err(ChannelError::sink_closed(&self.metric))
+            }
+            Err(SendTimeoutError::Timeout(_)) => {
+                tracing::error!(
+                    "file_sink write failed for {:?} due to send timeout",
+                    self.metric
+                );
+                Err(ChannelError::sink_timeout(&self.metric))
+            }
         }
     }
 
