@@ -75,12 +75,9 @@ impl RollingFileSink {
     }
 
     pub fn should_close(&self, now: DateTime<Utc>) -> bool {
-        if let Some(ref file) = self.current_file {
-            let time_to_close = file.open_timestamp() + self.roll_time;
-            return time_to_close <= now;
-        }
-
-        false
+        self.current_file
+            .as_ref()
+            .is_some_and(|file| file.open_timestamp() + self.roll_time <= now)
     }
 
     pub async fn close_current_file(&mut self) -> RollingFileSinkResult<PathBuf> {
