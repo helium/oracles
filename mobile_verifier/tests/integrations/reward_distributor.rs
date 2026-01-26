@@ -1,6 +1,6 @@
 use crate::common::{
     create_file_sink, default_price_info, reward_info_24_hours,
-    seed::{seed_data_sessions, seed_heartbeats, seed_speedtests, update_assignments},
+    seed::{seed_data_sessions, seed_heartbeats, update_assignments},
     MockHexBoostingClient, RadioRewardV2Ext,
 };
 use mobile_verifier::reward_shares::get_scheduled_tokens_total;
@@ -14,7 +14,6 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
-    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
     seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;

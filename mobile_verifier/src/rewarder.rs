@@ -405,7 +405,7 @@ pub async fn reward_poc_and_dc(
     .await?;
 
     reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
-    let (poc_allocated_amount, poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
+    let (calculated_poc_reward_shares, poc_allocated_amount, poc_unallocated_amount) = reward_poc(
         pool,
         hex_service_client,
         &mobile_rewards,
@@ -427,7 +427,7 @@ pub async fn reward_poc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
-) -> anyhow::Result<(Decimal, Decimal, CalculatedPocRewardShares)> {
+) -> anyhow::Result<(CalculatedPocRewardShares, Decimal, Decimal)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
@@ -472,18 +472,18 @@ pub async fn reward_poc(
         telemetry::poc_rewarded_radios(count_rewarded_radios);
         // calculate any unallocated poc reward
         Ok((
+            calculated_poc_rewards_per_share,
             Decimal::from(allocated_poc_rewards),
             total_poc_rewards - Decimal::from(allocated_poc_rewards),
-            calculated_poc_rewards_per_share,
         ))
     } else {
         telemetry::poc_rewarded_radios(0);
         // default unallocated poc reward to the total poc reward
         let total_poc_rewards = total_poc_rewards.to_u64().unwrap_or(0);
         Ok((
+            CalculatedPocRewardShares::default(),
             Decimal::from(0_u64),
             Decimal::from(total_poc_rewards),
-            CalculatedPocRewardShares::default(),
         ))
     }
 }
@@ -512,7 +512,10 @@ pub async fn reward_dc(
     // we return the full decimal value just to ensure we allocate all to poc
     let unallocated_dc_reward_amount =
         reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
-    Ok((Decimal::from(allocated_dc_rewards), unallocated_dc_reward_amount))
+    Ok((
+        Decimal::from(allocated_dc_rewards),
+        unallocated_dc_reward_amount,
+    ))
 }
 
 pub async fn reward_service_providers(
@@ -520,7 +523,8 @@ pub async fn reward_service_providers(
     reward_info: &EpochRewardInfo,
     total_sp_reward_amount: u64,
 ) -> anyhow::Result<()> {
-    let subscriber_reward = std::cmp::min(total_sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
+    let subscriber_reward =
+        std::cmp::min(total_sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
     let network_reward = total_sp_reward_amount.saturating_sub(subscriber_reward);
 
     // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT

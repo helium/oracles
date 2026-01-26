@@ -1,6 +1,8 @@
 use crate::common::{self, reward_info_24_hours};
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
-use mobile_verifier::reward_shares::{get_scheduled_tokens_for_poc, get_scheduled_tokens_total, RewardableEntityKey};
+use mobile_verifier::reward_shares::{
+    get_scheduled_tokens_for_poc, get_scheduled_tokens_total, RewardableEntityKey,
+};
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
