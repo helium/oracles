@@ -1,6 +1,6 @@
 use crate::common::{self, reward_info_24_hours};
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
-use mobile_verifier::reward_shares::{get_scheduled_tokens_for_poc, RewardableEntityKey};
+use mobile_verifier::reward_shares::{get_scheduled_tokens_for_poc, get_scheduled_tokens_total, RewardableEntityKey};
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -15,7 +15,10 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         .to_u64()
         .unwrap_or(0);
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, poc_allocated_amount)
+    let total_rewards = get_scheduled_tokens_total(reward_info.epoch_emissions);
+    let sp_reward_amount = total_rewards - poc_allocated_amount;
+
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, sp_reward_amount)
         .await?;
 
     let rewards = mobile_rewards.finish().await?;
@@ -87,7 +90,10 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         .to_u64()
         .unwrap_or(0);
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, poc_allocated_amount)
+    let total_rewards = get_scheduled_tokens_total(reward_info.epoch_emissions);
+    let sp_reward_amount = total_rewards - poc_allocated_amount;
+
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, sp_reward_amount)
         .await?;
 
     let rewards = mobile_rewards.finish().await?;

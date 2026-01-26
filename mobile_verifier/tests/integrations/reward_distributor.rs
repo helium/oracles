@@ -3,7 +3,7 @@ use crate::common::{
     seed::{seed_data_sessions, seed_heartbeats, seed_speedtests, update_assignments},
     MockHexBoostingClient, RadioRewardV2Ext,
 };
-use mobile_verifier::reward_shares::get_scheduled_verifier_tokens;
+use mobile_verifier::reward_shares::get_scheduled_tokens_total;
 use mobile_verifier::rewarder;
 use sqlx::PgPool;
 
@@ -42,7 +42,7 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let total: u64 = poc_sum + dc_sum + sp_sum;
 
-    let expected_total = get_scheduled_verifier_tokens(reward_info.epoch_emissions);
+    let expected_total = get_scheduled_tokens_total(reward_info.epoch_emissions);
 
     assert_eq!(total, expected_total);
 
