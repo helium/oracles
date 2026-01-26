@@ -53,9 +53,9 @@ impl RollingFileSink {
     }
 
     pub async fn write(&mut self, buf: Bytes) -> RollingFileSinkResult<RollingFileWriteResult> {
-        self._write(buf).await.inspect(|err| {
-            tracing::error!(?err, prefix = self.prefix, "write error");
-        })
+        self._write(buf)
+            .await
+            .inspect_err(|err| tracing::error!(?err, "error writing"))
     }
 
     async fn _write(&mut self, buf: Bytes) -> RollingFileSinkResult<RollingFileWriteResult> {
