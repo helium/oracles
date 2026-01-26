@@ -102,16 +102,17 @@ impl RollingFileSink {
     }
 
     async fn get_writer(&mut self) -> RollingFileSinkResult<&mut GzippedFramedFile> {
-        if self.current_file.is_none() {
-            // We wait until we're about to write to generate the file so the
-            // timestamp aligns with the first write to the file.
-            let file =
-                GzippedFramedFile::new(&self.dir, &self.prefix, Utc::now(), self.max_size).await?;
-            self.current_file = Some(file);
+        if let Some(ref mut file) = self.current_file {
+            return Ok(file);
         }
 
-        // Unwrap is safe because we are ensuring the file exists above.
-        Ok(self.current_file.as_mut().unwrap())
+        let file =
+            GzippedFramedFile::new(&self.dir, &self.prefix, Utc::now(), self.max_size).await?;
+        self.current_file = Some(file);
+
+        self.current_file
+            .as_mut()
+            .ok_or(RollingFileSinkError::NoActiveFile)
     }
 
     fn should_roll_file(&self, buf: &Bytes) -> bool {
