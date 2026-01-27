@@ -1,5 +1,5 @@
 use crate::{
-    cmds::gateway::{GatewayInfo, GatewayInfoStream},
+    cmds::gateway::{GatewayInfo, GatewayInfoStream, GatewayInfoStreamV3},
     current_timestamp, NetworkKeyRole, Result,
 };
 
@@ -13,7 +13,7 @@ use helium_proto::{
         AuthorizationListResV1, AuthorizationVerifyReqV1, AuthorizationVerifyResV1,
         CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1, EntityVerifyReqV1,
         EntityVerifyResV1, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
-        GatewayInfoResV2, GatewayInfoStreamResV2,
+        GatewayInfoResV2, GatewayInfoStreamReqV3, GatewayInfoStreamResV2, GatewayInfoStreamResV3,
     },
     Message,
 };
@@ -290,6 +290,42 @@ impl GatewayClient {
             .ok_or_else(|| anyhow::anyhow!("gateway not found"))?;
         GatewayInfo::try_from(info)
     }
+
+    pub async fn info_stream_v3(
+        &mut self,
+        batch_size: u32,
+        keypair: &Keypair,
+    ) -> Result<GatewayInfoStreamV3> {
+        let mut request = GatewayInfoStreamReqV3 {
+            batch_size,
+            signer: keypair.public_key().into(),
+            signature: vec![],
+            device_types: vec![],
+            min_updated_at: 0,
+            min_location_changed_at: 0,
+        };
+        request.signature = request.sign(keypair)?;
+        let config_pubkey = self.server_pubkey.clone();
+        let stream = self
+            .client
+            .info_stream_v3(request)
+            .await?
+            .into_inner()
+            .filter_map(|res| async move { res.ok() })
+            .map(move |res| (res, config_pubkey.clone()))
+            .filter_map(|(res, pubkey)| async move {
+                match res.verify(&pubkey) {
+                    Ok(()) => Some(res),
+                    Err(err) => {
+                        tracing::error!(?err, "Response verification failed");
+                        None
+                    }
+                }
+            })
+            .boxed();
+
+        Ok(stream)
+    }
 }
 
 pub trait MsgSign: Message + std::clone::Clone {
@@ -318,6 +354,7 @@ impl_sign!(EntityVerifyReqV1, signature);
 impl_sign!(GatewayInfoReqV1, signature);
 impl_sign!(GatewayInfoBatchReqV1, signature);
 impl_sign!(GatewayInfoAtTimestampReqV1, signature);
+impl_sign!(GatewayInfoStreamReqV3, signature);
 impl_sign!(CarrierIncentivePromotionListReqV1, signature);
 
 pub trait MsgVerify: Message + std::clone::Clone {
@@ -348,4 +385,5 @@ impl_verify!(AuthorizationListResV1, signature);
 impl_verify!(EntityVerifyResV1, signature);
 impl_verify!(GatewayInfoResV2, signature);
 impl_verify!(GatewayInfoStreamResV2, signature);
+impl_verify!(GatewayInfoStreamResV3, signature);
 impl_verify!(CarrierIncentivePromotionListResV1, signature);

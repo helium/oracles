@@ -169,6 +169,20 @@ pub enum GatewayCommands {
     InfoBatch(GetHotspotBatch),
     /// Retrieve the on-chain registered info for the hotspot at a timestamp
     InfoAtTimestamp(GetHotspotAtTimestamp),
+    /// Stream all gateways and print counts by device type
+    DeviceTypeCounts(DeviceTypeCounts),
+}
+
+#[derive(Debug, Args)]
+pub struct DeviceTypeCounts {
+    #[arg(short, long, default_value = "5000")]
+    pub batch_size: u32,
+    #[arg(from_global)]
+    pub keypair: PathBuf,
+    #[arg(from_global)]
+    pub config_host: String,
+    #[arg(from_global)]
+    pub config_pubkey: String,
 }
 
 #[derive(Debug, Args)]

@@ -1,16 +1,18 @@
-use super::{GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair};
+use super::{DeviceTypeCounts, GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair};
 use crate::{client, Msg, PrettyJson, Result};
 use angry_purple_tiger::AnimalName;
 use futures::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::mobile_config::{
-    GatewayInfoV2 as GatewayInfoProto, GatewayMetadataV2 as GatewayMetadataProto,
+    DeviceTypeV2, GatewayInfoStreamResV3, GatewayInfoV2 as GatewayInfoProto,
+    GatewayMetadataV2 as GatewayMetadataProto,
 };
 use mobile_config::gateway::service::info::{DeploymentInfo, DeviceType};
 use serde::Serialize;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 pub type GatewayInfoStream = futures::stream::BoxStream<'static, GatewayInfo>;
+pub type GatewayInfoStreamV3 = futures::stream::BoxStream<'static, GatewayInfoStreamResV3>;
 
 #[derive(Debug, Serialize)]
 pub struct GatewayInfo {
@@ -107,4 +109,30 @@ impl TryFrom<GatewayMetadataProto> for GatewayMetadata {
             deployment_info: md.deployment_info.map(DeploymentInfo::from),
         })
     }
+}
+
+pub async fn device_type_counts(args: DeviceTypeCounts) -> Result<Msg> {
+    let mut client = client::GatewayClient::new(&args.config_host, &args.config_pubkey).await?;
+    let mut stream = client
+        .info_stream_v3(args.batch_size, &args.keypair.to_keypair()?)
+        .await?;
+
+    let mut counts: HashMap<String, u64> = HashMap::new();
+
+    while let Some(response) = stream.next().await {
+        for gateway in response.gateways {
+            let device_type = DeviceTypeV2::try_from(gateway.device_type)
+                .map(|dt| format!("{dt:?}"))
+                .unwrap_or_else(|_| format!("Unknown({})", gateway.device_type));
+            *counts.entry(device_type).or_default() += 1;
+        }
+    }
+
+    let total: u64 = counts.values().sum();
+    let output = serde_json::json!({
+        "counts": counts,
+        "total": total
+    });
+
+    Msg::ok(serde_json::to_string_pretty(&output)?)
 }
