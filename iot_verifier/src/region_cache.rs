@@ -26,7 +26,13 @@ pub enum RegionCacheError {
     #[error("region not found: {0}")]
     RegionNotFound(ProtoRegion),
     #[error("error querying gateway api")]
-    GatewayApiError(ClientError),
+    GatewayApiError(Box<ClientError>),
+}
+
+impl From<ClientError> for RegionCacheError {
+    fn from(err: ClientError) -> Self {
+        Self::GatewayApiError(Box::new(err))
+    }
 }
 
 impl<G> RegionCache<G>
@@ -62,7 +68,7 @@ where
                         .await;
                     Ok(res)
                 }
-                Err(err) => Err(RegionCacheError::GatewayApiError(err)),
+                Err(err) => Err(err)?,
             },
         }
     }
