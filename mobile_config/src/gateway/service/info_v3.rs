@@ -67,6 +67,8 @@ pub struct GatewayInfoV3 {
     // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
     pub refreshed_at: DateTime<Utc>,
     pub num_location_asserts: i32,
+    pub owner: Option<String>,
+    pub owner_changed_at: Option<DateTime<Utc>>,
 }
 
 impl TryFrom<Gateway> for GatewayInfoV3 {
@@ -101,6 +103,8 @@ impl TryFrom<Gateway> for GatewayInfoV3 {
             updated_at: gateway.last_changed_at,
             refreshed_at: gateway.refreshed_at,
             num_location_asserts: gateway.location_asserts.unwrap_or(0) as i32,
+            owner: gateway.owner,
+            owner_changed_at: gateway.owner_changed_at,
         })
     }
 }
@@ -144,6 +148,11 @@ impl TryFrom<GatewayInfoV3> for GatewayInfoProtoV3 {
             created_at: info.created_at.timestamp() as u64,
             updated_at: info.updated_at.timestamp() as u64,
             num_location_asserts: info.num_location_asserts as u64,
+            owner: info.owner.unwrap_or_default(),
+            owner_changed_at: info
+                .owner_changed_at
+                .map(|t| t.timestamp() as u64)
+                .unwrap_or(0),
         })
     }
 }
