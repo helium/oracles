@@ -67,6 +67,7 @@ pub struct GatewayInfoV3 {
     // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
     pub refreshed_at: DateTime<Utc>,
     pub num_location_asserts: i32,
+    // TODO check prod backup. Maybe we can do it not optional
     pub owner: Option<String>,
     pub owner_changed_at: Option<DateTime<Utc>>,
 }
