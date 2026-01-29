@@ -10,16 +10,17 @@ use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct HexBoostingClient {
-    pub client: mobile_config::HexBoostingClient<Channel>,
+    client: mobile_config::HexBoostingClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
     batch_size: u32,
 }
 
 impl HexBoostingClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
+        let channel = settings.channel()?;
         Ok(Self {
-            client: settings.connect_hex_boosting_service_client(),
+            client: mobile_config::HexBoostingClient::new(channel),
             signing_key: settings.signing_keypair.clone(),
             config_pubkey: settings.config_pubkey.clone(),
             batch_size: settings.hex_boosting_batch_size,
