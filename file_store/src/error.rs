@@ -23,7 +23,7 @@ pub enum Error {
     FileInfo(#[from] FileInfoError),
 
     #[error("aws error: {0}")]
-    Aws(#[from] AwsError),
+    Aws(#[from] Box<AwsError>),
 
     #[error("channel error: {0}")]
     Channel(#[from] ChannelError),
@@ -90,6 +90,8 @@ impl ChannelError {
 }
 
 mod aws_error {
+    use std::path::PathBuf;
+
     use super::Error;
 
     use aws_sdk_s3::error::SdkError;
@@ -103,41 +105,101 @@ mod aws_error {
 
     #[derive(thiserror::Error, Debug)]
     pub enum AwsError {
-        #[error("put_object: {0}")]
-        PutObject(PutObjectError),
+        #[error("put_object ({bucket}::{file_path}): {source}")]
+        PutObject {
+            source: PutObjectError,
+            bucket: String,
+            file_path: PathBuf,
+        },
 
-        #[error("pub_object_byte_stream: {0}")]
-        PubObjectByteStream(ByteStreamError),
+        #[error("pub_object_byte_stream ({bucket}::{file_path}): {source}")]
+        PubObjectByteStream {
+            source: ByteStreamError,
+            bucket: String,
+            file_path: PathBuf,
+        },
 
-        #[error("delete_object: {0}")]
-        DeleteObject(DeleteObjectError),
+        #[error("delete_object ({bucket}::{key}): {source}")]
+        DeleteObject {
+            source: DeleteObjectError,
+            bucket: String,
+            key: String,
+        },
 
-        #[error("get_object: {0}")]
-        GetObject(GetObjectError),
+        #[error("get_object ({bucket}::{key}): {source}")]
+        GetObject {
+            source: GetObjectError,
+            bucket: String,
+            key: String,
+        },
 
-        #[error("list_object: {0}")]
-        ListObject(ListObjectsV2Error),
+        #[error("list_object ({bucket}::{prefix}): {source}")]
+        ListObject {
+            source: ListObjectsV2Error,
+            bucket: String,
+            prefix: String,
+        },
     }
 
     impl AwsError {
-        pub fn put_object_error(err: SdkError<PutObjectError>) -> Error {
-            Error::Aws(Self::PutObject(err.into_service_error()))
+        pub fn put_object_error(
+            err: SdkError<PutObjectError>,
+            bucket: &str,
+            file_path: impl Into<PathBuf>,
+        ) -> Error {
+            Error::Aws(Box::new(Self::PutObject {
+                source: err.into_service_error(),
+                bucket: bucket.into(),
+                file_path: file_path.into(),
+            }))
         }
 
-        pub fn pub_object_byte_stream_error(err: ByteStreamError) -> Error {
-            Error::Aws(Self::PubObjectByteStream(err))
+        pub fn pub_object_byte_stream_error(
+            err: ByteStreamError,
+            bucket: impl Into<String>,
+            file_path: impl Into<PathBuf>,
+        ) -> Error {
+            Error::Aws(Box::new(Self::PubObjectByteStream {
+                source: err,
+                bucket: bucket.into(),
+                file_path: file_path.into(),
+            }))
         }
 
-        pub fn delete_object_error(err: SdkError<DeleteObjectError>) -> Error {
-            Error::Aws(Self::DeleteObject(err.into_service_error()))
+        pub fn delete_object_error(
+            err: SdkError<DeleteObjectError>,
+            bucket: impl Into<String>,
+            key: impl Into<String>,
+        ) -> Error {
+            Error::Aws(Box::new(Self::DeleteObject {
+                source: err.into_service_error(),
+                bucket: bucket.into(),
+                key: key.into(),
+            }))
         }
 
-        pub fn get_object_error(err: SdkError<GetObjectError>) -> Error {
-            Error::Aws(Self::GetObject(err.into_service_error()))
+        pub fn get_object_error(
+            err: SdkError<GetObjectError>,
+            bucket: impl Into<String>,
+            key: impl Into<String>,
+        ) -> Error {
+            Error::Aws(Box::new(Self::GetObject {
+                source: err.into_service_error(),
+                bucket: bucket.into(),
+                key: key.into(),
+            }))
         }
 
-        pub fn list_object_error(err: SdkError<ListObjectsV2Error>) -> Error {
-            Error::Aws(Self::ListObject(err.into_service_error()))
+        pub fn list_object_error(
+            err: SdkError<ListObjectsV2Error>,
+            bucket: &str,
+            prefix: &str,
+        ) -> Error {
+            Error::Aws(Box::new(Self::ListObject {
+                source: err.into_service_error(),
+                bucket: bucket.to_string(),
+                prefix: prefix.to_string(),
+            }))
         }
     }
 }
