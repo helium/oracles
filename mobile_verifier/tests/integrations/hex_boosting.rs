@@ -134,7 +134,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     let price_info = default_price_info();
 
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -144,6 +144,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
@@ -193,7 +194,9 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -288,7 +291,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -298,6 +301,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
@@ -315,7 +319,9 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -417,7 +423,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     ];
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -427,6 +433,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
@@ -487,7 +494,9 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -552,7 +561,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -562,6 +571,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
@@ -583,7 +593,9 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -654,7 +666,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -664,6 +676,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
@@ -715,7 +728,9 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -791,7 +806,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     ];
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -801,6 +816,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_amount = poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
@@ -855,7 +871,9 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -954,7 +972,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     ];
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, _, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
@@ -964,6 +982,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
+    let poc_unallocated_reward = poc_unallocated_reward.to_u64().unwrap_or(0);
 
     let poc_rewards = rewards.radio_reward_v2s.as_keyed_map();
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // 2 boosts at 10x
@@ -1023,7 +1042,9 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_reward;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())

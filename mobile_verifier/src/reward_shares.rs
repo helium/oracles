@@ -552,6 +552,13 @@ pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) 
     total_emission_pool * SERVICE_PROVIDER_PERCENT
 }
 
+pub fn get_scheduled_tokens_total(total_emission_pool: Decimal) -> u64 {
+    (total_emission_pool
+        * (SERVICE_PROVIDER_PERCENT + POC_REWARDS_PERCENT + MAX_DATA_TRANSFER_REWARDS_PERCENT))
+        .to_u64()
+        .unwrap_or(0)
+}
+
 #[derive(Display, EnumString)]
 pub enum RewardableEntityKey {
     #[strum(serialize = "Helium Mobile")]
