@@ -416,6 +416,45 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
     Ok(())
 }
 
+#[sqlx::test]
+async fn gateway_stream_info_v3_owner_fields(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+
+    let address1 = make_keypair().public_key().clone();
+    let loc1 = 631711281837647359_u64;
+
+    let now = Utc::now();
+    let now_minus_one = now - Duration::hours(1);
+
+    let gateway1: Gateway = TestGatewayBuilder::default()
+        .address(address1.clone())
+        .gateway_type(GatewayType::WifiIndoor)
+        .created_at(now)
+        .inserted_at(now)
+        .refreshed_at(now)
+        .last_changed_at(now)
+        .location(loc1)
+        .location_changed_at(now)
+        .location_asserts(1)
+        .owner(Some("owner_wallet_address_1".to_string()))
+        .owner_changed_at(Some(now_minus_one))
+        .build()?
+        .into();
+    gateway1.insert(&pool).await?;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await?;
+
+    let resp = gateway_info_stream_v3(&mut client, &admin_key, &[], 0, 0).await?;
+    assert_eq!(resp.gateways.len(), 1);
+
+    let gateway = resp.gateways.first().unwrap();
+    assert_eq!(gateway.owner, "owner_wallet_address_1");
+    assert_eq!(gateway.owner_changed_at, now_minus_one.timestamp() as u64);
+
+    Ok(())
+}
+
 async fn gateway_info_stream_v3(
     client: &mut GatewayClient<tonic::transport::Channel>,
     signer: &Keypair,
