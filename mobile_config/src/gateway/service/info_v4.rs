@@ -109,7 +109,7 @@ pub fn stream_by_types<'a>(
     types: &'a [DeviceTypeV2],
     min_date: DateTime<Utc>,
     min_location_changed_at: Option<DateTime<Utc>>,
-    min_owner_changed_at: Option<DateTime<Utc>>,
+    min_owner_changed_at: DateTime<Utc>,
 ) -> impl Stream<Item = GatewayInfoV4> + 'a {
     let gateway_types = if types.is_empty() {
         GatewayType::iter().collect::<Vec<_>>()

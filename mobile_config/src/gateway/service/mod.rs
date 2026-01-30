@@ -432,17 +432,12 @@ impl mobile_config::Gateway for GatewayService {
                 )
             };
 
-            let min_owner_changed_at = if request.min_owner_changed_at == 0 {
-                None
-            } else {
-                Some(
-                    Utc.timestamp_opt(request.min_owner_changed_at as i64, 0)
-                        .single()
-                        .ok_or(Status::invalid_argument(
-                            "Invalid min_owner_changed_at argument",
-                        ))?,
-                )
-            };
+            let min_owner_changed_at = Utc
+                .timestamp_opt(request.min_owner_changed_at as i64, 0)
+                .single()
+                .ok_or(Status::invalid_argument(
+                    "Invalid min_owner_changed_at argument",
+                ))?;
 
             let stream = info_v4::stream_by_types(
                 &pool,

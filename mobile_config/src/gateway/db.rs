@@ -390,7 +390,7 @@ impl Gateway {
         types: Vec<GatewayType>,
         min_last_changed_at: DateTime<Utc>,
         min_location_changed_at: Option<DateTime<Utc>>,
-        min_owner_changed_at: Option<DateTime<Utc>>,
+        min_owner_changed_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
             r#"
@@ -417,12 +417,8 @@ impl Gateway {
                     $3::timestamptz IS NULL
                     OR (location IS NOT NULL AND location_changed_at >= $3)
                 )
-                AND (
-                    $4::timestamptz IS NULL
-                    OR owner_changed_at >= $4
-                )
+                AND owner_changed_at >= $4
                 AND owner IS NOT NULL
-                AND owner_changed_at IS NOT NULL
                 ORDER BY address, inserted_at DESC
             "#,
         )
