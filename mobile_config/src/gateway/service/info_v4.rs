@@ -2,6 +2,7 @@ use crate::gateway::{
     db::{Gateway, GatewayType},
     service::info_v3::{DeviceTypeV2, GatewayMetadataV3, LocationInfo},
 };
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -21,12 +22,12 @@ pub struct GatewayInfoV4 {
     pub updated_at: DateTime<Utc>,
     pub refreshed_at: DateTime<Utc>,
     pub num_location_asserts: i32,
-    pub owner: Option<String>,
-    pub owner_changed_at: Option<DateTime<Utc>>,
+    pub owner: String,
+    pub owner_changed_at: DateTime<Utc>,
 }
 
 impl TryFrom<Gateway> for GatewayInfoV4 {
-    type Error = hextree::Error;
+    type Error = anyhow::Error;
     fn try_from(gateway: Gateway) -> Result<Self, Self::Error> {
         let metadata = if let Some(location) = gateway.location {
             let location_info = LocationInfo {
@@ -49,6 +50,11 @@ impl TryFrom<Gateway> for GatewayInfoV4 {
             None
         };
 
+        let owner = gateway.owner.context("missing owner")?;
+        let owner_changed_at = gateway
+            .owner_changed_at
+            .context("missing owner_changed_at")?;
+
         Ok(Self {
             address: gateway.address,
             metadata,
@@ -57,8 +63,8 @@ impl TryFrom<Gateway> for GatewayInfoV4 {
             updated_at: gateway.last_changed_at,
             refreshed_at: gateway.refreshed_at,
             num_location_asserts: gateway.location_asserts.unwrap_or(0) as i32,
-            owner: gateway.owner,
-            owner_changed_at: gateway.owner_changed_at,
+            owner,
+            owner_changed_at,
         })
     }
 }
@@ -92,11 +98,8 @@ impl TryFrom<GatewayInfoV4> for GatewayInfoProtoV4 {
             created_at: info.created_at.timestamp() as u64,
             updated_at: info.updated_at.timestamp() as u64,
             num_location_asserts: info.num_location_asserts as u64,
-            owner: info.owner.unwrap_or_default(),
-            owner_changed_at: info
-                .owner_changed_at
-                .map(|t| t.timestamp() as u64)
-                .unwrap_or(0),
+            owner: info.owner,
+            owner_changed_at: info.owner_changed_at.timestamp() as u64,
         })
     }
 }
