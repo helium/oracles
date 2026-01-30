@@ -13,8 +13,8 @@ use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
     self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1,
     GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
-    GatewayInfoStreamReqV4, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
-    GatewayInfoStreamResV3, GatewayInfoStreamResV4, GatewayInfoV2,
+    GatewayInfoStreamReqV4, GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3,
+    GatewayInfoStreamResV4, GatewayInfoV2,
 };
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
@@ -418,9 +418,7 @@ impl mobile_config::Gateway for GatewayService {
             let min_updated_at = Utc
                 .timestamp_opt(request.min_updated_at as i64, 0)
                 .single()
-                .ok_or(Status::invalid_argument(
-                    "Invalid min_updated_at argument",
-                ))?;
+                .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
 
             let min_location_changed_at = if request.min_location_changed_at == 0 {
                 None
