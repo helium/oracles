@@ -177,7 +177,7 @@ pub trait ManagedTask: Send + Sync {
 /// manager.start().await?;
 /// ```
 pub struct TaskManager {
-    tasks: Vec<Box<dyn ManagedTask>>,
+    tasks: Vec<NamedTask>,
 }
 
 impl ManagedTask for TaskManager {
@@ -200,10 +200,16 @@ impl ManagedTask for TaskManager {
 ///     .build();
 /// ```
 pub struct TaskManagerBuilder {
-    tasks: Vec<Box<dyn ManagedTask>>,
+    tasks: Vec<NamedTask>,
+}
+
+struct NamedTask {
+    name: &'static str,
+    task: Box<dyn ManagedTask>,
 }
 
 struct StoppableLocalFuture {
+    name: &'static str,
     shutdown_trigger: triggered::Trigger,
     future: TaskFuture,
 }
@@ -249,8 +255,11 @@ impl TaskManager {
     /// Adds a task to the manager.
     ///
     /// Tasks are started in the order they are added and shut down in reverse order.
-    pub fn add(&mut self, task: impl ManagedTask + 'static) {
-        self.tasks.push(Box::new(task));
+    pub fn add<T: ManagedTask + 'static>(&mut self, task: T) {
+        self.tasks.push(NamedTask {
+            name: std::any::type_name::<T>(),
+            task: Box::new(task),
+        });
     }
 
     /// Starts all registered tasks and waits for completion or shutdown.
@@ -280,17 +289,24 @@ impl TaskManager {
                 break;
             }
 
+            // Capture task names for error reporting (indices match futures vec)
+            let task_names: Vec<&'static str> = futures.iter().map(|f| f.name).collect();
+
             let mut select = select_all(futures);
 
             tokio::select! {
                 _ = &mut shutdown => {
                     return stop_all(select.into_inner()).await;
                 }
-                (result, _index, remaining) = &mut select => match result {
+                (result, index, remaining) = &mut select => match result {
                     Ok(_) => {
+                        let task = task_names[index];
+                        tracing::info!(task, "task successful");
                         futures = remaining;
                     }
                     Err(err) => {
+                        let task = task_names[index];
+                        tracing::error!(task, ?err, "task failed");
                         let _ = stop_all(remaining).await;
                         return Err(err);
                     }
@@ -306,8 +322,11 @@ impl TaskManagerBuilder {
     /// Adds a task to the builder.
     ///
     /// Tasks are started in the order they are added and shut down in reverse order.
-    pub fn add_task(mut self, task: impl ManagedTask + 'static) -> Self {
-        self.tasks.push(Box::new(task));
+    pub fn add_task<T: ManagedTask + 'static>(mut self, task: T) -> Self {
+        self.tasks.push(NamedTask {
+            name: std::any::type_name::<T>(),
+            task: Box::new(task),
+        });
         self
     }
 
@@ -317,14 +336,15 @@ impl TaskManagerBuilder {
     }
 }
 
-fn start_futures(tasks: Vec<Box<dyn ManagedTask>>) -> Vec<StoppableLocalFuture> {
+fn start_futures(tasks: Vec<NamedTask>) -> Vec<StoppableLocalFuture> {
     tasks
         .into_iter()
-        .map(|task| {
+        .map(|named_task| {
             let (trigger, listener) = triggered::trigger();
             StoppableLocalFuture {
+                name: named_task.name,
                 shutdown_trigger: trigger,
-                future: task.start_task(listener),
+                future: named_task.task.start_task(listener),
             }
         })
         .collect()
@@ -334,8 +354,13 @@ async fn stop_all(futures: Vec<StoppableLocalFuture>) -> TaskResult {
     #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
         .then(|local| async move {
+            tracing::info!(task = %local.name, "shutting down task");
             local.shutdown_trigger.trigger();
-            local.future.await
+            let result = local.future.await;
+            if let Err(ref err) = result {
+                tracing::warn!(task = %local.name, error = ?err, "task failed during shutdown");
+            }
+            result
         })
         .collect::<Vec<_>>()
         .await
