@@ -100,6 +100,8 @@ async fn logs_error_before_shutdown_messages() {
             result: Ok(()),
             sender: sender.clone(),
         })
+        .add_named("special", |_shutdown| async { Ok(()) })
+        .add_task(|_shutdown| async { Ok(()) })
         .build()
         .start()
         .await;
@@ -108,6 +110,9 @@ async fn logs_error_before_shutdown_messages() {
     while receiver.try_recv().is_ok() {}
 
     let captured_logs = logs.lock().unwrap();
+    // for log in captured_logs.iter() {
+    //     println!("-- {}", log);
+    // }
 
     // Verify we have logs
     assert!(

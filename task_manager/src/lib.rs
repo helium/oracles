@@ -15,6 +15,7 @@
 //! TaskManager::builder()
 //!     .add_task(my_server)
 //!     .add_task(my_worker)
+//!     .add_named("setup-task", |_shutdown| async { Ok(()) })
 //!     .build()
 //!     .start()
 //!     .await?;
