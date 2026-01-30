@@ -8,15 +8,16 @@ use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct SubDaoClient {
-    pub client: sub_dao::sub_dao_client::SubDaoClient<Channel>,
+    client: sub_dao::sub_dao_client::SubDaoClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
 }
 
 impl SubDaoClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
+        let channel = settings.channel()?;
         Ok(Self {
-            client: settings.connect_epoch_client(),
+            client: sub_dao::SubDaoClient::new(channel),
             signing_key: settings.signing_keypair.clone(),
             config_pubkey: settings.config_pubkey.clone(),
         })

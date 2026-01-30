@@ -13,7 +13,7 @@ const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone)]
 pub struct GatewayClient {
-    pub client: mobile_config::GatewayClient<Channel>,
+    client: mobile_config::GatewayClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
     batch_size: u32,
@@ -22,7 +22,7 @@ pub struct GatewayClient {
 }
 
 impl GatewayClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
         let cache = Arc::new(Cache::new());
         let cloned_cache = cache.clone();
         tokio::spawn(async move {
@@ -31,8 +31,10 @@ impl GatewayClient {
                 .await
         });
 
+        let channel = settings.channel()?;
+
         Ok(Self {
-            client: settings.connect_gateway_client(),
+            client: mobile_config::GatewayClient::new(channel),
             signing_key: settings.signing_keypair.clone(),
             config_pubkey: settings.config_pubkey.clone(),
             batch_size: settings.batch_size,

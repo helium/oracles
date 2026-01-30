@@ -1,9 +1,8 @@
 use helium_crypto::{Keypair, PublicKey};
-use helium_proto::services::{mobile_config, sub_dao};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -55,40 +54,12 @@ fn default_cache_ttl_in_secs() -> Duration {
 }
 
 impl Settings {
-    pub fn connect_epoch_client(&self) -> sub_dao::sub_dao_client::SubDaoClient<Channel> {
-        let channel = connect_channel(self);
-        sub_dao::sub_dao_client::SubDaoClient::new(channel)
-    }
+    pub fn channel(&self) -> Result<Channel, tonic::transport::Error> {
+        let endpoint = Endpoint::from(self.url.clone())
+            .connect_timeout(self.connect_timeout)
+            .timeout(self.rpc_timeout)
+            .tls_config(ClientTlsConfig::new().with_enabled_roots())?;
 
-    pub fn connect_gateway_client(&self) -> mobile_config::GatewayClient<Channel> {
-        let channel = connect_channel(self);
-        mobile_config::GatewayClient::new(channel)
+        Ok(endpoint.connect_lazy())
     }
-
-    pub fn connect_authorization_client(&self) -> mobile_config::AuthorizationClient<Channel> {
-        let channel = connect_channel(self);
-        mobile_config::AuthorizationClient::new(channel)
-    }
-
-    pub fn connect_entity_client(&self) -> mobile_config::EntityClient<Channel> {
-        let channel = connect_channel(self);
-        mobile_config::EntityClient::new(channel)
-    }
-
-    pub fn connect_carrier_service_client(&self) -> mobile_config::CarrierServiceClient<Channel> {
-        let channel = connect_channel(self);
-        mobile_config::CarrierServiceClient::new(channel)
-    }
-
-    pub fn connect_hex_boosting_service_client(&self) -> mobile_config::HexBoostingClient<Channel> {
-        let channel = connect_channel(self);
-        mobile_config::HexBoostingClient::new(channel)
-    }
-}
-
-fn connect_channel(settings: &Settings) -> Channel {
-    Endpoint::from(settings.url.clone())
-        .connect_timeout(settings.connect_timeout)
-        .timeout(settings.rpc_timeout)
-        .connect_lazy()
 }
