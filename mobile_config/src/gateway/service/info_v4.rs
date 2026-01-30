@@ -120,7 +120,7 @@ pub fn stream_by_types<'a>(
             .collect::<Vec<GatewayType>>()
     };
 
-    Gateway::stream_by_types_v4(
+    Gateway::stream_gateway_info_v4(
         db,
         gateway_types,
         min_date,
