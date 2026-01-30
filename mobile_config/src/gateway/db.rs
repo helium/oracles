@@ -385,6 +385,54 @@ impl Gateway {
         .filter_map(|res| async move { res.ok() })
     }
 
+    pub fn stream_by_types_v4<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        types: Vec<GatewayType>,
+        min_last_changed_at: DateTime<Utc>,
+        min_location_changed_at: Option<DateTime<Utc>>,
+        min_owner_changed_at: Option<DateTime<Utc>>,
+    ) -> impl Stream<Item = Self> + 'a {
+        sqlx::query_as::<_, Self>(
+            r#"
+                SELECT DISTINCT ON (address)
+                    address,
+                    gateway_type,
+                    created_at,
+                    inserted_at,
+                    refreshed_at,
+                    last_changed_at,
+                    hash,
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location,
+                    location_changed_at,
+                    location_asserts,
+                    owner,
+                    owner_changed_at
+                FROM gateways
+                WHERE gateway_type = ANY($1)
+                AND last_changed_at >= $2
+                AND (
+                    $3::timestamptz IS NULL
+                    OR (location IS NOT NULL AND location_changed_at >= $3)
+                )
+                AND (
+                    $4::timestamptz IS NULL
+                    OR owner_changed_at >= $4
+                )
+                ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .bind(types)
+        .bind(min_last_changed_at)
+        .bind(min_location_changed_at)
+        .bind(min_owner_changed_at)
+        .fetch(db)
+        .map_err(anyhow::Error::from)
+        .filter_map(|res| async move { res.ok() })
+    }
+
     pub async fn update_bulk_location_changed_at(
         pool: &PgPool,
         updates: &[LocationChangedAtUpdate],
