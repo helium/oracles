@@ -1,5 +1,5 @@
 use crate::{
-    cmds::gateway::{GatewayInfo, GatewayInfoStream, GatewayInfoStreamV3},
+    cmds::gateway::{GatewayInfoStream, GatewayInfoStreamV3, GatewayInfoStreamV4, GatewayInfo},
     current_timestamp, NetworkKeyRole, Result,
 };
 
@@ -13,7 +13,8 @@ use helium_proto::{
         AuthorizationListResV1, AuthorizationVerifyReqV1, AuthorizationVerifyResV1,
         CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1, EntityVerifyReqV1,
         EntityVerifyResV1, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
-        GatewayInfoResV2, GatewayInfoStreamReqV3, GatewayInfoStreamResV2, GatewayInfoStreamResV3,
+        GatewayInfoResV2, GatewayInfoStreamReqV3, GatewayInfoStreamReqV4,
+        GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoStreamResV4,
     },
     Message,
 };
@@ -326,6 +327,45 @@ impl GatewayClient {
 
         Ok(stream)
     }
+
+    pub async fn info_stream_v4(
+        &mut self,
+        batch_size: u32,
+        min_owner_changed_at: u64,
+        keypair: &Keypair,
+    ) -> Result<GatewayInfoStreamV4> {
+        let mut request = GatewayInfoStreamReqV4 {
+            batch_size,
+            signer: keypair.public_key().into(),
+            signature: vec![],
+            device_types: vec![],
+            min_updated_at: 0,
+            min_location_changed_at: 0,
+            min_owner_changed_at,
+        };
+        request.signature = request.sign(keypair)?;
+        dbg!(keypair.public_key());
+        let config_pubkey = self.server_pubkey.clone();
+        let stream = self
+            .client
+            .info_stream_v4(request)
+            .await?
+            .into_inner()
+            .filter_map(|res| async move { res.ok() })
+            .map(move |res| (res, config_pubkey.clone()))
+            .filter_map(|(res, pubkey)| async move {
+                match res.verify(&pubkey) {
+                    Ok(()) => Some(res),
+                    Err(err) => {
+                        tracing::error!(?err, "Response verification failed");
+                        None
+                    }
+                }
+            })
+            .boxed();
+
+        Ok(stream)
+    }
 }
 
 pub trait MsgSign: Message + std::clone::Clone {
@@ -355,6 +395,7 @@ impl_sign!(GatewayInfoReqV1, signature);
 impl_sign!(GatewayInfoBatchReqV1, signature);
 impl_sign!(GatewayInfoAtTimestampReqV1, signature);
 impl_sign!(GatewayInfoStreamReqV3, signature);
+impl_sign!(GatewayInfoStreamReqV4, signature);
 impl_sign!(CarrierIncentivePromotionListReqV1, signature);
 
 pub trait MsgVerify: Message + std::clone::Clone {
@@ -386,4 +427,5 @@ impl_verify!(EntityVerifyResV1, signature);
 impl_verify!(GatewayInfoResV2, signature);
 impl_verify!(GatewayInfoStreamResV2, signature);
 impl_verify!(GatewayInfoStreamResV3, signature);
+impl_verify!(GatewayInfoStreamResV4, signature);
 impl_verify!(CarrierIncentivePromotionListResV1, signature);

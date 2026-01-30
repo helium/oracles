@@ -404,6 +404,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
+        dbg!(signer.clone());
         self.verify_request_signature(&signer, &request)?;
 
         let pool = self.pool.clone();

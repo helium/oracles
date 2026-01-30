@@ -50,6 +50,7 @@ pub async fn handle_cli(cli: Cli) -> Result<Msg> {
             cmds::GatewayCommands::DeviceTypeCounts(args) => {
                 gateway::device_type_counts(args).await
             }
+            cmds::GatewayCommands::InfoStreamV4(args) => gateway::info_stream_v4(args).await,
         },
     }
 }

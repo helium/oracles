@@ -1,4 +1,7 @@
-use super::{DeviceTypeCounts, GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair};
+use super::{
+    DeviceTypeCounts, GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, InfoStreamV4,
+    PathBufKeypair,
+};
 use crate::{client, Msg, PrettyJson, Result};
 use angry_purple_tiger::AnimalName;
 use futures::StreamExt;
@@ -13,6 +16,8 @@ use std::{collections::HashMap, str::FromStr};
 
 pub type GatewayInfoStream = futures::stream::BoxStream<'static, GatewayInfo>;
 pub type GatewayInfoStreamV3 = futures::stream::BoxStream<'static, GatewayInfoStreamResV3>;
+pub type GatewayInfoStreamV4 =
+    futures::stream::BoxStream<'static, helium_proto::services::mobile_config::GatewayInfoStreamResV4>;
 
 #[derive(Debug, Serialize)]
 pub struct GatewayInfo {
@@ -132,6 +137,62 @@ pub async fn device_type_counts(args: DeviceTypeCounts) -> Result<Msg> {
     let output = serde_json::json!({
         "counts": counts,
         "total": total
+    });
+
+    Msg::ok(serde_json::to_string_pretty(&output)?)
+}
+
+pub async fn info_stream_v4(args: InfoStreamV4) -> Result<Msg> {
+    let mut client = client::GatewayClient::new(&args.config_host, &args.config_pubkey).await?;
+    let mut stream = client
+        .info_stream_v4(
+            args.batch_size,
+            args.min_owner_changed_at,
+            &args.keypair.to_keypair()?,
+        )
+        .await?;
+
+    let mut gateways = Vec::new();
+    while let Some(response) = stream.next().await {
+        for gateway in response.gateways {
+            let device_type = DeviceTypeV2::try_from(gateway.device_type)
+                .map(|dt| format!("{dt:?}"))
+                .unwrap_or_else(|_| format!("Unknown({})", gateway.device_type));
+            let address = PublicKey::try_from(gateway.address)
+                .map(|pk| pk.to_string())
+                .unwrap_or_else(|_| "invalid".to_string());
+            gateways.push(serde_json::json!({
+                "address": address,
+                "device_type": device_type,
+                "owner": gateway.owner,
+                "owner_changed_at": gateway.owner_changed_at,
+                "created_at": gateway.created_at,
+                "updated_at": gateway.updated_at,
+                "num_location_asserts": gateway.num_location_asserts,
+                "metadata": gateway.metadata.map(|md| {
+                    serde_json::json!({
+                        "location_info": md.location_info.map(|li| {
+                            serde_json::json!({
+                                "location": li.location,
+                                "location_changed_at": li.location_changed_at,
+                            })
+                        }),
+                        "deployment_info": md.deployment_info.map(|di| {
+                            serde_json::json!({
+                                "antenna": di.antenna,
+                                "elevation": di.elevation,
+                                "azimuth": di.azimuth,
+                            })
+                        }),
+                    })
+                }),
+            }));
+        }
+    }
+
+    let output = serde_json::json!({
+        "total": gateways.len(),
+        "gateways": gateways
     });
 
     Msg::ok(serde_json::to_string_pretty(&output)?)

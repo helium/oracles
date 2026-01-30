@@ -36,6 +36,8 @@ impl KeyCache {
         R: MsgVerify,
     {
         let cached_keys = self.cache_receiver.borrow();
+        dbg!(signer.clone());
+        dbg!(cached_keys.clone());
         if (cached_keys.contains(&(signer.clone(), KeyRole::Administrator))
             || cached_keys.contains(&(signer.clone(), KeyRole::Oracle))
             || cached_keys.contains(&(signer.clone(), KeyRole::Carrier)))

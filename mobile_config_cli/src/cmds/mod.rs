@@ -171,12 +171,29 @@ pub enum GatewayCommands {
     InfoAtTimestamp(GetHotspotAtTimestamp),
     /// Stream all gateways and print counts by device type
     DeviceTypeCounts(DeviceTypeCounts),
+    /// Stream all gateways using the v4 endpoint (includes owner info)
+    InfoStreamV4(InfoStreamV4),
 }
 
 #[derive(Debug, Args)]
 pub struct DeviceTypeCounts {
     #[arg(short, long, default_value = "5000")]
     pub batch_size: u32,
+    #[arg(from_global)]
+    pub keypair: PathBuf,
+    #[arg(from_global)]
+    pub config_host: String,
+    #[arg(from_global)]
+    pub config_pubkey: String,
+}
+
+#[derive(Debug, Args)]
+pub struct InfoStreamV4 {
+    #[arg(short, long, default_value = "5000")]
+    pub batch_size: u32,
+    /// Minimum owner_changed_at timestamp (unix seconds). 0 = no filter.
+    #[arg(long, default_value = "0")]
+    pub min_owner_changed_at: u64,
     #[arg(from_global)]
     pub keypair: PathBuf,
     #[arg(from_global)]
