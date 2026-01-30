@@ -385,7 +385,7 @@ impl Gateway {
         .filter_map(|res| async move { res.ok() })
     }
 
-    pub fn stream_by_types_v4<'a>(
+    pub fn stream_gateway_info_v4<'a>(
         db: impl PgExecutor<'a> + 'a,
         types: Vec<GatewayType>,
         min_last_changed_at: DateTime<Utc>,
