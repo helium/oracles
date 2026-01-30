@@ -204,12 +204,12 @@ pub struct TaskManagerBuilder {
 }
 
 struct NamedTask {
-    name: &'static str,
+    name: String,
     task: Box<dyn ManagedTask>,
 }
 
 struct StoppableLocalFuture {
-    name: &'static str,
+    name: String,
     shutdown_trigger: triggered::Trigger,
     future: TaskFuture,
 }
@@ -256,8 +256,19 @@ impl TaskManager {
     ///
     /// Tasks are started in the order they are added and shut down in reverse order.
     pub fn add<T: ManagedTask + 'static>(&mut self, task: T) {
+        self.add_named(std::any::type_name::<T>(), task);
+    }
+
+    /// Adds a task to the manager with a custom name.
+    ///
+    /// Tasks are started in the order they are added and shut down in reverse order.
+    pub fn add_named<N, T>(&mut self, name: N, task: T)
+    where
+        N: Into<String>,
+        T: ManagedTask + 'static,
+    {
         self.tasks.push(NamedTask {
-            name: std::any::type_name::<T>(),
+            name: name.into(),
             task: Box::new(task),
         });
     }
@@ -289,23 +300,20 @@ impl TaskManager {
                 break;
             }
 
-            // Capture task names for error reporting (indices match futures vec)
-            let task_names: Vec<&'static str> = futures.iter().map(|f| f.name).collect();
-
             let mut select = select_all(futures);
 
             tokio::select! {
                 _ = &mut shutdown => {
                     return stop_all(select.into_inner()).await;
                 }
-                (result, index, remaining) = &mut select => match result {
+                (result, completed, remaining) = &mut select => match result {
                     Ok(_) => {
-                        let task = task_names[index];
+                        let task = &completed.name;
                         tracing::info!(task, "task successful");
                         futures = remaining;
                     }
                     Err(err) => {
-                        let task = task_names[index];
+                        let task = &completed.name;
                         tracing::error!(task, ?err, "task failed");
                         let _ = stop_all(remaining).await;
                         return Err(err);
@@ -322,9 +330,20 @@ impl TaskManagerBuilder {
     /// Adds a task to the builder.
     ///
     /// Tasks are started in the order they are added and shut down in reverse order.
-    pub fn add_task<T: ManagedTask + 'static>(mut self, task: T) -> Self {
+    pub fn add_task<T: ManagedTask + 'static>(self, task: T) -> Self {
+        self.add_named(std::any::type_name::<T>(), task)
+    }
+
+    /// Adds a task to the builder with a custom name.
+    ///
+    /// Tasks are started in the order they are added and shut down in reverse order.
+    pub fn add_named<N, T>(mut self, name: N, task: T) -> Self
+    where
+        N: Into<String>,
+        T: ManagedTask + 'static,
+    {
         self.tasks.push(NamedTask {
-            name: std::any::type_name::<T>(),
+            name: name.into(),
             task: Box::new(task),
         });
         self

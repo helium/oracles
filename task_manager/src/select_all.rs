@@ -33,7 +33,7 @@ impl<Fut> SelectAll<Fut> {
 }
 
 impl<Fut: Future + Unpin> Future for SelectAll<Fut> {
-    type Output = (Fut::Output, usize, Vec<Fut>);
+    type Output = (Fut::Output, Fut, Vec<Fut>);
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let item = self
@@ -46,10 +46,9 @@ impl<Fut: Future + Unpin> Future for SelectAll<Fut> {
             });
         match item {
             Some((idx, res)) => {
-                #[allow(clippy::let_underscore_future)]
-                let _ = self.inner.remove(idx);
+                let completed = self.inner.remove(idx);
                 let rest = mem::take(&mut self.inner);
-                Poll::Ready((res, idx, rest))
+                Poll::Ready((res, completed, rest))
             }
             None => Poll::Pending,
         }
