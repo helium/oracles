@@ -9,6 +9,7 @@ members = [
   "db_store",
   "file_store",
   "file_store_oracles",
+  "helium_iceberg",
   "ingest",
   "metrics",
   "mobile_config",
