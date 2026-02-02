@@ -108,6 +108,45 @@ pub struct LocationChangedAtUpdate {
 }
 
 impl Gateway {
+    pub fn compute_hash_v2(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
+
+        hasher.update(self.gateway_type.to_string().as_bytes());
+        hasher.update(
+            self.location
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0u8; 8])
+                .as_ref(),
+        );
+        hasher.update(
+            self.antenna
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.elevation
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.azimuth
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.location_asserts
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(self.owner.as_deref().unwrap_or("").as_bytes());
+
+        hasher.finalize().to_string()
+    }
+
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
         if rows.is_empty() {
             return Ok(0);
