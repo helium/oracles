@@ -105,7 +105,7 @@ impl MobileHotspotInfo {
         .fetch(pool)
     }
 
-    pub fn to_gateway(self) -> anyhow::Result<Gateway> {
+    pub fn to_gateway(self) -> Gateway {
         let location = self.location.map(|loc| loc as u64);
 
         let (antenna, elevation, azimuth) = match self.deployment_info {
@@ -113,7 +113,7 @@ impl MobileHotspotInfo {
                 DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
                     (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
                 }
-                // Only here to satisfy the match, we return None above if DeviceType::Cbrs
+                // Only here to satisfy the match, CBRS must be filter out in fn stream
                 DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
             },
             None => (None, None, None),
@@ -123,7 +123,7 @@ impl MobileHotspotInfo {
 
         let hash = self.compute_hash();
 
-        Ok(Gateway {
+        Gateway {
             address: self.entity_key,
             gateway_type: self.device_type,
             created_at: self.created_at,
@@ -145,7 +145,7 @@ impl MobileHotspotInfo {
             location_asserts: self.num_location_asserts.map(|n| n as u32),
             owner: self.owner,
             owner_changed_at: Some(refreshed_at),
-        })
+        }
     }
 }
 

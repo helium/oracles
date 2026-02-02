@@ -72,15 +72,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
-        .try_filter_map(|mhi| async move {
-            match mhi.to_gateway() {
-                Ok(gw) => Ok(Some(gw)),
-                Err(e) => {
-                    tracing::error!(?e, "error converting gateway");
-                    Err(e)
-                }
-            }
-        })
+        .map_ok(MobileHotspotInfo::to_gateway)
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
         .try_fold(0, |total, batch| async move {
