@@ -1,6 +1,6 @@
 use crate::gateway::{
     db::{Gateway, GatewayType},
-    service::info::{DeploymentInfo, DeviceType},
+    service::info::DeploymentInfo,
 };
 use chrono::{DateTime, Utc};
 use futures::Stream;
@@ -19,7 +19,7 @@ pub struct MobileHotspotInfo {
     num_location_asserts: Option<i32>,
     is_active: Option<bool>,
     dc_onboarding_fee_paid: Option<i64>,
-    device_type: DeviceType,
+    device_type: GatewayType,
     deployment_info: Option<DeploymentInfo>,
     owner: Option<String>,
 }
@@ -98,6 +98,7 @@ impl MobileHotspotInfo {
                     kta.asset = ao.asset
                 WHERE kta.entity_key IS NOT NULL
                     AND mhi.refreshed_at IS NOT NULL
+                    AND device_type != '"cbrs"'
                 ORDER BY kta.entity_key, refreshed_at DESC
             "#,
         )
@@ -105,11 +106,6 @@ impl MobileHotspotInfo {
     }
 
     pub fn to_gateway(&self) -> anyhow::Result<Option<Gateway>> {
-        // We filter out CBRS devices as they are not supported in the Gateway table
-        if self.device_type == DeviceType::Cbrs {
-            return Ok(None);
-        }
-
         let location = self.location.map(|loc| loc as u64);
 
         let (antenna, elevation, azimuth) = match self.deployment_info {
@@ -127,7 +123,7 @@ impl MobileHotspotInfo {
 
         Ok(Some(Gateway {
             address: self.entity_key.clone(),
-            gateway_type: GatewayType::try_from(self.device_type.clone())?,
+            gateway_type: self.device_type.clone(),
             created_at: self.created_at,
             inserted_at: Utc::now(),
             refreshed_at,
@@ -157,7 +153,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for MobileHotspotInfo {
         let dt_raw: String = row.try_get("device_type")?;
         let dt_clean = dt_raw.trim_matches('"'); // handle jsonb -> text of a JSON string
         let device_type =
-            DeviceType::from_str(dt_clean).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            GatewayType::from_str(dt_clean).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
 
         let deployment_info: Option<DeploymentInfo> =
             match row.try_get::<Option<String>, _>("deployment_info") {
