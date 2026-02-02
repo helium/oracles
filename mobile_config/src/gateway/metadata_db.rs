@@ -105,7 +105,7 @@ impl MobileHotspotInfo {
         .fetch(pool)
     }
 
-    pub fn to_gateway(self) -> anyhow::Result<Option<Gateway>> {
+    pub fn to_gateway(self) -> anyhow::Result<Gateway> {
         let location = self.location.map(|loc| loc as u64);
 
         let (antenna, elevation, azimuth) = match self.deployment_info {
@@ -121,10 +121,9 @@ impl MobileHotspotInfo {
 
         let refreshed_at = self.refreshed_at.unwrap_or_else(Utc::now);
 
-        // Compute hash BEFORE moving any fields out of self
         let hash = self.compute_hash();
 
-        Ok(Some(Gateway {
+        Ok(Gateway {
             address: self.entity_key,
             gateway_type: self.device_type,
             created_at: self.created_at,
@@ -146,7 +145,7 @@ impl MobileHotspotInfo {
             location_asserts: self.num_location_asserts.map(|n| n as u32),
             owner: self.owner,
             owner_changed_at: Some(refreshed_at),
-        }))
+        })
     }
 }
 

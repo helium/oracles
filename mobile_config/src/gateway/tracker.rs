@@ -74,8 +74,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
         .map_err(anyhow::Error::from)
         .try_filter_map(|mhi| async move {
             match mhi.to_gateway() {
-                Ok(Some(gw)) => Ok(Some(gw)),
-                Ok(None) => Ok(None),
+                Ok(gw) => Ok(Some(gw)),
                 Err(e) => {
                     tracing::error!(?e, "error converting gateway");
                     Err(e)
