@@ -47,6 +47,9 @@ pub async fn handle_cli(cli: Cli) -> Result<Msg> {
             cmds::GatewayCommands::Info(args) => gateway::info(args).await,
             cmds::GatewayCommands::InfoBatch(args) => gateway::info_batch(args).await,
             cmds::GatewayCommands::InfoAtTimestamp(args) => gateway::info_at_timestamp(args).await,
+            cmds::GatewayCommands::DeviceTypeCounts(args) => {
+                gateway::device_type_counts(args).await
+            }
         },
     }
 }

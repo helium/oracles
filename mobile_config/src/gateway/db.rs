@@ -95,6 +95,8 @@ pub struct Gateway {
     // When location last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
+    pub owner: Option<String>,
+    pub owner_changed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
@@ -122,7 +124,9 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             ) ",
         );
 
@@ -138,7 +142,9 @@ impl Gateway {
                 .push_bind(g.azimuth.map(|v| v as i64))
                 .push_bind(g.location.map(|v| v as i64))
                 .push_bind(g.location_changed_at)
-                .push_bind(g.location_asserts.map(|v| v as i64));
+                .push_bind(g.location_asserts.map(|v| v as i64))
+                .push_bind(g.owner.as_deref())
+                .push_bind(g.owner_changed_at);
         });
 
         let res = qb.build().execute(pool).await?;
@@ -160,11 +166,13 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12
+                $8, $9, $10, $11, $12, $13, $14
             )
             "#,
         )
@@ -180,6 +188,8 @@ impl Gateway {
         .bind(self.location.map(|v| v as i64))
         .bind(self.location_changed_at)
         .bind(self.location_asserts.map(|v| v as i64))
+        .bind(self.owner.as_deref())
+        .bind(self.owner_changed_at)
         .execute(pool)
         .await?;
 
@@ -205,7 +215,9 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             FROM gateways
             WHERE address = $1
             ORDER BY inserted_at DESC
@@ -240,7 +252,9 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             FROM gateways
             WHERE address = ANY($1)
             ORDER BY address, inserted_at DESC
@@ -273,7 +287,9 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             FROM gateways
             WHERE address = $1
             AND inserted_at <= $2
@@ -311,7 +327,9 @@ impl Gateway {
                 azimuth,
                 location,
                 location_changed_at,
-                location_asserts
+                location_asserts,
+                owner,
+                owner_changed_at
             FROM gateways
             WHERE address = ANY($1)
                 AND last_changed_at >= $2
@@ -346,7 +364,9 @@ impl Gateway {
                     azimuth,
                     location,
                     location_changed_at,
-                    location_asserts
+                    location_asserts,
+                    owner,
+                    owner_changed_at
                 FROM gateways
                 WHERE gateway_type = ANY($1)
                 AND last_changed_at >= $2
@@ -381,7 +401,7 @@ impl Gateway {
                 r#"
                     UPDATE gateways AS g
                     SET location_changed_at = v.location_changed_at
-                    FROM ( 
+                    FROM (
                 "#,
             );
 
@@ -397,6 +417,86 @@ impl Gateway {
                     WHERE g.address = v.address
                         AND g.location_changed_at IS NULL
                         AND g.location = v.location
+                "#,
+            );
+
+            let res = qb.build().execute(pool).await?;
+            total += res.rows_affected();
+        }
+
+        Ok(total)
+    }
+
+    /// Get gateways where owner is NULL (for post-migration backfill)
+    /// Only returns addresses where the MOST RECENT record has a NULL owner
+    pub async fn get_null_owners(pool: &PgPool) -> anyhow::Result<Vec<Self>> {
+        let gateways = sqlx::query_as::<_, Self>(
+            r#"
+            WITH latest_gateways AS (
+                SELECT DISTINCT ON (address)
+                    address,
+                    gateway_type,
+                    created_at,
+                    inserted_at,
+                    refreshed_at,
+                    last_changed_at,
+                    hash,
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location,
+                    location_changed_at,
+                    location_asserts,
+                    owner,
+                    owner_changed_at
+                FROM gateways
+                ORDER BY address, inserted_at DESC
+            )
+            SELECT * FROM latest_gateways
+            WHERE owner IS NULL
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(gateways)
+    }
+
+    /// Update owner and owner_changed_at for multiple gateways
+    pub async fn update_owners(pool: &PgPool, gateways: &[Gateway]) -> anyhow::Result<u64> {
+        if gateways.is_empty() {
+            return Ok(0);
+        }
+
+        const MAX_ROWS: usize = 20000;
+        let mut total = 0;
+
+        for chunk in gateways.chunks(MAX_ROWS) {
+            let mut qb = QueryBuilder::<Postgres>::new(
+                r#"
+                    UPDATE gateways AS g
+                    SET
+                        owner = v.owner,
+                        owner_changed_at = v.owner_changed_at
+                    FROM (
+                "#,
+            );
+
+            qb.push_values(chunk, |mut b, gw| {
+                b.push_bind(gw.address.as_ref())
+                    .push_bind(gw.owner.as_deref())
+                    .push_bind(gw.owner_changed_at);
+            });
+
+            qb.push(
+                r#"
+                    ) AS v(address, owner, owner_changed_at)
+                    WHERE g.address = v.address
+                    AND g.inserted_at = (
+                        SELECT MAX(inserted_at)
+                        FROM gateways
+                        WHERE address = v.address
+                    )
                 "#,
             );
 
@@ -428,6 +528,8 @@ impl FromRow<'_, PgRow> for Gateway {
             location: to_u64(row.try_get("location")?),
             location_changed_at: row.try_get("location_changed_at")?,
             location_asserts: to_u32(row.try_get("location_asserts")?),
+            owner: row.try_get("owner")?,
+            owner_changed_at: row.try_get("owner_changed_at")?,
         })
     }
 }
