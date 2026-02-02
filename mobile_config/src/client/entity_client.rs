@@ -55,7 +55,7 @@ impl EntityVerifier for EntityClient {
 }
 
 impl EntityClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
         let cache = Arc::new(Cache::new());
         let cloned_cache = cache.clone();
         tokio::spawn(async move {
@@ -64,8 +64,10 @@ impl EntityClient {
                 .await
         });
 
+        let channel = settings.channel()?;
+
         Ok(Self {
-            client: settings.connect_entity_client(),
+            client: mobile_config::EntityClient::new(channel),
             signing_key: settings.signing_keypair.clone(),
             config_pubkey: settings.config_pubkey.clone(),
             cache_ttl: settings.cache_ttl,

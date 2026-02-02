@@ -2,6 +2,7 @@ extern crate tls_init;
 
 mod error;
 mod gzipped_framed_file;
+mod rolling_file_sink;
 mod settings;
 
 pub mod aws_local;
@@ -19,6 +20,7 @@ pub use error::{AwsError, ChannelError, Error, Result};
 pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
 pub use gzipped_framed_file::GzippedFramedFile;
+pub use rolling_file_sink::{RollingFileSink, RollingFileSinkError, RollingFileWriteResult};
 pub use settings::{BucketSettings, Settings};
 
 // Client functions
@@ -132,17 +134,18 @@ fn _list_files(
     after: Option<DateTime<Utc>>,
 ) -> FileInfoStream {
     let prefix = prefix.into();
+    let bucket = bucket.into();
 
     client
         .list_objects_v2()
-        .bucket(bucket)
+        .bucket(&bucket)
         .prefix(&prefix)
         .set_start_after(after.map(|dt| FileInfo::from_maybe_dotted_prefix(&prefix, dt).into()))
         .into_paginator()
         .send()
         .into_stream_03x()
         .map_ok(|page| stream::iter(page.contents.unwrap_or_default()).map(Ok))
-        .map_err(AwsError::list_object_error)
+        .map_err(move |err| AwsError::list_object_error(err, &bucket, &prefix))
         .try_flatten()
         .try_filter_map(|file| {
             future::ready(FileInfo::try_from(&file).map(Some).map_err(Error::from))
@@ -167,21 +170,23 @@ where
 }
 
 pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -> Result {
+    let bucket: String = bucket.into();
+
     let byte_stream = ByteStream::from_path(&file)
-        .map_err(AwsError::pub_object_byte_stream_error)
+        .map_err(|err| AwsError::pub_object_byte_stream_error(err, &bucket, file))
         .await?;
 
     poc_metrics::record_duration!(
         "file_store_put_duration",
         client
             .put_object()
-            .bucket(bucket)
+            .bucket(&bucket)
             .key(file.file_name().map(|name| name.to_string_lossy()).unwrap())
             .body(byte_stream)
             .content_type("application/octet-stream")
             .send()
             .map_ok(|_| ())
-            .map_err(AwsError::put_object_error)
+            .map_err(|err| AwsError::put_object_error(err, &bucket, file))
             .await
     )
 }
@@ -191,15 +196,18 @@ pub async fn remove_file(
     bucket: impl Into<String>,
     key: impl Into<String>,
 ) -> Result {
+    let bucket = bucket.into();
+    let key = key.into();
+
     poc_metrics::record_duration!(
         "file_store_remove_duration",
         client
             .delete_object()
-            .bucket(bucket)
-            .key(key)
+            .bucket(&bucket)
+            .key(&key)
             .send()
             .map_ok(|_| ())
-            .map_err(AwsError::delete_object_error)
+            .map_err(|err| AwsError::delete_object_error(err, bucket, key))
             .await
     )
 }
@@ -286,13 +294,16 @@ async fn get_byte_stream(
     bucket: impl Into<String>,
     key: impl Into<String>,
 ) -> Result<ByteStream> {
+    let bucket = bucket.into();
+    let key = key.into();
+
     client
         .get_object()
-        .bucket(bucket)
-        .key(key)
+        .bucket(&bucket)
+        .key(&key)
         .send()
         .map_ok(|output| output.body)
-        .map_err(AwsError::get_object_error)
+        .map_err(|err| AwsError::get_object_error(err, bucket, key))
         .fuse()
         .await
 }

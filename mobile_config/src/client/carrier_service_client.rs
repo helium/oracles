@@ -8,6 +8,7 @@ use helium_proto_crypto::{MsgSign, MsgVerify};
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tonic::transport::Channel;
+
 #[async_trait]
 pub trait CarrierServiceVerifier: Send + Sync + 'static {
     async fn payer_key_to_service_provider(
@@ -20,6 +21,7 @@ pub trait CarrierServiceVerifier: Send + Sync + 'static {
         epoch_start: &DateTime<Utc>,
     ) -> Result<Vec<ServiceProviderPromotions>, ClientError>;
 }
+
 #[derive(Clone)]
 pub struct CarrierServiceClient {
     client: mobile_config::CarrierServiceClient<Channel>,
@@ -94,7 +96,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
 }
 
 impl CarrierServiceClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
         let cache = Arc::new(Cache::new());
         let cloned_cache = cache.clone();
         tokio::spawn(async move {
@@ -103,8 +105,10 @@ impl CarrierServiceClient {
                 .await
         });
 
+        let channel = settings.channel()?;
+
         Ok(Self {
-            client: settings.connect_carrier_service_client(),
+            client: mobile_config::CarrierServiceClient::new(channel),
             signing_key: settings.signing_keypair.clone(),
             config_pubkey: settings.config_pubkey.clone(),
             cache_ttl: settings.cache_ttl,
