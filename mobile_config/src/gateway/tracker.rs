@@ -1,4 +1,7 @@
-use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
+use crate::gateway::{
+    db::{backfill_hash_v2, Gateway},
+    metadata_db::MobileHotspotInfo,
+};
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -34,6 +37,13 @@ impl Tracker {
 
     async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting with interval: {:?}", self.interval);
+
+        // Backfill hash_v2 for existing rows at startup
+        match backfill_hash_v2(&self.pool).await {
+            Ok(count) => tracing::info!(count, "backfilled hash_v2 for existing gateways"),
+            Err(err) => tracing::error!(?err, "error backfilling hash_v2"),
+        }
+
         let mut interval = tokio::time::interval(self.interval);
 
         loop {

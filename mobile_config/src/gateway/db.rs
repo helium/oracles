@@ -482,6 +482,70 @@ impl Gateway {
     }
 }
 
+pub async fn backfill_hash_v2(pool: &PgPool) -> anyhow::Result<u64> {
+    const BATCH_SIZE: i64 = 1000;
+    let mut total_updated = 0u64;
+
+    loop {
+        let rows = sqlx::query_as::<_, Gateway>(
+            r#"
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                hash_v2,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts,
+                owner,
+                owner_changed_at
+            FROM gateways
+            WHERE hash_v2 IS NULL
+            LIMIT $1
+            "#,
+        )
+        .bind(BATCH_SIZE)
+        .fetch_all(pool)
+        .await?;
+
+        if rows.is_empty() {
+            break;
+        }
+
+        for gw in &rows {
+            let hash_v2 = gw.compute_hash_v2();
+            sqlx::query(
+                r#"
+                UPDATE gateways
+                SET hash_v2 = $1
+                WHERE address = $2 AND inserted_at = $3
+                "#,
+            )
+            .bind(&hash_v2)
+            .bind(gw.address.as_ref())
+            .bind(gw.inserted_at)
+            .execute(pool)
+            .await?;
+        }
+
+        total_updated += rows.len() as u64;
+        tracing::info!(
+            batch_size = rows.len(),
+            total_updated,
+            "backfilled hash_v2 batch"
+        );
+    }
+
+    Ok(total_updated)
+}
+
 impl FromRow<'_, PgRow> for Gateway {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         // helpers to map Option<i64> -> Option<u32/u64>
