@@ -441,48 +441,6 @@ impl Gateway {
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
     }
-
-    pub async fn update_bulk_location_changed_at(
-        pool: &PgPool,
-        updates: &[LocationChangedAtUpdate],
-    ) -> anyhow::Result<u64> {
-        if updates.is_empty() {
-            return Ok(0);
-        }
-
-        const MAX_ROWS: usize = 20000;
-        let mut total = 0;
-
-        for chunk in updates.chunks(MAX_ROWS) {
-            let mut qb = QueryBuilder::<Postgres>::new(
-                r#"
-                    UPDATE gateways AS g
-                    SET location_changed_at = v.location_changed_at
-                    FROM (
-                "#,
-            );
-
-            qb.push_values(chunk, |mut b, update| {
-                b.push_bind(update.address.as_ref())
-                    .push_bind(update.location_changed_at)
-                    .push_bind(update.location as i64);
-            });
-
-            qb.push(
-                r#"
-                    ) AS v(address, location_changed_at, location)
-                    WHERE g.address = v.address
-                        AND g.location_changed_at IS NULL
-                        AND g.location = v.location
-                "#,
-            );
-
-            let res = qb.build().execute(pool).await?;
-            total += res.rows_affected();
-        }
-
-        Ok(total)
-    }
 }
 
 impl FromRow<'_, PgRow> for Gateway {
