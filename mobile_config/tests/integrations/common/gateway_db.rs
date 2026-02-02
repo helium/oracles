@@ -19,6 +19,8 @@ pub struct TestGateway {
     last_changed_at: DateTime<Utc>,
     #[builder(default)]
     hash: String,
+    #[builder(default)]
+    hash_v2: Option<String>,
     #[builder(default = "Some(18)")]
     antenna: Option<u32>,
     #[builder(default)]
@@ -47,6 +49,7 @@ impl From<TestGateway> for Gateway {
             refreshed_at: tg.refreshed_at,
             last_changed_at: tg.last_changed_at,
             hash: tg.hash,
+            hash_v2: tg.hash_v2,
             antenna: tg.antenna,
             elevation: tg.elevation,
             azimuth: tg.azimuth,

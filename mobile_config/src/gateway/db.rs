@@ -88,6 +88,7 @@ pub struct Gateway {
     // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
     pub last_changed_at: DateTime<Utc>,
     pub hash: String,
+    pub hash_v2: Option<String>,
     pub antenna: Option<u32>,
     pub elevation: Option<u32>,
     pub azimuth: Option<u32>,
@@ -119,6 +120,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -137,6 +139,7 @@ impl Gateway {
                 .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
+                .push_bind(g.hash_v2.as_deref())
                 .push_bind(g.antenna.map(|v| v as i64))
                 .push_bind(g.elevation.map(|v| v as i64))
                 .push_bind(g.azimuth.map(|v| v as i64))
@@ -161,6 +164,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -172,7 +176,7 @@ impl Gateway {
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13, $14
+                $8, $9, $10, $11, $12, $13, $14, $15
             )
             "#,
         )
@@ -182,6 +186,7 @@ impl Gateway {
         .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
+        .bind(self.hash_v2.as_deref())
         .bind(self.antenna.map(|v| v as i64))
         .bind(self.elevation.map(|v| v as i64))
         .bind(self.azimuth.map(|v| v as i64))
@@ -210,6 +215,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -247,6 +253,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -282,6 +289,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -322,6 +330,7 @@ impl Gateway {
                 refreshed_at,
                 last_changed_at,
                 hash,
+                hash_v2,
                 antenna,
                 elevation,
                 azimuth,
@@ -359,6 +368,7 @@ impl Gateway {
                     refreshed_at,
                     last_changed_at,
                     hash,
+                    hash_v2,
                     antenna,
                     elevation,
                     azimuth,
@@ -402,6 +412,7 @@ impl Gateway {
                     refreshed_at,
                     last_changed_at,
                     hash,
+                    hash_v2,
                     antenna,
                     elevation,
                     azimuth,
@@ -488,6 +499,7 @@ impl FromRow<'_, PgRow> for Gateway {
             refreshed_at: row.try_get("refreshed_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
             hash: row.try_get("hash")?,
+            hash_v2: row.try_get("hash_v2")?,
             antenna: to_u32(row.try_get("antenna")?),
             elevation: to_u32(row.try_get("elevation")?),
             azimuth: to_u32(row.try_get("azimuth")?),

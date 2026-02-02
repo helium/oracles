@@ -133,6 +133,7 @@ impl MobileHotspotInfo {
             refreshed_at,
             last_changed_at: refreshed_at,
             hash: self.compute_hash(),
+            hash_v2: None,
             antenna,
             elevation,
             azimuth,

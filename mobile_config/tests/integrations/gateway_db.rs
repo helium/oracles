@@ -195,6 +195,7 @@ fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<U
         refreshed_at: t,
         last_changed_at: t,
         hash: "h0".to_string(),
+        hash_v2: None,
         antenna: Some(1),
         elevation: Some(2),
         azimuth: Some(180),
