@@ -23,14 +23,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[async_trait]
-pub trait DataWriter: Send + Sync {
-    async fn write<T>(&self, records: Vec<T>) -> Result
-    where
-        T: Serialize + Send + Sync + 'static;
+pub trait DataWriter<T>: Send + Sync
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    async fn write(&self, records: Vec<T>) -> Result;
 
-    async fn write_stream<T, S>(&self, stream: S) -> Result
+    async fn write_stream<S>(&self, stream: S) -> Result
     where
-        T: Serialize + Send + Sync + 'static,
         S: Stream<Item = T> + Send + 'static;
 }
 
@@ -199,11 +199,8 @@ impl IcebergTable {
 }
 
 #[async_trait]
-impl DataWriter for IcebergTable {
-    async fn write<T>(&self, records: Vec<T>) -> Result
-    where
-        T: Serialize + Send + Sync + 'static,
-    {
+impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
+    async fn write(&self, records: Vec<T>) -> Result {
         if records.is_empty() {
             return Ok(());
         }
@@ -212,9 +209,8 @@ impl DataWriter for IcebergTable {
         self.write_and_commit(batch).await
     }
 
-    async fn write_stream<T, S>(&self, stream: S) -> Result
+    async fn write_stream<S>(&self, stream: S) -> Result
     where
-        T: Serialize + Send + Sync + 'static,
         S: Stream<Item = T> + Send + 'static,
     {
         let records: Vec<T> = stream.collect().await;

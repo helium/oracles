@@ -1,8 +1,7 @@
-use crate::{DataWriter, Error, Result};
+use crate::{DataWriter, Result};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use serde::Serialize;
-use std::any::Any;
 use std::sync::Mutex;
 
 /// An in-memory implementation of `DataWriter` for testing purposes.
@@ -13,9 +12,8 @@ use std::sync::Mutex;
 ///
 /// # Type Safety
 ///
-/// `MemoryDataWriter<T>` is generic over the record type. When `write` is called,
-/// it verifies at runtime that the records being written match the expected type `T`.
-/// If a type mismatch occurs, an error is returned.
+/// `MemoryDataWriter<T>` is generic over the record type `T`, providing
+/// compile-time type safety through the `DataWriter<T>` trait.
 pub struct MemoryDataWriter<T> {
     records: Mutex<Vec<T>>,
 }
@@ -55,38 +53,22 @@ impl<T: Clone> Default for MemoryDataWriter<T> {
 }
 
 #[async_trait]
-impl<T: Clone + Send + Sync + 'static> DataWriter for MemoryDataWriter<T> {
-    async fn write<U>(&self, records: Vec<U>) -> Result
-    where
-        U: Serialize + Send + Sync + 'static,
-    {
+impl<T: Clone + Serialize + Send + Sync + 'static> DataWriter<T> for MemoryDataWriter<T> {
+    async fn write(&self, records: Vec<T>) -> Result {
         if records.is_empty() {
             return Ok(());
         }
 
-        // Use Any to downcast and verify type consistency
-        let boxed: Box<dyn Any> = Box::new(records);
-        let typed_records = boxed.downcast::<Vec<T>>().map_err(|_| {
-            Error::Writer(format!(
-                "type mismatch: expected {}, got different type",
-                std::any::type_name::<T>()
-            ))
-        })?;
-
-        self.records
-            .lock()
-            .expect("lock poisoned")
-            .extend(*typed_records);
+        self.records.lock().expect("lock poisoned").extend(records);
 
         Ok(())
     }
 
-    async fn write_stream<U, S>(&self, stream: S) -> Result
+    async fn write_stream<S>(&self, stream: S) -> Result
     where
-        U: Serialize + Send + Sync + 'static,
-        S: Stream<Item = U> + Send + 'static,
+        S: Stream<Item = T> + Send + 'static,
     {
-        let records: Vec<U> = stream.collect().await;
+        let records: Vec<T> = stream.collect().await;
         self.write(records).await
     }
 }
@@ -180,21 +162,9 @@ mod tests {
         assert!(writer.is_empty());
     }
 
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    struct OtherRecord {
-        value: i32,
-    }
-
-    #[tokio::test]
-    async fn test_type_mismatch_error() {
-        let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
-
-        let result = writer.write(vec![OtherRecord { value: 42 }]).await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, Error::Writer(_)));
-    }
+    // Note: Type mismatch tests are no longer needed because the trait-level generic
+    // provides compile-time type safety. Attempting to write a different type will
+    // result in a compile error rather than a runtime error.
 
     #[tokio::test]
     async fn test_write_stream() {
@@ -226,17 +196,5 @@ mod tests {
         writer.write_stream(stream).await.unwrap();
 
         assert!(writer.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_write_stream_type_mismatch() {
-        let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
-
-        let stream = futures::stream::iter(vec![OtherRecord { value: 42 }]);
-        let result = writer.write_stream(stream).await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, Error::Writer(_)));
     }
 }
