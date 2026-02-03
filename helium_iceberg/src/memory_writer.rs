@@ -1,6 +1,5 @@
 use crate::{DataWriter, Result};
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
 use serde::Serialize;
 use std::sync::Mutex;
 
@@ -62,14 +61,6 @@ impl<T: Clone + Serialize + Send + Sync + 'static> DataWriter<T> for MemoryDataW
         self.records.lock().expect("lock poisoned").extend(records);
 
         Ok(())
-    }
-
-    async fn write_stream<S>(&self, stream: S) -> Result
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write(records).await
     }
 }
 

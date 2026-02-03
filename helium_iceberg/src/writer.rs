@@ -27,7 +27,11 @@ where
 
     async fn write_stream<S>(&self, stream: S) -> Result
     where
-        S: Stream<Item = T> + Send + 'static;
+        S: Stream<Item = T> + Send + 'static,
+    {
+        let records: Vec<T> = stream.collect().await;
+        self.write(records).await
+    }
 }
 
 pub struct IcebergTable {
@@ -185,13 +189,5 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
 
         let batch = self.records_to_batch(&records)?;
         self.write_and_commit(batch).await
-    }
-
-    async fn write_stream<S>(&self, stream: S) -> Result
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write(records).await
     }
 }
