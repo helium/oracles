@@ -1,5 +1,6 @@
 use crate::{DataWriter, Error, Result};
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use serde::Serialize;
 use std::any::Any;
 use std::sync::Mutex;
@@ -78,6 +79,15 @@ impl<T: Clone + Send + Sync + 'static> DataWriter for MemoryDataWriter<T> {
             .extend(*typed_records);
 
         Ok(())
+    }
+
+    async fn write_stream<U, S>(&self, stream: S) -> Result
+    where
+        U: Serialize + Send + Sync + 'static,
+        S: Stream<Item = U> + Send + 'static,
+    {
+        let records: Vec<U> = stream.collect().await;
+        self.write(records).await
     }
 }
 
@@ -180,6 +190,50 @@ mod tests {
         let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
 
         let result = writer.write(vec![OtherRecord { value: 42 }]).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, Error::Writer(_)));
+    }
+
+    #[tokio::test]
+    async fn test_write_stream() {
+        let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
+
+        let records = vec![
+            TestRecord {
+                id: 1,
+                name: "alice".to_string(),
+            },
+            TestRecord {
+                id: 2,
+                name: "bob".to_string(),
+            },
+        ];
+
+        let stream = futures::stream::iter(records.clone());
+        writer.write_stream(stream).await.unwrap();
+
+        assert_eq!(writer.len(), 2);
+        assert_eq!(writer.records(), records);
+    }
+
+    #[tokio::test]
+    async fn test_write_stream_empty() {
+        let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
+
+        let stream = futures::stream::iter(Vec::<TestRecord>::new());
+        writer.write_stream(stream).await.unwrap();
+
+        assert!(writer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_write_stream_type_mismatch() {
+        let writer: MemoryDataWriter<TestRecord> = MemoryDataWriter::new();
+
+        let stream = futures::stream::iter(vec![OtherRecord { value: 42 }]);
+        let result = writer.write_stream(stream).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();

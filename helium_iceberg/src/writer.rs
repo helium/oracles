@@ -2,6 +2,7 @@ use crate::{Error, Result, Settings};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use iceberg::arrow::{schema_to_arrow_schema, RecordBatchPartitionSplitter};
 use iceberg::table::Table;
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
@@ -26,6 +27,11 @@ pub trait DataWriter: Send + Sync {
     async fn write<T>(&self, records: Vec<T>) -> Result
     where
         T: Serialize + Send + Sync + 'static;
+
+    async fn write_stream<T, S>(&self, stream: S) -> Result
+    where
+        T: Serialize + Send + Sync + 'static,
+        S: Stream<Item = T> + Send + 'static;
 }
 
 pub struct IcebergTable {
@@ -110,8 +116,7 @@ impl IcebergTable {
 
     fn records_to_batch<T: Serialize>(&self, records: &[T]) -> Result<RecordBatch> {
         let iceberg_schema = self.table.metadata().current_schema();
-        let arrow_schema =
-            schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
+        let arrow_schema = schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
 
         let mut decoder = ReaderBuilder::new(Arc::new(arrow_schema))
             .build_decoder()
@@ -205,5 +210,14 @@ impl DataWriter for IcebergTable {
 
         let batch = self.records_to_batch(&records)?;
         self.write_and_commit(batch).await
+    }
+
+    async fn write_stream<T, S>(&self, stream: S) -> Result
+    where
+        T: Serialize + Send + Sync + 'static,
+        S: Stream<Item = T> + Send + 'static,
+    {
+        let records: Vec<T> = stream.collect().await;
+        self.write(records).await
     }
 }
