@@ -1,3 +1,4 @@
+use crate::catalog::Catalog;
 use crate::{Error, Result, Settings};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
@@ -14,12 +15,7 @@ use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::partitioning::PartitioningWriter;
-use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableIdent};
-use iceberg_catalog_rest::{
-    RestCatalog, RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
-};
 use serde::Serialize;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[async_trait]
@@ -35,8 +31,8 @@ where
 }
 
 pub struct IcebergTable {
-    catalog: Arc<RestCatalog>,
-    table: Table,
+    pub(crate) catalog: Catalog,
+    pub(crate) table: Table,
 }
 
 pub struct IcebergTableBuilder {
@@ -72,46 +68,28 @@ impl IcebergTable {
         IcebergTableBuilder::new(settings, namespace, table_name)
     }
 
+    /// Create an `IcebergTable` from an existing catalog connection.
+    pub async fn from_catalog(
+        catalog: Catalog,
+        namespace: impl Into<String>,
+        table_name: impl Into<String>,
+    ) -> Result<Self> {
+        let table = catalog.load_table(namespace, table_name).await?;
+        Ok(Self { catalog, table })
+    }
+
+    /// Connect to an Iceberg table using the provided settings.
+    ///
+    /// This creates a new catalog connection. If you need to share a catalog
+    /// connection across multiple tables, use `Catalog::connect()` followed by
+    /// `IcebergTable::from_catalog()`.
     pub async fn connect(
         settings: Settings,
         namespace: impl Into<String>,
         table_name: impl Into<String>,
     ) -> Result<Self> {
-        let namespace = namespace.into();
-        let table_name = table_name.into();
-
-        let mut config = HashMap::new();
-        config.insert(
-            REST_CATALOG_PROP_URI.to_string(),
-            settings.catalog_uri.clone(),
-        );
-        if let Some(ref warehouse) = settings.warehouse {
-            config.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
-        }
-
-        let catalog = RestCatalogBuilder::default()
-            .load(&settings.catalog_name, config)
-            .await
-            .map_err(Error::Iceberg)?;
-
-        let namespace_ident = NamespaceIdent::new(namespace.clone());
-        let table_ident = TableIdent::new(namespace_ident.clone(), table_name.clone());
-
-        let table = catalog
-            .load_table(&table_ident)
-            .await
-            .map_err(|e| match e.kind() {
-                iceberg::ErrorKind::DataInvalid => Error::TableNotFound {
-                    namespace,
-                    table: table_name,
-                },
-                _ => Error::Iceberg(e),
-            })?;
-
-        Ok(Self {
-            catalog: Arc::new(catalog),
-            table,
-        })
+        let catalog = Catalog::connect(&settings).await?;
+        Self::from_catalog(catalog, namespace, table_name).await
     }
 
     fn records_to_batch<T: Serialize>(&self, records: &[T]) -> Result<RecordBatch> {

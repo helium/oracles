@@ -1,3 +1,5 @@
+use crate::catalog::Catalog;
+use crate::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7,4 +9,13 @@ pub struct Settings {
     pub warehouse: Option<String>,
     #[serde(skip_serializing)]
     pub auth_token: Option<String>,
+}
+
+impl Settings {
+    /// Connect to an Iceberg REST catalog using these settings.
+    ///
+    /// This is a convenience method equivalent to `Catalog::connect(self)`.
+    pub async fn connect(&self) -> Result<Catalog> {
+        Catalog::connect(self).await
+    }
 }
