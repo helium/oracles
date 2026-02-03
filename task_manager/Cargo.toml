@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 tokio = { workspace = true }
-futures = {workspace = true}
-futures-util = {workspace = true}
-triggered = {workspace = true}
+futures = { workspace = true }
+futures-util = { workspace = true }
+triggered = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["ansi", "json"] }
