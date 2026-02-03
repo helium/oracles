@@ -64,8 +64,6 @@ pub struct GatewayInfoV3 {
     pub created_at: DateTime<Utc>,
     // updated_at refers to the last time the data was actually changed.
     pub updated_at: DateTime<Utc>,
-    // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
-    pub refreshed_at: DateTime<Utc>,
     pub num_location_asserts: i32,
 }
 
@@ -99,7 +97,6 @@ impl TryFrom<Gateway> for GatewayInfoV3 {
             device_type: gateway.gateway_type.into(),
             created_at: gateway.created_at,
             updated_at: gateway.last_changed_at,
-            refreshed_at: gateway.refreshed_at,
             num_location_asserts: gateway.location_asserts.unwrap_or(0) as i32,
         })
     }
