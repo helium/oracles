@@ -64,7 +64,6 @@ pub struct PreHistoricalGateway {
     pub created_at: DateTime<Utc>,
     // When record was last updated
     pub updated_at: DateTime<Utc>,
-    // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
     pub last_changed_at: DateTime<Utc>,
     pub hash: String,
     pub antenna: Option<u32>,

@@ -11,17 +11,17 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct MobileHotspotInfo {
-    pub entity_key: PublicKeyBinary,
-    pub refreshed_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub location: Option<i64>,
-    pub is_full_hotspot: Option<bool>,
-    pub num_location_asserts: Option<i32>,
-    pub is_active: Option<bool>,
-    pub dc_onboarding_fee_paid: Option<i64>,
-    pub device_type: DeviceType,
-    pub deployment_info: Option<DeploymentInfo>,
-    pub owner: Option<String>,
+    entity_key: PublicKeyBinary,
+    refreshed_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    location: Option<i64>,
+    is_full_hotspot: Option<bool>,
+    num_location_asserts: Option<i32>,
+    is_active: Option<bool>,
+    dc_onboarding_fee_paid: Option<i64>,
+    device_type: DeviceType,
+    deployment_info: Option<DeploymentInfo>,
+    owner: Option<String>,
 }
 
 impl MobileHotspotInfo {
