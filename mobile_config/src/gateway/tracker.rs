@@ -1,5 +1,4 @@
 use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
-use chrono::Utc;
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -64,10 +63,13 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
         .try_filter_map(|mhi| async move {
-            // Temporary, will be removed in next PR until next PR
-            let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
             match mhi.to_gateway() {
-                Ok(Some(gw)) => Ok(Some((gw, refreshed_at))),
+                Ok(Some(gw)) => Ok({
+                    // Temporary, will be removed in next PR
+                    // NOTE: last_changed_at = to_gateway in to_gateway()
+                    let refreshed_at = gw.last_changed_at;
+                    Some((gw, refreshed_at))
+                }),
                 Ok(None) => Ok(None),
                 Err(e) => {
                     tracing::error!(?e, "error converting gateway");
