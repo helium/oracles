@@ -1,0 +1,32 @@
+[package]
+name = "helium-iceberg"
+version = "0.1.0"
+description = "Apache Iceberg table writer for Helium Oracles"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# Iceberg dependencies
+iceberg = "0.8"
+iceberg-catalog-rest = "0.8"
+
+# Arrow dependencies
+arrow-array = "57"
+arrow-json = "57"
+arrow-schema = "57"
+parquet = "57"
+
+tls-init = { path = "../tls_init" }
+
+[dev-dependencies]
+chrono = { workspace = true }
+rand = { workspace = true }
+tracing-subscriber = { workspace = true }

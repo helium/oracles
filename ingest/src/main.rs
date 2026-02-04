@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use ingest::{server_chain, server_iot, server_mobile, Mode, Settings};
+use ingest::{server_chain, server_mobile, Mode, Settings};
 use std::path;
 
 #[derive(Debug, clap::Parser)]
@@ -47,7 +47,6 @@ impl Server {
 
         // run the grpc server in either iot, mobile 5g, or chain mode
         match settings.mode {
-            Mode::Iot => server_iot::grpc_server(settings).await,
             Mode::Mobile => server_mobile::grpc_server(settings).await,
             Mode::Chain => server_chain::grpc_server(settings).await,
         }

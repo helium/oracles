@@ -1,0 +1,125 @@
+
+services:
+  postgres:
+    image: postgres:16
+    networks:
+      iceberg_net:
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    networks:
+      iceberg_net:
+        aliases:
+          - iceberg.minio
+    restart: unless-stopped
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_DOMAIN=minio
+    ports:
+      - 9100:9100
+      - 9000:9000
+    volumes:
+      - minio_data:/data
+    command: ["server", "/data", "--console-address", ":9100"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    networks:
+      iceberg_net:
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - BUCKET_SINK=glacon
+    volumes:
+      - ./infra/minio/init.sh:/init.sh
+    entrypoint: /bin/sh -c "/init.sh"
+
+  catalog:
+    build:
+      context: infra/gravitino
+      dockerfile: Dockerfile
+    image: local/catalog
+    networks:
+      iceberg_net:
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      - GRAVITINO_AUX_SERVICES=iceberg-rest
+      - GRAVITINO_IO_IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - GRAVITINO_WAREHOUSE=s3://iceberg/
+      - GRAVITINO_S3_ENDPOINT=http://minio:9000
+      - GRAVITINO_S3_REGION=us-east-1
+      - GRAVITINO_S3_ACCESS_KEY=admin
+      - GRAVITINO_S3_SECRET_KEY=password
+      - GRAVITINO_CATALOG_BACKEND=jdbc
+      - GRAVITINO_URI=jdbc:postgresql://postgres:5432/postgres
+      - GRAVITINO_JDBC_DRIVER=org.postgresql.Driver
+      - GRAVITINO_JDBC_USER=postgres
+      - GRAVITINO_JDBC_PASSWORD=postgres
+    ports:
+      - 9001:9001
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f http://localhost:9001/iceberg/v1/config || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  trino:
+    image: trinodb/trino:latest
+    networks:
+      - iceberg_net
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+    volumes:
+      - ./infra/trino/etc:/etc/trino
+    healthcheck:
+      test: ["CMD-SHELL", "trino --execute 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+networks:
+  iceberg_net:
+
+volumes:
+  postgres_data:
+  minio_data:

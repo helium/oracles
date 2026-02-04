@@ -1,9 +1,18 @@
-# Oracles [![CI](https://github.com/helium/oracles/actions/workflows/CI.yml/badge.svg)](https://github.com/helium/oracles/actions/workflows/CI.yml)
+# Helium Mobile Oracles [![CI](https://github.com/helium/oracles/actions/workflows/CI.yml/badge.svg)](https://github.com/helium/oracles/actions/workflows/CI.yml)
 
-## Mobile
+Oracles for the Helium Mobile Network.
+
+> **Note**: This repository was split from the main [helium/oracles](https://github.com/helium/oracles) repository. For IoT oracles, see [helium/oracles-iot](https://github.com/helium/oracles-iot).
+
+## Architecture
 
 ```mermaid
 flowchart TD
+    DB1[(Foundation owned db populated by helius)]
+    MC("`**Mobile Config**
+        - Provides access to on-chain data
+        - Stores pubkeys for remote systems
+    `")
     MI("`**Mobile Ingestor**
         - Heartbeats (cbrs, wifi)
         - Speedtests
@@ -12,78 +21,84 @@ flowchart TD
         - Coverage objects
         - Radio thresholds (hip-84)
     `")
-    MV("`**Mobile Verifier**
-        - Validates all incoming data 
-        - Calculates rewards at 01:30 UTC
-    `")
     MPV("`**Mobile Packet Verifier**
         - Burns DC for data transfer (on solana)
     `")
+    MV("`**Mobile Verifier**
+        - Validates all incoming data
+        - Calculates rewards at 01:30 UTC
+    `")
     MP("`**Mobile Price**
         - Records Pyth price for MOBILE
-    `")
-    DB1[(Foundation owned db populated by helius)]
-    MC("`**Mobile Config**
-        - Provides access to on-chain data
-        - Stores pubkeys for remote systems
     `")
     MRI("`**Mobile Reward Index**
         - Writes rewards to foundation db
     `")
     DB2[(Foundation owned db that stores reward totals)]
     S[(Solana)]
-    MI -- S3 --> MV
-    MI -- S3 --> MPV
-    MPV -- S3 --> MV
-    MPV -- gRPC --> MC
-    MPV --> S
-    MP <--> S
-    MP -- S3 --> MV
     DB1 --> MC
     MC -- gRPC --> MV
-    MV -- S3 --> MRI
+    MC -- gRPC --> MPV
+    MI -- s3 --> MV
+    MI -- s3 --> MPV
+    MPV -- s3 --> MV
+    MPV --> S
+    MP <--> S
+    MP -- s3 --> MV
+    MV -- s3 --> MRI
     MRI --> DB2
 ```
 
-## IOT
+## Components
 
-```mermaid
-flowchart TD
-    DB1[(Foundation owned db populated by helius)]
-    IC("`**IOT Config**
-        - Provides access to on-chain data
-        - Stores pubkeys for remote systems
-        - Store orgs and routes used by Helium Packet Router
-    `")
-    HPR("`**Helium Packet Router**
-        - Ingest packets from Hotspots
-        - Deliver packets to LNS
-    `")
-    IPV("`**IOT Packet Verifier**
-        - Burns DC for data transfer (on solana)
-    `")
-    II("`**IOT Ingestor**
-        - Beacons
-        - Wtinesses
-        - Long lived grpc streams
-    `")
-    IV("`**IOT Verifier**
-        - Validates all incoming data 
-        - Calculates rewards at 01:30 UTC
-    `")
-    IE("`**IOT Entropy**
-        - Creates entropy used by gateways and iot-verifier
-    `")
-    IRE("`**IOT Reward Index**
-        - Writes rewards to foundation db
-    `")
-    DB2[(Foundation owned db that stores reward totals)]
-    DB1 --> IC
-    IC -- gRPC --> HPR
-    HPR -- s3 --> IPV
-    II -- s3 --> IV
-    IPV -- s3 --> IV
-    IE -- s3 --> IV
-    IV -- s3 --> IRE
-    IRE --> DB2
+### Mobile Verifier
+Validates all incoming data (heartbeats, speedtests, data transfer sessions, subscriber location rewards, coverage objects) and calculates rewards at 01:30 UTC.
+
+### Mobile Config
+Configuration APIs for Mobile subnetwork - provides access to on-chain data and stores public keys for remote systems.
+
+### Mobile Packet Verifier
+Packet verification - burns Data Credits for data transfer on Solana.
+
+### Supporting Services
+- **Ingest**: Data ingest server for Mobile network (heartbeats, speedtests, coverage objects)
+- **Price**: Price oracle for MOBILE token
+- **Reward Index**: Writes rewards to foundation database
+- **PoC Entropy**: Creates entropy for mobile network operations
+
+## Shared Libraries
+
+This repository includes shared infrastructure libraries:
+
+- `file-store` and `file-store-oracles`: File-based storage abstractions
+- `db-store`: Database storage layer
+- `task-manager`: Task scheduling and management
+- `custom-tracing`: Tracing utilities
+- `metrics`: Metrics collection (poc-metrics)
+- `tls-init`: TLS initialization
+- `price-tracker`: Price tracking utilities
+- `reward-scheduler`: Reward scheduling
+- `solana`: Solana blockchain integration
+- `denylist`: Denylist management
+
+## Development
+
+### Building
+
+```bash
+cargo build --release
 ```
+
+### Testing
+
+```bash
+cargo test --workspace
+```
+
+## Deployment
+
+Mobile services are built as Docker images and deployed via the CI/CD pipeline. Images are pushed to GitHub Container Registry (GHCR) and then to AWS ECR for production deployment.
+
+## Multi-Mode Applications
+
+Some applications in this repository (ingest, price, reward_index, poc_entropy) contain code for both IoT and Mobile networks. IoT-specific code will be pruned in future updates.
