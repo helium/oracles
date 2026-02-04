@@ -1,4 +1,5 @@
 use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
+use chrono::Utc;
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -63,8 +64,10 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
         .try_filter_map(|mhi| async move {
+            // Temporary, will be removed in next PR until next PR
+            let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
             match mhi.to_gateway() {
-                Ok(Some(gw)) => Ok(Some(gw)),
+                Ok(Some(gw)) => Ok(Some((gw, refreshed_at))),
                 Ok(None) => Ok(None),
                 Err(e) => {
                     tracing::error!(?e, "error converting gateway");
@@ -75,7 +78,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
         .try_fold(0, |total, batch| async move {
-            let addresses: Vec<_> = batch.iter().map(|gw| gw.address.clone()).collect();
+            let addresses: Vec<_> = batch.iter().map(|(gw, _)| gw.address.clone()).collect();
             let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
             let mut existing_map = existing_gateways
                 .into_iter()
@@ -84,7 +87,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
             let mut to_insert = Vec::with_capacity(batch.len());
 
-            for mut gw in batch {
+            for (mut gw, refreshed_at) in batch {
                 match existing_map.remove(&gw.address) {
                     None => {
                         // New gateway
@@ -103,19 +106,19 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         };
 
                         gw.last_changed_at = if hash_changed || owner_changed {
-                            gw.refreshed_at
+                            refreshed_at
                         } else {
                             last_gw.last_changed_at
                         };
 
                         gw.location_changed_at = if loc_changed {
-                            Some(gw.refreshed_at)
+                            Some(refreshed_at)
                         } else {
                             last_gw.location_changed_at
                         };
 
                         gw.owner_changed_at = if owner_changed {
-                            Some(gw.refreshed_at)
+                            Some(refreshed_at)
                         } else {
                             last_gw.owner_changed_at
                         };

@@ -118,7 +118,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
         .inserted_at(now)
-        .refreshed_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -133,7 +132,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
         .inserted_at(now_plus_10)
-        .refreshed_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -179,7 +177,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
         .inserted_at(now)
-        .refreshed_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -194,7 +191,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
         .inserted_at(now_plus_10)
-        .refreshed_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -246,7 +242,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
         .inserted_at(inserted_at)
-        .refreshed_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(None)
         .location(Some(loc1))
@@ -261,7 +256,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
         .inserted_at(inserted_at)
-        .refreshed_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1u32))
         .location(Some(loc2))
@@ -276,7 +270,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
         .inserted_at(inserted_at)
-        .refreshed_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1))
         .elevation(Some(2))
@@ -293,7 +286,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
         .inserted_at(created_at)
-        .refreshed_at(created_at)
         .last_changed_at(created_at)
         .antenna(None)
         .location(Some(loc4))
@@ -392,7 +384,6 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at,
-        refreshed_at: inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -411,7 +402,6 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
         inserted_at: created_at,
-        refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         antenna: None,
@@ -482,7 +472,6 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at,
-        refreshed_at: inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -501,7 +490,6 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
         inserted_at: created_at,
-        refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         antenna: None,
@@ -595,7 +583,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: refreshed_at,
-        refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -614,7 +601,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: created_at,
-        refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -633,7 +619,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
         inserted_at,
-        refreshed_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -652,7 +637,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at,
-        refreshed_at: created_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -733,7 +717,6 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: refreshed_at,
-        refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -752,7 +735,6 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: created_at,
-        refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         antenna: Some(18),
@@ -834,7 +816,6 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: refreshed_at,
-        refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         antenna: Some(10),
@@ -861,7 +842,6 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: created_at,
-        refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         antenna: Some(18),

@@ -19,7 +19,6 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         gateway_type: GatewayType::WifiIndoor,
         created_at: one_min_ago,
         updated_at: now,
-        refreshed_at: now,
         last_changed_at: now,
         hash: "h0".to_string(),
         antenna: Some(1),
@@ -48,10 +47,6 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(
         common::nanos_trunc(pre_gw.created_at),
         common::nanos_trunc(gw.inserted_at)
-    );
-    assert_eq!(
-        common::nanos_trunc(pre_gw.refreshed_at),
-        common::nanos_trunc(gw.refreshed_at)
     );
     assert_eq!(
         common::nanos_trunc(pre_gw.last_changed_at),
