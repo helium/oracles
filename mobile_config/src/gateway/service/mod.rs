@@ -13,7 +13,8 @@ use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
     self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1,
     GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
-    GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
+    GatewayInfoStreamReqV4, GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3,
+    GatewayInfoStreamResV4, GatewayInfoV2,
 };
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
@@ -22,6 +23,7 @@ use tonic::{Request, Response, Status};
 
 pub mod info;
 pub mod info_v3;
+pub mod info_v4;
 
 pub struct GatewayService {
     key_cache: KeyCache,
@@ -391,6 +393,64 @@ impl mobile_config::Gateway for GatewayService {
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
+
+    type info_stream_v4Stream = GrpcStreamResult<GatewayInfoStreamResV4>;
+    async fn info_stream_v4(
+        &self,
+        request: Request<GatewayInfoStreamReqV4>,
+    ) -> GrpcResult<Self::info_stream_v4Stream> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream-v4");
+        custom_tracing::record_b58("signer", &request.signer);
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let pool = self.pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        let device_types: Vec<DeviceTypeV2> = request.device_types().map(|v| v.into()).collect();
+
+        tokio::spawn(async move {
+            let min_updated_at = Utc
+                .timestamp_opt(request.min_updated_at as i64, 0)
+                .single()
+                .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
+
+            let min_location_changed_at = if request.min_location_changed_at == 0 {
+                None
+            } else {
+                Some(
+                    Utc.timestamp_opt(request.min_location_changed_at as i64, 0)
+                        .single()
+                        .ok_or(Status::invalid_argument(
+                            "Invalid min_location_changed_at argument",
+                        ))?,
+                )
+            };
+
+            let min_owner_changed_at = Utc
+                .timestamp_opt(request.min_owner_changed_at as i64, 0)
+                .single()
+                .ok_or(Status::invalid_argument(
+                    "Invalid min_owner_changed_at argument",
+                ))?;
+
+            let stream = info_v4::stream_by_types(
+                &pool,
+                &device_types,
+                min_updated_at,
+                min_location_changed_at,
+                min_owner_changed_at,
+            );
+            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
 }
 
 trait GatewayInfoStreamRes {
@@ -438,6 +498,23 @@ impl GatewayInfoStreamRes for GatewayInfoStreamResV3 {
 
     fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self {
         GatewayInfoStreamResV3 {
+            gateways,
+            timestamp,
+            signer,
+            signature: vec![],
+        }
+    }
+
+    fn set_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature;
+    }
+}
+
+impl GatewayInfoStreamRes for GatewayInfoStreamResV4 {
+    type GatewayInfoType = mobile_config::GatewayInfoV4;
+
+    fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self {
+        GatewayInfoStreamResV4 {
             gateways,
             timestamp,
             signer,
