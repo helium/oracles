@@ -1,7 +1,7 @@
 use crate::catalog::Catalog;
 use crate::writer::IcebergTable;
 use crate::{Error, Result, Settings};
-use iceberg::spec::{NestedField, PartitionSpec, Schema, Transform, Type};
+use iceberg::spec::{NestedField, PartitionSpec, PrimitiveType, Schema, Transform, Type};
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ pub struct FieldDefinition {
     field_type: Type,
     required: bool,
     doc: Option<String>,
+    identifier: bool,
 }
 
 impl FieldDefinition {
@@ -23,6 +24,7 @@ impl FieldDefinition {
             field_type,
             required,
             doc: None,
+            identifier: false,
         }
     }
 
@@ -39,6 +41,13 @@ impl FieldDefinition {
     /// Add documentation to this field.
     pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
         self.doc = Some(doc.into());
+        self
+    }
+
+    /// Mark this field as an identifier field.
+    /// Note: Identifier fields must be required and cannot be float/double types.
+    pub fn as_identifier(mut self) -> Self {
+        self.identifier = true;
         self
     }
 }
@@ -133,6 +142,13 @@ impl TableDefinition {
 
     /// Build the Iceberg schema from field definitions.
     fn build_schema(&self) -> Result<Schema> {
+        let identifier_field_ids: Vec<i32> = self
+            .fields
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, field)| field.identifier.then_some((idx + 1) as i32))
+            .collect();
+
         let fields: Vec<Arc<NestedField>> = self
             .fields
             .iter()
@@ -153,6 +169,7 @@ impl TableDefinition {
 
         Schema::builder()
             .with_fields(fields)
+            .with_identifier_field_ids(identifier_field_ids)
             .build()
             .map_err(Error::Iceberg)
     }
@@ -255,6 +272,26 @@ impl TableDefinitionBuilder {
             return Err(Error::Catalog(
                 "table definition must have at least one field".to_string(),
             ));
+        }
+
+        for field in &self.fields {
+            if field.identifier {
+                if !field.required {
+                    return Err(Error::Catalog(format!(
+                        "identifier field '{}' must be required",
+                        field.name
+                    )));
+                }
+                if matches!(
+                    field.field_type,
+                    Type::Primitive(PrimitiveType::Float) | Type::Primitive(PrimitiveType::Double)
+                ) {
+                    return Err(Error::Catalog(format!(
+                        "identifier field '{}' cannot be float or double type",
+                        field.name
+                    )));
+                }
+            }
         }
 
         Ok(TableDefinition {
@@ -367,7 +404,6 @@ impl TableCreator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iceberg::spec::PrimitiveType;
 
     #[test]
     fn test_field_definition_required() {
@@ -513,5 +549,81 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("nonexistent"));
+    }
+
+    #[test]
+    fn test_field_definition_as_identifier() {
+        let field =
+            FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)).as_identifier();
+        assert!(field.identifier);
+    }
+
+    #[test]
+    fn test_identifier_field_ids_in_schema() {
+        let definition = TableDefinition::builder("test")
+            .with_fields([
+                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long))
+                    .as_identifier(),
+                FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
+                FieldDefinition::required("tenant_id", Type::Primitive(PrimitiveType::Long))
+                    .as_identifier(),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let identifier_ids: Vec<i32> = schema.identifier_field_ids().collect();
+
+        assert_eq!(identifier_ids.len(), 2);
+        assert!(identifier_ids.contains(&1)); // id field
+        assert!(identifier_ids.contains(&3)); // tenant_id field
+    }
+
+    #[test]
+    fn test_identifier_field_must_be_required() {
+        let result = TableDefinition::builder("test")
+            .with_field(
+                FieldDefinition::optional("id", Type::Primitive(PrimitiveType::Long))
+                    .as_identifier(),
+            )
+            .build();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("identifier field 'id' must be required"));
+    }
+
+    #[test]
+    fn test_identifier_field_cannot_be_float() {
+        let result = TableDefinition::builder("test")
+            .with_field(
+                FieldDefinition::required("score", Type::Primitive(PrimitiveType::Float))
+                    .as_identifier(),
+            )
+            .build();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("identifier field 'score' cannot be float or double type"));
+    }
+
+    #[test]
+    fn test_identifier_field_cannot_be_double() {
+        let result = TableDefinition::builder("test")
+            .with_field(
+                FieldDefinition::required("score", Type::Primitive(PrimitiveType::Double))
+                    .as_identifier(),
+            )
+            .build();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("identifier field 'score' cannot be float or double type"));
     }
 }
