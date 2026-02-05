@@ -83,16 +83,14 @@ pub struct Gateway {
     pub created_at: DateTime<Utc>,
     // When record was inserted
     pub inserted_at: DateTime<Utc>,
-    // When record was last updated from metadata DB (could be set to now if no metadata DB info)
-    pub refreshed_at: DateTime<Utc>,
-    // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
+    // When location or hash last changed
     pub last_changed_at: DateTime<Utc>,
     pub hash: String,
     pub antenna: Option<u32>,
     pub elevation: Option<u32>,
     pub azimuth: Option<u32>,
     pub location: Option<u64>,
-    // When location last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
+    // When location last changed
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
     pub owner: Option<String>,
@@ -116,7 +114,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -134,7 +131,6 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
-                .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
                 .push_bind(g.antenna.map(|v| v as i64))
@@ -158,7 +154,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -171,15 +166,14 @@ impl Gateway {
                 owner_changed_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13, $14
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9, $10, $11, $12, $13
             )
             "#,
         )
         .bind(self.address.as_ref())
         .bind(self.gateway_type)
         .bind(self.created_at)
-        .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
         .bind(self.antenna.map(|v| v as i64))
@@ -207,7 +201,6 @@ impl Gateway {
                 gateway_type,
                 created_at,
                 inserted_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -244,7 +237,6 @@ impl Gateway {
                 gateway_type,
                 created_at,
                 inserted_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -279,7 +271,6 @@ impl Gateway {
                 gateway_type,
                 created_at,
                 inserted_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -319,7 +310,6 @@ impl Gateway {
                 gateway_type,
                 created_at,
                 inserted_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -356,7 +346,6 @@ impl Gateway {
                     gateway_type,
                     created_at,
                     inserted_at,
-                    refreshed_at,
                     last_changed_at,
                     hash,
                     antenna,
@@ -399,7 +388,6 @@ impl Gateway {
                     gateway_type,
                     created_at,
                     inserted_at,
-                    refreshed_at,
                     last_changed_at,
                     hash,
                     antenna,
@@ -485,7 +473,6 @@ impl FromRow<'_, PgRow> for Gateway {
             gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
             inserted_at: row.try_get("inserted_at")?,
-            refreshed_at: row.try_get("refreshed_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
             hash: row.try_get("hash")?,
             antenna: to_u32(row.try_get("antenna")?),

@@ -14,8 +14,6 @@ pub struct TestGateway {
     #[builder(default)]
     inserted_at: DateTime<Utc>,
     #[builder(default)]
-    refreshed_at: DateTime<Utc>,
-    #[builder(default)]
     last_changed_at: DateTime<Utc>,
     #[builder(default)]
     hash: String,
@@ -44,7 +42,6 @@ impl From<TestGateway> for Gateway {
             gateway_type: tg.gateway_type,
             created_at: tg.created_at,
             inserted_at: tg.inserted_at,
-            refreshed_at: tg.refreshed_at,
             last_changed_at: tg.last_changed_at,
             hash: tg.hash,
             antenna: tg.antenna,
@@ -67,9 +64,6 @@ pub struct PreHistoricalGateway {
     pub created_at: DateTime<Utc>,
     // When record was last updated
     pub updated_at: DateTime<Utc>,
-    // When record was last updated from metadata DB (could be set to now if no metadata DB info)
-    pub refreshed_at: DateTime<Utc>,
-    // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
     pub last_changed_at: DateTime<Utc>,
     pub hash: String,
     pub antenna: Option<u32>,
@@ -90,7 +84,6 @@ impl PreHistoricalGateway {
                 gateway_type,
                 created_at,
                 updated_at,
-                refreshed_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -102,7 +95,7 @@ impl PreHistoricalGateway {
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13
+                $8, $9, $10, $11, $12
             )
             "#,
         )
@@ -110,7 +103,6 @@ impl PreHistoricalGateway {
         .bind(self.gateway_type)
         .bind(self.created_at)
         .bind(self.updated_at)
-        .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
         .bind(self.antenna.map(|v| v as i64))

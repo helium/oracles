@@ -130,7 +130,6 @@ impl MobileHotspotInfo {
             gateway_type: GatewayType::try_from(self.device_type.clone())?,
             created_at: self.created_at,
             inserted_at: Utc::now(),
-            refreshed_at,
             last_changed_at: refreshed_at,
             hash: self.compute_hash(),
             antenna,

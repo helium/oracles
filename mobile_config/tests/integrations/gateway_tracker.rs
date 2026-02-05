@@ -66,13 +66,12 @@ async fn test_gateway_tracker_updates_changed_gateways(pool: PgPool) -> anyhow::
         assert_eq!(gateway.address, gw_insert.key.clone());
         assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
         assert_eq!(gateway.created_at, gw_insert.created_at);
-        assert_eq!(Some(gateway.refreshed_at), gw_insert.refreshed_at);
         assert_eq!(Some(gateway.last_changed_at), gw_insert.refreshed_at);
         assert_eq!(gateway.antenna, None);
         assert_eq!(gateway.elevation, None);
         assert_eq!(gateway.azimuth, None);
         assert_eq!(gateway.location, gw_insert.location.map(|v| v as u64));
-        assert_eq!(gateway.location_changed_at, gw_insert.refreshed_at); // matches logic in tracker
+        assert_eq!(gateway.location_changed_at, gw_insert.refreshed_at);
         assert_eq!(gateway.location_asserts, gw_insert.location.map(|_| 1));
 
         // Update sample gateways
@@ -94,7 +93,6 @@ async fn test_gateway_tracker_updates_changed_gateways(pool: PgPool) -> anyhow::
         assert_eq!(gateway.address, gw_insert.key.clone());
         assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
         assert_eq!(gateway.created_at, gw_insert.created_at);
-        assert_eq!(gateway.refreshed_at, now);
         assert_eq!(gateway.last_changed_at, now);
         assert_eq!(gateway.antenna, None);
         assert_eq!(gateway.elevation, None);

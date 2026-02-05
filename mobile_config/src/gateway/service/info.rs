@@ -123,8 +123,6 @@ pub struct GatewayInfo {
     pub created_at: Option<DateTime<Utc>>,
     // updated_at refers to the last time the data was actually changed.
     pub updated_at: Option<DateTime<Utc>>,
-    // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
-    pub refreshed_at: Option<DateTime<Utc>>,
 }
 
 impl GatewayInfo {
@@ -184,7 +182,6 @@ impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
             device_type: device_type_,
             created_at: Some(created_at),
             updated_at: Some(updated_at),
-            refreshed_at: None,
         })
     }
 }
@@ -218,7 +215,6 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             device_type: device_type_,
             created_at: None,
             updated_at: None,
-            refreshed_at: None,
         })
     }
 }
@@ -254,7 +250,6 @@ impl From<Gateway> for GatewayInfo {
             created_at: Some(gateway.created_at),
             // because updated_at refers to the last time the data was actually changed.
             updated_at: Some(gateway.last_changed_at),
-            refreshed_at: Some(gateway.refreshed_at),
         }
     }
 }
