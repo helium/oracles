@@ -35,6 +35,12 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
+    let harness = helium_iceberg::IcebergTestHarness::new().await?;
+
+    harness
+        .create_table(DataTransferSession::table_def(harness.schema_name()))
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![
@@ -80,14 +86,22 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
         },
     ];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions_trino(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     report_rx.assert_num_msgs(2)?;
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].dc_to_burn(), bytes_to_dc(2_000));
+
+    let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
+    assert_eq!(pending, trino_pending);
 
     Ok(())
 }
@@ -136,8 +150,6 @@ async fn write_dts() -> anyhow::Result<()> {
         .create_table(DataTransferSession::table_def(harness.schema_name()))
         .await?;
 
-    let client = harness.trino();
-
     let req = DataTransferSessionReq {
         rewardable_bytes: 1_000,
         pub_key: PublicKeyBinary::from(vec![0]),
@@ -158,17 +170,23 @@ async fn write_dts() -> anyhow::Result<()> {
 
     let dst = DataTransferSession::from_req(&req, Utc::now());
 
+    let client = harness.trino();
     dst.trino_write(client).await?;
-
     let all = DataTransferSession::get_all(client).await?;
 
-    println!("all: {all:?}");
+    assert_eq!(all, vec![dst]);
 
     Ok(())
 }
 
 #[sqlx::test]
 async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
+    let harness = helium_iceberg::IcebergTestHarness::new().await?;
+
+    harness
+        .create_table(DataTransferSession::table_def(harness.schema_name()))
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -190,13 +208,21 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions_trino(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     report_rx.assert_not_empty()?;
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
+
+    let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
+    assert_eq!(pending, trino_pending);
 
     Ok(())
 }
@@ -496,6 +522,15 @@ async fn run_accumulate_sessions(
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+    run_accumulate_sessions_trino(pool, reports, mobile_config, None).await
+}
+
+async fn run_accumulate_sessions_trino(
+    pool: &PgPool,
+    reports: Vec<DataTransferSessionIngestReport>,
+    mobile_config: TestMobileConfig,
+    trino: Option<&trino_rust_client::Client>,
+) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
     let ts = Utc::now();
 
@@ -513,7 +548,7 @@ async fn run_accumulate_sessions(
     )
     .await?;
 
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports, ts).await?;
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports, ts, trino).await?;
 
     txn.commit().await?;
 

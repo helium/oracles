@@ -38,7 +38,7 @@ impl From<DataTransferSessionTrino> for DataTransferSession {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, PartialEq)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -104,8 +104,10 @@ impl DataTransferSession {
             uploaded_bytes = self.uploaded_bytes as u64,
             downloaded_bytes = self.downloaded_bytes as u64,
             rewardable_bytes = self.rewardable_bytes as u64,
-            first_timestamp = self.first_timestamp.format("%Y-%m-%d %H:%M:%S%.3f"),
-            last_timestamp = self.last_timestamp.format("%Y-%m-%d %H:%M:%S%.3f")
+            // NOTE(mj): putting 6 decimals helps with PartialEq when doing a roundtrip, but may be overkill.
+            // Does make life a lot easier though.
+            first_timestamp = self.first_timestamp.format("%Y-%m-%d %H:%M:%S%.6f"),
+            last_timestamp = self.last_timestamp.format("%Y-%m-%d %H:%M:%S%.6f")
         )
     }
 
@@ -130,7 +132,13 @@ impl DataTransferSession {
     pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<Self>> {
         let all = trino
             .get_all::<DataTransferSessionTrino>(format!("SELECT * from {}", Self::TABLE_NAME))
-            .await?;
+            .await;
+
+        let all = match all {
+            Ok(all) => all,
+            Err(trino_rust_client::error::Error::EmptyData) => return Ok(vec![]),
+            Err(err) => return Err(err.into()),
+        };
 
         Ok(all.into_vec().into_iter().map(Self::from).collect())
     }
@@ -227,9 +235,10 @@ pub async fn save_data_transfer_session_reqs(
     txn: &mut Transaction<'_, Postgres>,
     reqs: &[DataTransferSessionReq],
     last_timestamp: DateTime<Utc>,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
     for req in reqs {
-        save_data_transfer_session_req(txn, req, last_timestamp).await?;
+        save_data_transfer_session_req(txn, req, last_timestamp, trino).await?;
     }
 
     Ok(())
@@ -239,8 +248,14 @@ pub async fn save_data_transfer_session_req(
     txn: &mut Transaction<'_, Postgres>,
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
-    save_data_transfer_session(txn, &DataTransferSession::from_req(req, last_timestamp)).await?;
+    let dts = DataTransferSession::from_req(req, last_timestamp);
+    save_data_transfer_session(txn, &dts).await?;
+
+    if let Some(client) = trino {
+        dts.trino_write(client).await.expect("writing to trino");
+    }
 
     Ok(())
 }

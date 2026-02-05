@@ -123,7 +123,8 @@ where
         )
         .await?;
 
-        pending_burns::save_data_transfer_session_reqs(&mut transaction, &reports, ts).await?;
+        pending_burns::save_data_transfer_session_reqs(&mut transaction, &reports, ts, None)
+            .await?;
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
