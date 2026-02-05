@@ -17,11 +17,11 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
         .await?
         .expect("gateway should exist");
 
-    assert_eq!(gateway.hash_params.gateway_type, GatewayType::WifiIndoor);
+    assert_eq!(gateway.gateway_type(), GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
     assert!(gateway.inserted_at > now);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
-    assert_eq!(gateway.hash_params.location, Some(123));
+    assert_eq!(gateway.location(), Some(123));
     assert_eq!(gateway.hash, "h0");
     Ok(())
 }
@@ -46,11 +46,11 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
         .expect("gateway should exist");
 
     // Assert most recent gateway was returned
-    assert_eq!(gateway.hash_params.gateway_type, GatewayType::WifiDataOnly);
+    assert_eq!(gateway.gateway_type(), GatewayType::WifiDataOnly);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
     assert!(gateway.inserted_at > now);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
-    assert_eq!(gateway.hash_params.location, Some(123));
+    assert_eq!(gateway.location(), Some(123));
     assert_eq!(gateway.hash, "h0");
 
     Ok(())
@@ -78,7 +78,7 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(got.created_at, common::nanos_trunc(now));
         assert!(got.inserted_at > now);
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
-        assert_eq!(got.hash_params.location, Some(123));
+        assert_eq!(got.location(), Some(123));
         assert_eq!(got.hash, "h0");
     }
 
@@ -144,7 +144,7 @@ async fn stream_by_types_filters_by_min_date(pool: PgPool) -> anyhow::Result<()>
     let s = Gateway::stream_by_types(&pool, vec![GatewayType::WifiIndoor], t2, None);
     pin_mut!(s);
     let first = s.next().await.expect("row expected");
-    assert_eq!(first.hash_params.gateway_type, GatewayType::WifiIndoor);
+    assert_eq!(first.gateway_type(), GatewayType::WifiIndoor);
     assert_eq!(first.address, key);
     assert!(s.next().await.is_none());
 

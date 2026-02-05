@@ -154,6 +154,34 @@ pub struct LocationChangedAtUpdate {
 }
 
 impl Gateway {
+    pub fn gateway_type(&self) -> GatewayType {
+        self.hash_params.gateway_type
+    }
+
+    pub fn location(&self) -> Option<u64> {
+        self.hash_params.location
+    }
+
+    pub fn antenna(&self) -> Option<u32> {
+        self.hash_params.antenna
+    }
+
+    pub fn elevation(&self) -> Option<u32> {
+        self.hash_params.elevation
+    }
+
+    pub fn azimuth(&self) -> Option<u32> {
+        self.hash_params.azimuth
+    }
+
+    pub fn location_asserts(&self) -> Option<u32> {
+        self.hash_params.location_asserts
+    }
+
+    pub fn owner(&self) -> Option<&str> {
+        self.hash_params.owner.as_deref()
+    }
+
     pub fn compute_hash(&self) -> String {
         compute_hash(self.hash_params.clone())
     }
