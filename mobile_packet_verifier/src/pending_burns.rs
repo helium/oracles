@@ -26,6 +26,19 @@ impl DataTransferSession {
     pub fn dc_to_burn(&self) -> u64 {
         bytes_to_dc(self.rewardable_bytes as u64)
     }
+
+    pub fn from_req(req: &DataTransferSessionReq, last_timestamp: DateTime<Utc>) -> Self {
+        DataTransferSession {
+            pub_key: req.data_transfer_usage.pub_key.clone(),
+            payer: req.data_transfer_usage.payer.clone(),
+            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
+            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
+            rewardable_bytes: req.rewardable_bytes as i64,
+            // timestamps are the same upon ingest
+            first_timestamp: last_timestamp,
+            last_timestamp,
+        }
+    }
 }
 
 impl From<DataTransferSession> for ValidDataTransferSession {
@@ -115,25 +128,24 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
+pub async fn save_data_transfer_session_reqs(
+    txn: &mut Transaction<'_, Postgres>,
+    reqs: &[DataTransferSessionReq],
+    last_timestamp: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    for req in reqs {
+        save_data_transfer_session_req(txn, req, last_timestamp).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn save_data_transfer_session_req(
     txn: &mut Transaction<'_, Postgres>,
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    save_data_transfer_session(
-        txn,
-        &DataTransferSession {
-            pub_key: req.data_transfer_usage.pub_key.clone(),
-            payer: req.data_transfer_usage.payer.clone(),
-            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
-            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
-            rewardable_bytes: req.rewardable_bytes as i64,
-            // timestamps are the same upon ingest
-            first_timestamp: last_timestamp,
-            last_timestamp,
-        },
-    )
-    .await?;
+    save_data_transfer_session(txn, &DataTransferSession::from_req(req, last_timestamp)).await?;
 
     Ok(())
 }

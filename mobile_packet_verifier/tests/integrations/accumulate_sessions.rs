@@ -456,20 +456,24 @@ async fn run_accumulate_sessions(
     mobile_config: TestMobileConfig,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
+    let ts = Utc::now();
 
     let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(10);
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    accumulate_sessions(
+    let reports = accumulate_sessions(
         &mobile_config,
         banned_radios,
         &mut txn,
         &verified_sessions,
-        Utc::now(),
+        ts,
         futures::stream::iter(reports),
     )
     .await?;
+
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports, ts).await?;
+
     txn.commit().await?;
 
     Ok(verified_sessions_rx)
