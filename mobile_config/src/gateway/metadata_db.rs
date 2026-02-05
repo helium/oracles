@@ -11,17 +11,17 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct MobileHotspotInfo {
-    entity_key: PublicKeyBinary,
-    refreshed_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    location: Option<i64>,
-    is_full_hotspot: Option<bool>,
-    num_location_asserts: Option<i32>,
-    is_active: Option<bool>,
-    dc_onboarding_fee_paid: Option<i64>,
-    gateway_type: GatewayType,
-    deployment_info: Option<DeploymentInfo>,
-    owner: Option<String>,
+    pub entity_key: PublicKeyBinary,
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub location: Option<i64>,
+    pub is_full_hotspot: Option<bool>,
+    pub num_location_asserts: Option<i32>,
+    pub is_active: Option<bool>,
+    pub dc_onboarding_fee_paid: Option<i64>,
+    pub gateway_type: GatewayType,
+    pub deployment_info: Option<DeploymentInfo>,
+    pub owner: Option<String>,
 }
 
 impl MobileHotspotInfo {
@@ -103,47 +103,6 @@ impl MobileHotspotInfo {
             "#,
         )
         .fetch(pool)
-    }
-
-    pub fn to_gateway(&self) -> anyhow::Result<Option<Gateway>> {
-        let location = self.location.map(|loc| loc as u64);
-
-        let (antenna, elevation, azimuth) = match self.deployment_info {
-            Some(ref info) => match info {
-                DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
-                    (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
-                }
-                // Only here to satisfy the match, we return None above if DeviceType::Cbrs
-                DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
-            },
-            None => (None, None, None),
-        };
-
-        let refreshed_at = self.refreshed_at.unwrap_or_else(Utc::now);
-
-        Ok(Some(Gateway {
-            address: self.entity_key.clone(),
-            created_at: self.created_at,
-            inserted_at: Utc::now(),
-            last_changed_at: refreshed_at,
-            hash: self.compute_hash(),
-            // Set to refreshed_at when hotspot has a location, None otherwise
-            location_changed_at: if location.is_some() {
-                Some(refreshed_at)
-            } else {
-                None
-            },
-            owner_changed_at: Some(refreshed_at),
-            hash_params: HashParams {
-                gateway_type: self.gateway_type,
-                location,
-                antenna,
-                elevation,
-                azimuth,
-                location_asserts: self.num_location_asserts.map(|n| n as u32),
-                owner: self.owner.clone(),
-            },
-        }))
     }
 }
 

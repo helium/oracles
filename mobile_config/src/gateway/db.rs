@@ -86,7 +86,8 @@ pub struct HashParams {
     pub owner: Option<String>,
 }
 
-pub fn compute_hash(params: HashParams) -> String {
+// TODO should be a part of HashParams struct?
+pub fn compute_hash(params: &HashParams) -> String {
     let mut hasher = blake3::Hasher::new();
 
     hasher.update(params.gateway_type.to_string().as_bytes());
@@ -125,7 +126,8 @@ pub fn compute_hash(params: HashParams) -> String {
             .unwrap_or([0u8; 4])
             .as_ref(),
     );
-    hasher.update(params.owner.unwrap_or_default().as_bytes());
+    // TODO really need clone here?
+    hasher.update(params.owner.clone().unwrap_or_default().as_bytes());
 
     hasher.finalize().to_string()
 }
@@ -178,12 +180,13 @@ impl Gateway {
         self.hash_params.location_asserts
     }
 
+    // TODO rework to &String?
     pub fn owner(&self) -> Option<&str> {
         self.hash_params.owner.as_deref()
     }
 
     pub fn compute_hash(&self) -> String {
-        compute_hash(self.hash_params.clone())
+        compute_hash(&self.hash_params)
     }
 
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {

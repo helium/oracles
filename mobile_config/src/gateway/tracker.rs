@@ -1,4 +1,9 @@
-use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
+use crate::gateway::{
+    db::{compute_hash, Gateway, HashParams},
+    metadata_db::MobileHotspotInfo,
+    service::info::DeploymentInfo,
+};
+use chrono::Utc;
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -62,25 +67,10 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
-        .try_filter_map(|mhi| async move {
-            match mhi.to_gateway() {
-                Ok(Some(gw)) => Ok({
-                    // Temporary, will be removed in next PR
-                    // NOTE: last_changed_at = to_gateway in to_gateway()
-                    let refreshed_at = gw.last_changed_at;
-                    Some((gw, refreshed_at))
-                }),
-                Ok(None) => Ok(None),
-                Err(e) => {
-                    tracing::error!(?e, "error converting gateway");
-                    Err(e)
-                }
-            }
-        })
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
         .try_fold(0, |total, batch| async move {
-            let addresses: Vec<_> = batch.iter().map(|(gw, _)| gw.address.clone()).collect();
+            let addresses: Vec<_> = batch.iter().map(|mhi| mhi.entity_key.clone()).collect();
             let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
             let mut existing_map = existing_gateways
                 .into_iter()
@@ -89,47 +79,91 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
             let mut to_insert = Vec::with_capacity(batch.len());
 
-            for (mut gw, refreshed_at) in batch {
-                match existing_map.remove(&gw.address) {
+            for mhi in batch {
+                let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
+
+                let (antenna, elevation, azimuth) = match mhi.deployment_info {
+                    Some(ref info) => match info {
+                        DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
+                            (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
+                        }
+                        // Only here to satisfy the match, we return None above if DeviceType::Cbrs
+                        DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
+                    },
+                    None => (None, None, None),
+                };
+
+                let hash_params = HashParams {
+                    gateway_type: mhi.gateway_type,
+                    location: mhi.location.map(|v| v as u64),
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location_asserts: mhi.num_location_asserts.map(|n| n as u32),
+                    owner: mhi.owner.clone(), // TODO need clone here?
+                };
+                let new_hash = compute_hash(&hash_params);
+                match existing_map.remove(&mhi.entity_key) {
                     None => {
-                        // New gateway
+                        let gw = Gateway {
+                            address: mhi.entity_key.clone(), // TODO need clone here?
+                            created_at: mhi.created_at,
+                            inserted_at: Utc::now(), // TODO get rid of it
+                            last_changed_at: refreshed_at,
+                            hash: new_hash,
+                            location_changed_at: if mhi.location.is_some() {
+                                Some(refreshed_at)
+                            } else {
+                                None
+                            }, // TODO THINK
+                            owner_changed_at: Some(refreshed_at),
+                            hash_params,
+                        };
                         to_insert.push(gw);
                     }
                     Some(last_gw) => {
-                        let loc_changed = gw.location() != last_gw.location();
+                        if last_gw.hash == new_hash {
+                            // nothing changed
+                            continue;
+                        }
+                        let loc_changed = mhi.location != last_gw.location().map(|v| v as i64);
                         // FYI hash includes location
                         // owner (at this moment) is not included in hash
-                        let hash_changed = gw.hash != last_gw.hash;
+                        // let hash_changed = mhi.hash != last_gw.hash;
 
-                        let owner_changed = if gw.owner().is_none() {
+                        let owner_changed = if mhi.owner.is_none() {
                             false
                         } else {
-                            gw.owner() != last_gw.owner()
+                            // TODO rework?
+                            mhi.owner != last_gw.owner().map(|v| v.to_string())
                         };
 
-                        gw.last_changed_at = if hash_changed || owner_changed {
-                            refreshed_at
-                        } else {
-                            last_gw.last_changed_at
-                        };
+                        let last_changed_at = refreshed_at;
 
-                        gw.location_changed_at = if loc_changed {
+                        let location_changed_at = if loc_changed {
                             Some(refreshed_at)
                         } else {
                             last_gw.location_changed_at
                         };
 
-                        gw.owner_changed_at = if owner_changed {
+                        let owner_changed_at = if owner_changed {
                             Some(refreshed_at)
                         } else {
                             last_gw.owner_changed_at
                         };
 
-                        // We only add record if something changed
-                        // FYI hash includes location
-                        if hash_changed || owner_changed {
-                            to_insert.push(gw);
-                        }
+                        let gw = Gateway {
+                            address: mhi.entity_key.clone(), // TODO need clone here?
+                            created_at: mhi.created_at,
+                            inserted_at: Utc::now(), // TODO get rid of it
+                            last_changed_at,
+                            hash: new_hash,
+                            location_changed_at,
+                            owner_changed_at,
+                            hash_params,
+                        };
+
+                        to_insert.push(gw);
                     }
                 }
             }
