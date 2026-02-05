@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use file_store::traits::TimestampEncode;
 use file_store_oracles::mobile_session::DataTransferSessionReq;
 use helium_crypto::PublicKeyBinary;
@@ -11,7 +11,34 @@ use crate::bytes_to_dc;
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(FromRow)]
+use trino_rust_client::Trino;
+
+#[derive(Trino, serde::Serialize, serde::Deserialize)]
+pub struct DataTransferSessionTrino {
+    pub_key: String,
+    payer: String,
+    uploaded_bytes: i64,
+    downloaded_bytes: i64,
+    rewardable_bytes: i64,
+    first_timestamp: DateTime<FixedOffset>,
+    last_timestamp: DateTime<FixedOffset>,
+}
+
+impl From<DataTransferSessionTrino> for DataTransferSession {
+    fn from(value: DataTransferSessionTrino) -> Self {
+        Self {
+            pub_key: PublicKeyBinary::from_str(&value.pub_key).expect("pubkey"),
+            payer: PublicKeyBinary::from_str(&value.payer).expect("payer"),
+            uploaded_bytes: value.uploaded_bytes,
+            downloaded_bytes: value.downloaded_bytes,
+            rewardable_bytes: value.rewardable_bytes,
+            first_timestamp: value.first_timestamp.into(),
+            last_timestamp: value.last_timestamp.into(),
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -23,6 +50,8 @@ pub struct DataTransferSession {
 }
 
 impl DataTransferSession {
+    const TABLE_NAME: &'static str = "data_transfer_sessions";
+
     pub fn dc_to_burn(&self) -> u64 {
         bytes_to_dc(self.rewardable_bytes as u64)
     }
@@ -38,6 +67,72 @@ impl DataTransferSession {
             first_timestamp: last_timestamp,
             last_timestamp,
         }
+    }
+
+    pub fn table_def(schema_name: &str) -> helium_iceberg::TableDefinition {
+        use helium_iceberg::*;
+
+        TableDefinition::builder(Self::TABLE_NAME)
+            .with_fields([
+                FieldDefinition::required("pub_key", PrimitiveType::String),
+                FieldDefinition::required("payer", PrimitiveType::String),
+                FieldDefinition::required("uploaded_bytes", PrimitiveType::Int),
+                FieldDefinition::required("downloaded_bytes", PrimitiveType::Int),
+                FieldDefinition::required("rewardable_bytes", PrimitiveType::Int),
+                FieldDefinition::required("first_timestamp", PrimitiveType::Timestamptz),
+                FieldDefinition::required("last_timestamp", PrimitiveType::Timestamptz),
+            ])
+            .with_partition(PartitionDefinition::day(
+                "first_timestamp",
+                "first_timestamp_day",
+            ))
+            .with_location(format!("s3://iceberg/{}/events", schema_name))
+            .build()
+            .expect("valid data transfer sessions table")
+    }
+
+    fn to_trino_insert(&self) -> String {
+        format!(
+            "
+            (
+                '{pub_key}', '{payer}', {uploaded_bytes}, {downloaded_bytes},
+                {rewardable_bytes}, TIMESTAMP '{first_timestamp}', TIMESTAMP '{last_timestamp}'
+            )
+            ",
+            pub_key = self.pub_key.to_string(),
+            payer = self.payer.to_string(),
+            uploaded_bytes = self.uploaded_bytes as u64,
+            downloaded_bytes = self.downloaded_bytes as u64,
+            rewardable_bytes = self.rewardable_bytes as u64,
+            first_timestamp = self.first_timestamp.format("%Y-%m-%d %H:%M:%S%.3f"),
+            last_timestamp = self.last_timestamp.format("%Y-%m-%d %H:%M:%S%.3f")
+        )
+    }
+
+    pub async fn trino_write(&self, trino: &trino_rust_client::Client) -> anyhow::Result<()> {
+        let query = format!(
+            "
+            INSERT INTO {table_name}
+                (
+                    pub_key, payer, uploaded_bytes, downloaded_bytes,
+                    rewardable_bytes, first_timestamp, last_timestamp
+                )
+            VALUES {data}
+            ",
+            table_name = Self::TABLE_NAME,
+            data = self.to_trino_insert()
+        );
+
+        trino.execute(query).await?;
+        Ok(())
+    }
+
+    pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<Self>> {
+        let all = trino
+            .get_all::<DataTransferSessionTrino>(format!("SELECT * from {}", Self::TABLE_NAME))
+            .await?;
+
+        Ok(all.into_vec().into_iter().map(Self::from).collect())
     }
 }
 

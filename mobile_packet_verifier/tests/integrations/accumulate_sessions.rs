@@ -12,7 +12,9 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    accumulate::accumulate_sessions, banning, bytes_to_dc, pending_burns,
+    accumulate::accumulate_sessions,
+    banning, bytes_to_dc,
+    pending_burns::{self, DataTransferSession},
 };
 use sqlx::PgPool;
 
@@ -122,6 +124,45 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn write_dts() -> anyhow::Result<()> {
+    let harness = helium_iceberg::IcebergTestHarness::new().await?;
+
+    harness
+        .create_table(DataTransferSession::table_def(harness.schema_name()))
+        .await?;
+
+    let client = harness.trino();
+
+    let req = DataTransferSessionReq {
+        rewardable_bytes: 1_000,
+        pub_key: PublicKeyBinary::from(vec![0]),
+        signature: vec![],
+        carrier_id: CarrierIdV2::Carrier9,
+        sampling: false,
+        data_transfer_usage: DataTransferEvent {
+            pub_key: PublicKeyBinary::from(vec![0]),
+            upload_bytes: 1_000,
+            download_bytes: 1_000,
+            radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+            event_id: "test-event-id".to_string(),
+            payer: PublicKeyBinary::from(vec![0]),
+            timestamp: Utc::now(),
+            signature: vec![],
+        },
+    };
+
+    let dst = DataTransferSession::from_req(&req, Utc::now());
+
+    dst.trino_write(client).await?;
+
+    let all = DataTransferSession::get_all(client).await?;
+
+    println!("all: {all:?}");
 
     Ok(())
 }
