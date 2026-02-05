@@ -189,15 +189,24 @@ pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSession>> {
-    sqlx::query_as("SELECT * FROM data_transfer_sessions")
+pub async fn get_all(
+    conn: &Pool<Postgres>,
+    trino: Option<&trino_rust_client::Client>,
+) -> anyhow::Result<Vec<DataTransferSession>> {
+    let results = sqlx::query_as("SELECT * FROM data_transfer_sessions")
         .fetch_all(conn)
-        .await
-        .map_err(anyhow::Error::from)
+        .await?;
+
+    if let Some(trino) = trino {
+        let ts = DataTransferSession::get_all(trino).await?;
+        debug_assert_eq!(results, ts, "trino results should match postgres");
+    }
+
+    Ok(results)
 }
 
 pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<PendingPayerBurn>> {
-    let pending_payer_burns = get_all(conn)
+    let pending_payer_burns = get_all(conn, None)
         .await?
         .into_iter()
         .fold(

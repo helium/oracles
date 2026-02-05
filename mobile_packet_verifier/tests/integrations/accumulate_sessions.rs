@@ -8,6 +8,7 @@ use file_store_oracles::{
     mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
 };
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
@@ -20,14 +21,29 @@ use sqlx::PgPool;
 
 use crate::common::{TestChannelExt, TestMobileConfig};
 
+async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
+    let harness = IcebergTestHarness::new().await?;
+    harness
+        .create_table(DataTransferSession::table_def(harness.schema_name()))
+        .await?;
+    Ok(harness)
+}
+
 #[sqlx::test]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
-    let mut report_rx =
-        run_accumulate_sessions(&pool, vec![], TestMobileConfig::all_valid()).await?;
+    let harness = setup_iceberg().await?;
+
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        vec![],
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     report_rx.assert_is_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -35,11 +51,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
-    let harness = helium_iceberg::IcebergTestHarness::new().await?;
-
-    harness
-        .create_table(DataTransferSession::table_def(harness.schema_name()))
-        .await?;
+    let harness = setup_iceberg().await?;
 
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -86,7 +98,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
         },
     ];
 
-    let mut report_rx = run_accumulate_sessions_trino(
+    let mut report_rx = run_accumulate_sessions(
         &pool,
         reports,
         TestMobileConfig::all_valid(),
@@ -96,12 +108,9 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 
     report_rx.assert_num_msgs(2)?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].dc_to_burn(), bytes_to_dc(2_000));
-
-    let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
-    assert_eq!(pending, trino_pending);
 
     Ok(())
 }
@@ -110,6 +119,8 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     pool: PgPool,
 ) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         report: DataTransferSessionReq {
             data_transfer_usage: DataTransferEvent {
@@ -131,12 +142,17 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
         received_timestamp: Utc::now(),
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -144,11 +160,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
 
 #[tokio::test]
 async fn write_dts() -> anyhow::Result<()> {
-    let harness = helium_iceberg::IcebergTestHarness::new().await?;
-
-    harness
-        .create_table(DataTransferSession::table_def(harness.schema_name()))
-        .await?;
+    let harness = setup_iceberg().await?;
 
     let req = DataTransferSessionReq {
         rewardable_bytes: 1_000,
@@ -181,11 +193,7 @@ async fn write_dts() -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
-    let harness = helium_iceberg::IcebergTestHarness::new().await?;
-
-    harness
-        .create_table(DataTransferSession::table_def(harness.schema_name()))
-        .await?;
+    let harness = setup_iceberg().await?;
 
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
@@ -208,7 +216,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx = run_accumulate_sessions_trino(
+    let mut report_rx = run_accumulate_sessions(
         &pool,
         reports,
         TestMobileConfig::all_valid(),
@@ -218,7 +226,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
 
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert_eq!(pending.len(), 1);
 
     let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
@@ -229,6 +237,8 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -251,13 +261,18 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record not written to file or db
     report_rx.assert_is_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -265,6 +280,8 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -286,13 +303,18 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::valid_gateways(vec![])).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::valid_gateways(vec![]),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -300,6 +322,8 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -321,14 +345,18 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::valid_routing_keys(vec![]))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::valid_routing_keys(vec![]),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -336,6 +364,8 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -362,13 +392,18 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     // Ban radio
     ban_hotspot(&pool, key, BanType::All).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -376,6 +411,8 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -402,13 +439,18 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     // Ban radio
     ban_hotspot(&pool, key, BanType::Data).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -416,6 +458,8 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
 
 #[sqlx::test]
 async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -442,19 +486,26 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     // Ban radio
     ban_hotspot(&pool, key, BanType::Poc).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(!pending.is_empty());
     Ok(())
 }
 
 #[sqlx::test]
 async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -505,27 +556,32 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     )
     .await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool).await?;
+    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
     assert!(!pending.is_empty());
 
     Ok(())
 }
 
-async fn run_accumulate_sessions(
-    pool: &PgPool,
-    reports: Vec<DataTransferSessionIngestReport>,
-    mobile_config: TestMobileConfig,
-) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
-    run_accumulate_sessions_trino(pool, reports, mobile_config, None).await
-}
+// async fn run_accumulate_sessions(
+//     pool: &PgPool,
+//     reports: Vec<DataTransferSessionIngestReport>,
+//     mobile_config: TestMobileConfig,
+// ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+//     run_accumulate_sessions_trino(pool, reports, mobile_config, None).await
+// }
 
-async fn run_accumulate_sessions_trino(
+async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
