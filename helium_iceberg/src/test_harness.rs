@@ -43,7 +43,7 @@ const DEFAULT_TRINO_HOST: &str = "localhost";
 const DEFAULT_TRINO_PORT: u16 = 8080;
 
 /// Default catalog name (shared across tests).
-const DEFAULT_CATALOG_NAME: &str = "test";
+const DEFAULT_CATALOG_NAME: &str = "iceberg";
 
 /// Default Iceberg REST catalog URL (from host, for test harness).
 const DEFAULT_ICEBERG_REST_URL: &str = "http://localhost:9001/iceberg";
@@ -161,12 +161,8 @@ impl Default for HarnessConfig {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, FixedOffset, Utc};
-
     use super::*;
-    use crate::{
-        DataWriter, FieldDefinition, IcebergTable, PartitionDefinition, PrimitiveType, Type,
-    };
+    use crate::{FieldDefinition, PartitionDefinition, PrimitiveType, Type};
 
     #[tokio::test]
     async fn test_harness_basic() -> anyhow::Result<()> {
@@ -217,31 +213,26 @@ mod tests {
             )
             .await?;
 
-        let writer = IcebergTable::from_catalog(
-            harness.iceberg_catalog().clone(),
-            harness.schema_name(),
-            "events",
-        )
-        .await?;
+        // Note: Direct IcebergTable writes from host don't work because the REST catalog
+        // commit uses its own FileIO with Docker-internal URLs (minio:9000).
+        // Use Trino for inserts instead, or add "127.0.0.1 minio" to /etc/hosts.
 
-        #[derive(serde::Serialize)]
-        struct Event {
-            id: String,
-            timestamp: DateTime<FixedOffset>,
-        }
+        // Insert via Trino (works because Trino runs inside Docker)
+        harness
+            .trino()
+            .execute(
+                "INSERT INTO events (id, timestamp) VALUES ('event_1', CURRENT_TIMESTAMP)"
+                    .to_string(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("insert failed: {}", e))?;
 
-        writer
-            .write(vec![Event {
-                id: "event_1".to_string(),
-                timestamp: Utc::now().into(),
-            }])
-            .await?;
-
-        // Query without qualifying the table name
-        let _result = harness
+        // Query the data
+        harness
             .trino()
             .execute("SELECT * FROM events".to_string())
-            .await;
+            .await
+            .map_err(|e| anyhow::anyhow!("query failed: {}", e))?;
 
         Ok(())
     }
