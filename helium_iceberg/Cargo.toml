@@ -6,6 +6,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+default = ["test-harness"]
+test-harness = ["dep:trino-rust-client", "dep:uuid"]
+
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -30,6 +34,10 @@ arrow-schema = "57"
 parquet = "57"
 
 tls-init = { path = "../tls_init" }
+
+# Test harness dependencies (optional)
+trino-rust-client = { version = "0.9", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

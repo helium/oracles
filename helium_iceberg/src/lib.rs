@@ -8,6 +8,9 @@ mod settings;
 mod table_creator;
 mod writer;
 
+#[cfg(feature = "test-harness")]
+pub mod test_harness;
+
 pub use catalog::Catalog;
 pub use error::{Error, Result};
 pub use iceberg_table::IcebergTable;
@@ -20,6 +23,9 @@ pub use writer::{DataWriter, StagedWriter, WriteOutcome};
 
 // Re-export iceberg types for ergonomic API usage
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
+
+#[cfg(feature = "test-harness")]
+pub use test_harness::{HarnessConfig, IcebergTestHarness};
 
 #[cfg(test)]
 tls_init::include_tls_tests!();
