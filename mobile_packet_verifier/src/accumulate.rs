@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_session::{
-    DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
+    DataTransferSessionIngestReport, DataTransferSessionReq, VerifiedDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
 use helium_proto::services::poc_mobile::{
@@ -21,12 +21,13 @@ pub async fn accumulate_sessions(
     banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    curr_file_ts: DateTime<Utc>,
+    _curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<DataTransferSessionReq>> {
     tokio::pin!(reports);
 
     let mut metrics = AccumulateMetrics::new();
+    let mut session_reqs = vec![];
 
     while let Some(report) = reports.next().await {
         if report.report.data_transfer_usage.radio_access_technology
@@ -53,13 +54,14 @@ pub async fn accumulate_sessions(
         }
 
         metrics.add_report(&report);
-        pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
-            .await?;
+        session_reqs.push(report.report);
+        // pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
+        // .await?;
     }
 
     metrics.flush();
 
-    Ok(())
+    Ok(session_reqs)
 }
 
 async fn verify_report(

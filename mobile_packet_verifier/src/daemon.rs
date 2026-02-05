@@ -113,7 +113,7 @@ where
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        crate::accumulate::accumulate_sessions(
+        let reports = crate::accumulate::accumulate_sessions(
             &self.mobile_config_resolver,
             banned_radios,
             &mut transaction,
@@ -122,6 +122,10 @@ where
             reports,
         )
         .await?;
+
+        for report in reports {
+            pending_burns::save_data_transfer_session_req(&mut transaction, &report, ts).await?;
+        }
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
