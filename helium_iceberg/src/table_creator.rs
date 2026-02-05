@@ -33,13 +33,13 @@ impl FieldDefinition {
     }
 
     /// Create a required field.
-    pub fn required(name: impl Into<String>, field_type: Type) -> Self {
-        Self::new(name, field_type, true)
+    pub fn required(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
+        Self::new(name, field_type.into(), true)
     }
 
     /// Create an optional field.
-    pub fn optional(name: impl Into<String>, field_type: Type) -> Self {
-        Self::new(name, field_type, false)
+    pub fn optional(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
+        Self::new(name, field_type.into(), false)
     }
 
     /// Add documentation to this field.
