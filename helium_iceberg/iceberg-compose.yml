@@ -1,7 +1,9 @@
-
 services:
   postgres:
-    image: postgres:16
+    build:
+      context: infra/postgres
+      dockerfile: Dockerfile
+    image: local/postgres16-pgpartman
     networks:
       iceberg_net:
     restart: unless-stopped
