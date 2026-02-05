@@ -64,15 +64,21 @@ async fn test_gateway_tracker_updates_changed_gateways(pool: PgPool) -> anyhow::
             .expect("gateway not found");
 
         assert_eq!(gateway.address, gw_insert.key.clone());
-        assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
+        assert_eq!(gateway.hash_params.gateway_type, GatewayType::WifiIndoor);
         assert_eq!(gateway.created_at, gw_insert.created_at);
         assert_eq!(Some(gateway.last_changed_at), gw_insert.refreshed_at);
-        assert_eq!(gateway.antenna, None);
-        assert_eq!(gateway.elevation, None);
-        assert_eq!(gateway.azimuth, None);
-        assert_eq!(gateway.location, gw_insert.location.map(|v| v as u64));
+        assert_eq!(gateway.hash_params.antenna, None);
+        assert_eq!(gateway.hash_params.elevation, None);
+        assert_eq!(gateway.hash_params.azimuth, None);
+        assert_eq!(
+            gateway.hash_params.location,
+            gw_insert.location.map(|v| v as u64)
+        );
         assert_eq!(gateway.location_changed_at, gw_insert.refreshed_at);
-        assert_eq!(gateway.location_asserts, gw_insert.location.map(|_| 1));
+        assert_eq!(
+            gateway.hash_params.location_asserts,
+            gw_insert.location.map(|_| 1)
+        );
 
         // Update sample gateways
         gateway_metadata_db::update_gateway(&pool, &gw_insert.asset, new_loc, now, 2).await?;
@@ -91,15 +97,15 @@ async fn test_gateway_tracker_updates_changed_gateways(pool: PgPool) -> anyhow::
             .expect("gateway not found");
 
         assert_eq!(gateway.address, gw_insert.key.clone());
-        assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
+        assert_eq!(gateway.hash_params.gateway_type, GatewayType::WifiIndoor);
         assert_eq!(gateway.created_at, gw_insert.created_at);
         assert_eq!(gateway.last_changed_at, now);
-        assert_eq!(gateway.antenna, None);
-        assert_eq!(gateway.elevation, None);
-        assert_eq!(gateway.azimuth, None);
-        assert_eq!(gateway.location, Some(0));
+        assert_eq!(gateway.hash_params.antenna, None);
+        assert_eq!(gateway.hash_params.elevation, None);
+        assert_eq!(gateway.hash_params.azimuth, None);
+        assert_eq!(gateway.hash_params.location, Some(0));
         assert_eq!(gateway.location_changed_at, Some(now));
-        assert_eq!(gateway.location_asserts, Some(2));
+        assert_eq!(gateway.hash_params.location_asserts, Some(2));
     }
 
     Ok(())
@@ -157,8 +163,14 @@ async fn test_gateway_tracker_owner_tracking(pool: PgPool) -> anyhow::Result<()>
         .expect("gateway not found");
 
     assert_eq!(retrieved_gateway.address, pubkey.clone());
-    assert_eq!(retrieved_gateway.gateway_type, GatewayType::WifiIndoor);
-    assert_eq!(retrieved_gateway.owner, Some(initial_owner.clone()));
+    assert_eq!(
+        retrieved_gateway.hash_params.gateway_type,
+        GatewayType::WifiIndoor
+    );
+    assert_eq!(
+        retrieved_gateway.hash_params.owner,
+        Some(initial_owner.clone())
+    );
     assert_eq!(retrieved_gateway.owner_changed_at, Some(now));
 
     // Count gateways before owner change
@@ -190,7 +202,7 @@ async fn test_gateway_tracker_owner_tracking(pool: PgPool) -> anyhow::Result<()>
         .expect("gateway not found");
 
     assert_eq!(updated_gateway.address, pubkey.clone());
-    assert_eq!(updated_gateway.owner, Some(new_owner.clone()));
+    assert_eq!(updated_gateway.hash_params.owner, Some(new_owner.clone()));
     assert_eq!(updated_gateway.owner_changed_at, Some(update_time));
     assert_eq!(updated_gateway.last_changed_at, update_time);
 

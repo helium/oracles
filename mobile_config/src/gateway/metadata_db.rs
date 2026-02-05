@@ -1,5 +1,5 @@
 use crate::gateway::{
-    db::{Gateway, GatewayType},
+    db::{Gateway, GatewayType, HashParams},
     service::info::DeploymentInfo,
 };
 use chrono::{DateTime, Utc};
@@ -123,24 +123,26 @@ impl MobileHotspotInfo {
 
         Ok(Some(Gateway {
             address: self.entity_key.clone(),
-            gateway_type: self.gateway_type,
             created_at: self.created_at,
             inserted_at: Utc::now(),
             last_changed_at: refreshed_at,
             hash: self.compute_hash(),
-            antenna,
-            elevation,
-            azimuth,
-            location,
             // Set to refreshed_at when hotspot has a location, None otherwise
             location_changed_at: if location.is_some() {
                 Some(refreshed_at)
             } else {
                 None
             },
-            location_asserts: self.num_location_asserts.map(|n| n as u32),
-            owner: self.owner.clone(),
             owner_changed_at: Some(refreshed_at),
+            hash_params: HashParams {
+                gateway_type: self.gateway_type,
+                location,
+                antenna,
+                elevation,
+                azimuth,
+                location_asserts: self.num_location_asserts.map(|n| n as u32),
+                owner: self.owner.clone(),
+            },
         }))
     }
 }

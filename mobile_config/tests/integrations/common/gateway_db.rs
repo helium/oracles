@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use helium_crypto::{PublicKey, PublicKeyBinary};
-use mobile_config::gateway::db::{Gateway, GatewayType};
+use mobile_config::gateway::db::{Gateway, GatewayType, HashParams};
 use sqlx::PgPool;
 
 #[derive(Builder)]
@@ -39,19 +39,21 @@ impl From<TestGateway> for Gateway {
     fn from(tg: TestGateway) -> Self {
         Gateway {
             address: tg.address.into(),
-            gateway_type: tg.gateway_type,
             created_at: tg.created_at,
             inserted_at: tg.inserted_at,
             last_changed_at: tg.last_changed_at,
             hash: tg.hash,
-            antenna: tg.antenna,
-            elevation: tg.elevation,
-            azimuth: tg.azimuth,
-            location: tg.location,
             location_changed_at: tg.location_changed_at,
-            location_asserts: tg.location_asserts,
-            owner: tg.owner,
             owner_changed_at: tg.owner_changed_at,
+            hash_params: HashParams {
+                gateway_type: tg.gateway_type,
+                location: tg.location,
+                antenna: tg.antenna,
+                elevation: tg.elevation,
+                azimuth: tg.azimuth,
+                location_asserts: tg.location_asserts,
+                owner: tg.owner,
+            },
         }
     }
 }

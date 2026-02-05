@@ -28,17 +28,21 @@ pub struct GatewayInfoV4 {
 impl TryFrom<Gateway> for GatewayInfoV4 {
     type Error = anyhow::Error;
     fn try_from(gateway: Gateway) -> Result<Self, Self::Error> {
-        let metadata = if let Some(location) = gateway.location {
+        let metadata = if let Some(location) = gateway.hash_params.location {
             let location_info = LocationInfo {
                 location: hextree::Cell::from_raw(location)?,
                 location_changed_at: gateway.location_changed_at.unwrap_or(gateway.created_at),
             };
-            let deployment_info = match (gateway.antenna, gateway.elevation, gateway.azimuth) {
+            let deployment_info = match (
+                gateway.hash_params.antenna,
+                gateway.hash_params.elevation,
+                gateway.hash_params.azimuth,
+            ) {
                 (None, None, None) => None,
                 _ => Some(DeploymentInfoProto {
-                    antenna: gateway.antenna.unwrap_or(0),
-                    elevation: gateway.elevation.unwrap_or(0),
-                    azimuth: gateway.azimuth.unwrap_or(0),
+                    antenna: gateway.hash_params.antenna.unwrap_or(0),
+                    elevation: gateway.hash_params.elevation.unwrap_or(0),
+                    azimuth: gateway.hash_params.azimuth.unwrap_or(0),
                 }),
             };
             Some(GatewayMetadataV3 {
@@ -49,7 +53,7 @@ impl TryFrom<Gateway> for GatewayInfoV4 {
             None
         };
 
-        let owner = gateway.owner.context("missing owner")?;
+        let owner = gateway.hash_params.owner.context("missing owner")?;
         let owner_changed_at = gateway
             .owner_changed_at
             .context("missing owner_changed_at")?;
@@ -57,10 +61,10 @@ impl TryFrom<Gateway> for GatewayInfoV4 {
         Ok(Self {
             address: gateway.address,
             metadata,
-            device_type: gateway.gateway_type.into(),
+            device_type: gateway.hash_params.gateway_type.into(),
             created_at: gateway.created_at,
             updated_at: gateway.last_changed_at,
-            num_location_asserts: gateway.location_asserts.unwrap_or(0) as i32,
+            num_location_asserts: gateway.hash_params.location_asserts.unwrap_or(0) as i32,
             owner,
             owner_changed_at,
         })

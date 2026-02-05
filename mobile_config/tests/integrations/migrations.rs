@@ -38,7 +38,7 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         .expect("should find gateway");
 
     assert_eq!(pre_gw.address, gw.address);
-    assert_eq!(pre_gw.gateway_type, gw.gateway_type);
+    assert_eq!(pre_gw.gateway_type, gw.hash_params.gateway_type);
     assert_eq!(
         common::nanos_trunc(pre_gw.created_at),
         common::nanos_trunc(gw.created_at)
@@ -53,15 +53,15 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         common::nanos_trunc(gw.last_changed_at)
     );
     assert_eq!(pre_gw.hash, gw.hash);
-    assert_eq!(pre_gw.antenna, gw.antenna);
-    assert_eq!(pre_gw.elevation, gw.elevation);
-    assert_eq!(pre_gw.azimuth, gw.azimuth);
-    assert_eq!(pre_gw.location, gw.location);
+    assert_eq!(pre_gw.antenna, gw.hash_params.antenna);
+    assert_eq!(pre_gw.elevation, gw.hash_params.elevation);
+    assert_eq!(pre_gw.azimuth, gw.hash_params.azimuth);
+    assert_eq!(pre_gw.location, gw.hash_params.location);
     assert_eq!(
         common::nanos_trunc(pre_gw.location_changed_at.unwrap()),
         common::nanos_trunc(gw.location_changed_at.unwrap())
     );
-    assert_eq!(pre_gw.location_asserts, gw.location_asserts);
+    assert_eq!(pre_gw.location_asserts, gw.hash_params.location_asserts);
 
     Ok(())
 }

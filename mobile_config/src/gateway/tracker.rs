@@ -96,15 +96,15 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         to_insert.push(gw);
                     }
                     Some(last_gw) => {
-                        let loc_changed = gw.location != last_gw.location;
+                        let loc_changed = gw.hash_params.location != last_gw.hash_params.location;
                         // FYI hash includes location
                         // owner (at this moment) is not included in hash
                         let hash_changed = gw.hash != last_gw.hash;
 
-                        let owner_changed = if gw.owner.is_none() {
+                        let owner_changed = if gw.hash_params.owner.is_none() {
                             false
                         } else {
-                            gw.owner != last_gw.owner
+                            gw.hash_params.owner != last_gw.hash_params.owner
                         };
 
                         gw.last_changed_at = if hash_changed || owner_changed {

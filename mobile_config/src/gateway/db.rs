@@ -76,9 +76,63 @@ impl From<DeviceTypeV2> for GatewayType {
 }
 
 #[derive(Debug, Clone)]
+pub struct HashParams {
+    pub gateway_type: GatewayType,
+    pub location: Option<u64>,
+    pub antenna: Option<u32>,
+    pub elevation: Option<u32>,
+    pub azimuth: Option<u32>,
+    pub location_asserts: Option<u32>,
+    pub owner: Option<String>,
+}
+
+pub fn compute_hash(params: HashParams) -> String {
+    let mut hasher = blake3::Hasher::new();
+
+    hasher.update(params.gateway_type.to_string().as_bytes());
+    hasher.update(
+        params
+            .location
+            .map(|l| l.to_le_bytes())
+            .unwrap_or([0u8; 8])
+            .as_ref(),
+    );
+    hasher.update(
+        params
+            .antenna
+            .map(|v| v.to_le_bytes())
+            .unwrap_or([0u8; 4])
+            .as_ref(),
+    );
+    hasher.update(
+        params
+            .elevation
+            .map(|v| v.to_le_bytes())
+            .unwrap_or([0u8; 4])
+            .as_ref(),
+    );
+    hasher.update(
+        params
+            .azimuth
+            .map(|v| v.to_le_bytes())
+            .unwrap_or([0u8; 4])
+            .as_ref(),
+    );
+    hasher.update(
+        params
+            .location_asserts
+            .map(|v| v.to_le_bytes())
+            .unwrap_or([0u8; 4])
+            .as_ref(),
+    );
+    hasher.update(params.owner.unwrap_or_default().as_bytes());
+
+    hasher.finalize().to_string()
+}
+
+#[derive(Debug, Clone)]
 pub struct Gateway {
     pub address: PublicKeyBinary,
-    pub gateway_type: GatewayType,
     // When the record was first created from metadata DB
     pub created_at: DateTime<Utc>,
     // When record was inserted
@@ -86,15 +140,10 @@ pub struct Gateway {
     // When location or hash last changed
     pub last_changed_at: DateTime<Utc>,
     pub hash: String,
-    pub antenna: Option<u32>,
-    pub elevation: Option<u32>,
-    pub azimuth: Option<u32>,
-    pub location: Option<u64>,
     // When location last changed
     pub location_changed_at: Option<DateTime<Utc>>,
-    pub location_asserts: Option<u32>,
-    pub owner: Option<String>,
     pub owner_changed_at: Option<DateTime<Utc>>,
+    pub hash_params: HashParams,
 }
 
 #[derive(Debug)]
@@ -105,6 +154,10 @@ pub struct LocationChangedAtUpdate {
 }
 
 impl Gateway {
+    pub fn compute_hash(&self) -> String {
+        compute_hash(self.hash_params.clone())
+    }
+
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
         if rows.is_empty() {
             return Ok(0);
@@ -129,17 +182,17 @@ impl Gateway {
 
         qb.push_values(rows, |mut b, g| {
             b.push_bind(g.address.as_ref())
-                .push_bind(g.gateway_type)
+                .push_bind(g.hash_params.gateway_type)
                 .push_bind(g.created_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
-                .push_bind(g.antenna.map(|v| v as i64))
-                .push_bind(g.elevation.map(|v| v as i64))
-                .push_bind(g.azimuth.map(|v| v as i64))
-                .push_bind(g.location.map(|v| v as i64))
+                .push_bind(g.hash_params.antenna.map(|v| v as i64))
+                .push_bind(g.hash_params.elevation.map(|v| v as i64))
+                .push_bind(g.hash_params.azimuth.map(|v| v as i64))
+                .push_bind(g.hash_params.location.map(|v| v as i64))
                 .push_bind(g.location_changed_at)
-                .push_bind(g.location_asserts.map(|v| v as i64))
-                .push_bind(g.owner.as_deref())
+                .push_bind(g.hash_params.location_asserts.map(|v| v as i64))
+                .push_bind(g.hash_params.owner.as_deref())
                 .push_bind(g.owner_changed_at);
         });
 
@@ -172,17 +225,17 @@ impl Gateway {
             "#,
         )
         .bind(self.address.as_ref())
-        .bind(self.gateway_type)
+        .bind(self.hash_params.gateway_type)
         .bind(self.created_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
-        .bind(self.antenna.map(|v| v as i64))
-        .bind(self.elevation.map(|v| v as i64))
-        .bind(self.azimuth.map(|v| v as i64))
-        .bind(self.location.map(|v| v as i64))
+        .bind(self.hash_params.antenna.map(|v| v as i64))
+        .bind(self.hash_params.elevation.map(|v| v as i64))
+        .bind(self.hash_params.azimuth.map(|v| v as i64))
+        .bind(self.hash_params.location.map(|v| v as i64))
         .bind(self.location_changed_at)
-        .bind(self.location_asserts.map(|v| v as i64))
-        .bind(self.owner.as_deref())
+        .bind(self.hash_params.location_asserts.map(|v| v as i64))
+        .bind(self.hash_params.owner.as_deref())
         .bind(self.owner_changed_at)
         .execute(pool)
         .await?;
@@ -428,19 +481,21 @@ impl FromRow<'_, PgRow> for Gateway {
 
         Ok(Self {
             address: PublicKeyBinary::from(row.try_get::<Vec<u8>, _>("address")?),
-            gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
             inserted_at: row.try_get("inserted_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
             hash: row.try_get("hash")?,
-            antenna: to_u32(row.try_get("antenna")?),
-            elevation: to_u32(row.try_get("elevation")?),
-            azimuth: to_u32(row.try_get("azimuth")?),
-            location: to_u64(row.try_get("location")?),
             location_changed_at: row.try_get("location_changed_at")?,
-            location_asserts: to_u32(row.try_get("location_asserts")?),
-            owner: row.try_get("owner")?,
             owner_changed_at: row.try_get("owner_changed_at")?,
+            hash_params: HashParams {
+                gateway_type: row.try_get("gateway_type")?,
+                location: to_u64(row.try_get("location")?),
+                antenna: to_u32(row.try_get("antenna")?),
+                elevation: to_u32(row.try_get("elevation")?),
+                azimuth: to_u32(row.try_get("azimuth")?),
+                location_asserts: to_u32(row.try_get("location_asserts")?),
+                owner: row.try_get("owner")?,
+            },
         })
     }
 }
