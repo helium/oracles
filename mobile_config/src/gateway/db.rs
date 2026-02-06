@@ -222,19 +222,16 @@ impl Gateway {
         }
     }
 
-    pub fn new_if_changed(
-        &self,
-        mhi: &MobileHotspotInfo,
-        hash_params: HashParams,
-        new_hash: String,
-        refreshed_at: DateTime<Utc>,
-    ) -> Option<Gateway> {
+    pub fn new_if_changed(&self, mhi: &MobileHotspotInfo) -> Option<Gateway> {
+        let hash_params = HashParams::from_hotspot_info(mhi);
+        let new_hash = hash_params.compute_hash();
+
         if self.hash == new_hash {
             return None;
         }
 
+        let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
         let loc_changed = mhi.location != self.location().map(|v| v as i64);
-
         let owner_changed = mhi.owner.is_some() && mhi.owner.as_deref() != self.owner();
 
         let location_changed_at = if loc_changed {

@@ -1,8 +1,4 @@
-use crate::gateway::{
-    db::{Gateway, HashParams},
-    metadata_db::MobileHotspotInfo,
-};
-use chrono::Utc;
+use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -84,12 +80,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         to_insert.push(Gateway::from_mobile_hotspot_info(&mhi));
                     }
                     Some(last_gw) => {
-                        let hash_params = HashParams::from_hotspot_info(&mhi);
-                        let new_hash = hash_params.compute_hash();
-                        let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
-                        if let Some(gw) =
-                            last_gw.new_if_changed(&mhi, hash_params, new_hash, refreshed_at)
-                        {
+                        if let Some(gw) = last_gw.new_if_changed(&mhi) {
                             to_insert.push(gw);
                         }
                     }
