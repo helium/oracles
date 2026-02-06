@@ -1,4 +1,7 @@
-use crate::gateway::service::{info::DeviceType, info_v3::DeviceTypeV2};
+use crate::gateway::{
+    metadata_db::MobileHotspotInfo,
+    service::{info::DeploymentInfo, info::DeviceType, info_v3::DeviceTypeV2},
+};
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -87,6 +90,28 @@ pub struct HashParams {
 }
 
 impl HashParams {
+    pub fn from_hotspot_info(mhi: &MobileHotspotInfo) -> Self {
+        let (antenna, elevation, azimuth) = match mhi.deployment_info {
+            Some(ref info) => match info {
+                DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
+                    (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
+                }
+                DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
+            },
+            None => (None, None, None),
+        };
+
+        Self {
+            gateway_type: mhi.gateway_type,
+            location: mhi.location.map(|v| v as u64),
+            antenna,
+            elevation,
+            azimuth,
+            location_asserts: mhi.num_location_asserts.map(|n| n as u32),
+            owner: mhi.owner.clone(),
+        }
+    }
+
     pub fn compute_hash(&self) -> String {
         let mut hasher = blake3::Hasher::new();
 

@@ -1,7 +1,6 @@
 use crate::gateway::{
     db::{Gateway, HashParams},
     metadata_db::MobileHotspotInfo,
-    service::info::DeploymentInfo,
 };
 use chrono::Utc;
 use futures::stream::TryChunksError;
@@ -82,26 +81,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
             for mhi in batch {
                 let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
 
-                let (antenna, elevation, azimuth) = match mhi.deployment_info {
-                    Some(ref info) => match info {
-                        DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
-                            (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
-                        }
-                        // Only here to satisfy the match, we return None above if DeviceType::Cbrs
-                        DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
-                    },
-                    None => (None, None, None),
-                };
-
-                let hash_params = HashParams {
-                    gateway_type: mhi.gateway_type,
-                    location: mhi.location.map(|v| v as u64),
-                    antenna,
-                    elevation,
-                    azimuth,
-                    location_asserts: mhi.num_location_asserts.map(|n| n as u32),
-                    owner: mhi.owner.clone(),
-                };
+                let hash_params = HashParams::from_hotspot_info(&mhi);
                 let new_hash = hash_params.compute_hash();
                 match existing_map.remove(&mhi.entity_key) {
                     None => {
