@@ -79,25 +79,14 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
             let mut to_insert = Vec::with_capacity(batch.len());
 
             for mhi in batch {
-                let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
-
-                let hash_params = HashParams::from_hotspot_info(&mhi);
-                let new_hash = hash_params.compute_hash();
                 match existing_map.remove(&mhi.entity_key) {
                     None => {
-                        let gw = Gateway {
-                            address: mhi.entity_key.clone(),
-                            created_at: mhi.created_at,
-                            last_changed_at: refreshed_at,
-                            hash: new_hash,
-                            // if location not none, then changed = refreshed_at
-                            location_changed_at: mhi.location.map(|_| refreshed_at),
-                            owner_changed_at: Some(refreshed_at),
-                            hash_params,
-                        };
-                        to_insert.push(gw);
+                        to_insert.push(Gateway::from_mobile_hotspot_info(&mhi));
                     }
                     Some(last_gw) => {
+                        let hash_params = HashParams::from_hotspot_info(&mhi);
+                        let new_hash = hash_params.compute_hash();
+                        let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
                         if let Some(gw) =
                             last_gw.new_if_changed(&mhi, hash_params, new_hash, refreshed_at)
                         {

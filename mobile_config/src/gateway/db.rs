@@ -206,6 +206,22 @@ impl Gateway {
         self.hash_params.compute_hash()
     }
 
+    pub fn from_mobile_hotspot_info(mhi: &MobileHotspotInfo) -> Self {
+        let hash_params = HashParams::from_hotspot_info(mhi);
+        let hash = hash_params.compute_hash();
+        let refreshed_at = mhi.refreshed_at.unwrap_or_else(Utc::now);
+
+        Self {
+            address: mhi.entity_key.clone(),
+            created_at: mhi.created_at,
+            last_changed_at: refreshed_at,
+            hash,
+            location_changed_at: mhi.location.map(|_| refreshed_at),
+            owner_changed_at: Some(refreshed_at),
+            hash_params,
+        }
+    }
+
     pub fn new_if_changed(
         &self,
         mhi: &MobileHotspotInfo,
