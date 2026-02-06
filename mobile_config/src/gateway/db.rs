@@ -86,50 +86,45 @@ pub struct HashParams {
     pub owner: Option<String>,
 }
 
-// TODO should be a part of HashParams struct?
-pub fn compute_hash(params: &HashParams) -> String {
-    let mut hasher = blake3::Hasher::new();
+impl HashParams {
+    pub fn compute_hash(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
 
-    hasher.update(params.gateway_type.to_string().as_bytes());
-    hasher.update(
-        params
-            .location
-            .map(|l| l.to_le_bytes())
-            .unwrap_or([0u8; 8])
-            .as_ref(),
-    );
-    hasher.update(
-        params
-            .antenna
-            .map(|v| v.to_le_bytes())
-            .unwrap_or([0u8; 4])
-            .as_ref(),
-    );
-    hasher.update(
-        params
-            .elevation
-            .map(|v| v.to_le_bytes())
-            .unwrap_or([0u8; 4])
-            .as_ref(),
-    );
-    hasher.update(
-        params
-            .azimuth
-            .map(|v| v.to_le_bytes())
-            .unwrap_or([0u8; 4])
-            .as_ref(),
-    );
-    hasher.update(
-        params
-            .location_asserts
-            .map(|v| v.to_le_bytes())
-            .unwrap_or([0u8; 4])
-            .as_ref(),
-    );
-    // TODO really need clone here?
-    hasher.update(params.owner.clone().unwrap_or_default().as_bytes());
+        hasher.update(self.gateway_type.to_string().as_bytes());
+        hasher.update(
+            self.location
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0u8; 8])
+                .as_ref(),
+        );
+        hasher.update(
+            self.antenna
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.elevation
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.azimuth
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.location_asserts
+                .map(|v| v.to_le_bytes())
+                .unwrap_or([0u8; 4])
+                .as_ref(),
+        );
+        hasher.update(self.owner.as_deref().unwrap_or_default().as_bytes());
 
-    hasher.finalize().to_string()
+        hasher.finalize().to_string()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +181,7 @@ impl Gateway {
     }
 
     pub fn compute_hash(&self) -> String {
-        compute_hash(&self.hash_params)
+        self.hash_params.compute_hash()
     }
 
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {

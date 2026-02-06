@@ -1,5 +1,5 @@
 use crate::gateway::{
-    db::{compute_hash, Gateway, HashParams},
+    db::{Gateway, HashParams},
     metadata_db::MobileHotspotInfo,
     service::info::DeploymentInfo,
 };
@@ -102,20 +102,17 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                     location_asserts: mhi.num_location_asserts.map(|n| n as u32),
                     owner: mhi.owner.clone(), // TODO need clone here?
                 };
-                let new_hash = compute_hash(&hash_params);
+                let new_hash = hash_params.compute_hash();
                 match existing_map.remove(&mhi.entity_key) {
                     None => {
                         let gw = Gateway {
-                            address: mhi.entity_key.clone(), // TODO need clone here?
+                            address: mhi.entity_key.clone(),
                             created_at: mhi.created_at,
                             inserted_at: Utc::now(), // TODO get rid of it
                             last_changed_at: refreshed_at,
                             hash: new_hash,
-                            location_changed_at: if mhi.location.is_some() {
-                                Some(refreshed_at)
-                            } else {
-                                None
-                            }, // TODO THINK
+                            // if location not none, then changed = refreshed_at
+                            location_changed_at: mhi.location.map(|_| refreshed_at),
                             owner_changed_at: Some(refreshed_at),
                             hash_params,
                         };
@@ -127,15 +124,11 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                             continue;
                         }
                         let loc_changed = mhi.location != last_gw.location().map(|v| v as i64);
-                        // FYI hash includes location
-                        // owner (at this moment) is not included in hash
-                        // let hash_changed = mhi.hash != last_gw.hash;
 
                         let owner_changed = if mhi.owner.is_none() {
                             false
                         } else {
-                            // TODO rework?
-                            mhi.owner != last_gw.owner().map(|v| v.to_string())
+                            mhi.owner.as_deref() != last_gw.owner()
                         };
 
                         let last_changed_at = refreshed_at;
@@ -153,7 +146,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         };
 
                         let gw = Gateway {
-                            address: mhi.entity_key.clone(), // TODO need clone here?
+                            address: mhi.entity_key.clone(),
                             created_at: mhi.created_at,
                             inserted_at: Utc::now(), // TODO get rid of it
                             last_changed_at,
