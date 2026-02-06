@@ -1,7 +1,4 @@
-use crate::gateway::{
-    db::{Gateway, GatewayType, HashParams},
-    service::info::DeploymentInfo,
-};
+use crate::gateway::{db::GatewayType, service::info::DeploymentInfo};
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use helium_crypto::PublicKeyBinary;
@@ -25,56 +22,6 @@ pub struct MobileHotspotInfo {
 }
 
 impl MobileHotspotInfo {
-    fn compute_hash(&self) -> String {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(
-            self.location
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 8])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.is_full_hotspot
-                .map(|l| (l as u32).to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.num_location_asserts
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.is_active
-                .map(|l| (l as u32).to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.dc_onboarding_fee_paid
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 8])
-                .as_ref(),
-        );
-
-        hasher.update(self.gateway_type.to_string().as_ref());
-
-        hasher.update(
-            self.deployment_info
-                .as_ref()
-                .and_then(|d| d.to_json().ok())
-                .unwrap_or_default()
-                .as_ref(),
-        );
-
-        hasher.finalize().to_string()
-    }
-
     pub fn stream(pool: &Pool<Postgres>) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
         sqlx::query_as::<_, Self>(
             r#"
