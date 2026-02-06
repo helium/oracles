@@ -100,7 +100,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                     elevation,
                     azimuth,
                     location_asserts: mhi.num_location_asserts.map(|n| n as u32),
-                    owner: mhi.owner.clone(), // TODO need clone here?
+                    owner: mhi.owner.clone(),
                 };
                 let new_hash = hash_params.compute_hash();
                 match existing_map.remove(&mhi.entity_key) {
@@ -108,7 +108,6 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         let gw = Gateway {
                             address: mhi.entity_key.clone(),
                             created_at: mhi.created_at,
-                            inserted_at: Utc::now(), // TODO get rid of it
                             last_changed_at: refreshed_at,
                             hash: new_hash,
                             // if location not none, then changed = refreshed_at
@@ -148,7 +147,6 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         let gw = Gateway {
                             address: mhi.entity_key.clone(),
                             created_at: mhi.created_at,
-                            inserted_at: Utc::now(), // TODO get rid of it
                             last_changed_at,
                             hash: new_hash,
                             location_changed_at,

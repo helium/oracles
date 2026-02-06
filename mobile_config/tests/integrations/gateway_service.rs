@@ -117,7 +117,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
-        .inserted_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -131,7 +130,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
-        .inserted_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -176,7 +174,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
-        .inserted_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -190,7 +187,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
-        .inserted_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -241,7 +237,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(None)
         .location(Some(loc1))
@@ -255,7 +250,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1u32))
         .location(Some(loc2))
@@ -269,7 +263,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address3.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1))
         .elevation(Some(2))
@@ -285,7 +278,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address4.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
-        .inserted_at(created_at)
         .last_changed_at(created_at)
         .antenna(None)
         .location(Some(loc4))
@@ -382,7 +374,6 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
     let gateway1 = Gateway {
         address: address1.clone().into(),
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         location_changed_at: Some(inserted_at),
@@ -402,7 +393,6 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
     let gateway2 = Gateway {
         address: address2.clone().into(),
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),
@@ -474,7 +464,6 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
     let gateway1 = Gateway {
         address: address1.clone().into(),
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         location_changed_at: Some(inserted_at),
@@ -494,7 +483,6 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
     let gateway2 = Gateway {
         address: address2.clone().into(),
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),
@@ -589,7 +577,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
     let gateway1 = Gateway {
         address: address1.clone().into(),
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         location_changed_at: Some(refreshed_at),
@@ -609,7 +596,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
     let gateway2 = Gateway {
         address: address2.clone().into(),
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),
@@ -629,7 +615,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
     let gateway3 = Gateway {
         address: address3.clone().into(),
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         location_changed_at: Some(inserted_at),
@@ -649,7 +634,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
     let gateway4 = Gateway {
         address: address4.clone().into(),
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),
@@ -731,7 +715,6 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
     let gateway1 = Gateway {
         address: address1.clone().into(),
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         location_changed_at: Some(refreshed_at),
@@ -751,7 +734,6 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
     let gateway2 = Gateway {
         address: address2.clone().into(),
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),
@@ -834,7 +816,6 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let gateway_original = Gateway {
         address: address.clone().into(),
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
         location_changed_at: Some(refreshed_at),
@@ -862,7 +843,6 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let gateway_recent = Gateway {
         address: address.clone().into(),
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
         location_changed_at: Some(created_at),

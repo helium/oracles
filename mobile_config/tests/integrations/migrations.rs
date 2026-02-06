@@ -43,11 +43,6 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         common::nanos_trunc(pre_gw.created_at),
         common::nanos_trunc(gw.created_at)
     );
-    // The real change is updated_at renamed to inserted_at AND inserted_at = created_at;
-    assert_eq!(
-        common::nanos_trunc(pre_gw.created_at),
-        common::nanos_trunc(gw.inserted_at)
-    );
     assert_eq!(
         common::nanos_trunc(pre_gw.last_changed_at),
         common::nanos_trunc(gw.last_changed_at)

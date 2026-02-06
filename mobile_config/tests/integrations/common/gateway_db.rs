@@ -12,8 +12,6 @@ pub struct TestGateway {
     #[builder(default)]
     created_at: DateTime<Utc>,
     #[builder(default)]
-    inserted_at: DateTime<Utc>,
-    #[builder(default)]
     last_changed_at: DateTime<Utc>,
     #[builder(default)]
     hash: String,
@@ -40,7 +38,6 @@ impl From<TestGateway> for Gateway {
         Gateway {
             address: tg.address.into(),
             created_at: tg.created_at,
-            inserted_at: tg.inserted_at,
             last_changed_at: tg.last_changed_at,
             hash: tg.hash,
             location_changed_at: tg.location_changed_at,
