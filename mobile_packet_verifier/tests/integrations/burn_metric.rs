@@ -9,7 +9,9 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
-use mobile_packet_verifier::{accumulate::accumulate_sessions, banning, dc_to_bytes};
+use mobile_packet_verifier::{
+    accumulate::accumulate_sessions, banning, dc_to_bytes, pending_burns,
+};
 use sqlx::{types::Uuid, PgPool};
 
 use crate::common::{setup_iceberg, TestMobileConfig};
@@ -54,7 +56,13 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     let metrics = TestMetrics::new();
 
     // accumulate and burn
-    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(harness.trino()),
+    )
+    .await?;
     run_burner(&pool, &payer_key, Some(harness.trino())).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
@@ -66,22 +74,26 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
+    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
+    let ts = Utc::now();
 
     let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    accumulate_sessions(
+    let reports = accumulate_sessions(
         &mobile_config,
         banned_radios,
         &mut txn,
         &verified_sessions,
-        Utc::now(),
+        ts,
         futures::stream::iter(reports),
     )
     .await?;
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports.session_reqs, ts, trino)
+        .await?;
     txn.commit().await?;
 
     Ok(verified_sessions_rx)

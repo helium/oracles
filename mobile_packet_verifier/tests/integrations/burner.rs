@@ -451,11 +451,19 @@ async fn save_data_transfer_sessions(
     trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     let mut txn = pool.begin().await?;
-    for (payer, pubkey, amount) in sessions {
-        let session = mk_data_transfer_session(payer, pubkey, *amount);
-        pending_burns::save_data_transfer_session_req(&mut txn, &session, Utc::now(), trino)
-            .await?;
-    }
+
+    let sessions = sessions
+        .iter()
+        .map(|(payer, pubkey, amount)| mk_data_transfer_session(payer, pubkey, *amount))
+        .collect::<Vec<_>>();
+
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &sessions, Utc::now(), trino).await?;
+
+    // for (payer, pubkey, amount) in sessions {
+    //     let session = mk_data_transfer_session(payer, pubkey, *amount);
+    //     pending_burns::save_data_transfer_session_reqs(&mut txn, &session, Utc::now(), trino)
+    //         .await?;
+    // }
     txn.commit().await?;
 
     Ok(())

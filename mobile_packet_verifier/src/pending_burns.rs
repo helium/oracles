@@ -1,5 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
+use anyhow::Context;
 use chrono::{DateTime, FixedOffset, Utc};
 use file_store::traits::TimestampEncode;
 use file_store_oracles::mobile_session::DataTransferSessionReq;
@@ -38,7 +39,7 @@ impl From<DataTransferSessionTrino> for DataTransferSession {
     }
 }
 
-#[derive(Debug, FromRow, PartialEq)]
+#[derive(Debug, Clone, FromRow, PartialEq)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -111,7 +112,17 @@ impl DataTransferSession {
         )
     }
 
-    pub async fn trino_write(&self, trino: &trino_rust_client::Client) -> anyhow::Result<()> {
+    pub async fn trino_write(
+        sessions: &[Self],
+        trino: &trino_rust_client::Client,
+    ) -> anyhow::Result<()> {
+        if sessions.is_empty() {
+            return Ok(());
+        }
+        let sessions = sessions
+            .iter()
+            .map(|session| session.to_trino_insert())
+            .collect::<Vec<String>>();
         let query = format!(
             "
             INSERT INTO {table_name}
@@ -122,7 +133,7 @@ impl DataTransferSession {
             VALUES {data}
             ",
             table_name = Self::TABLE_NAME,
-            data = self.to_trino_insert()
+            data = sessions.join(", ")
         );
 
         trino.execute(query).await?;
@@ -142,12 +153,6 @@ impl DataTransferSession {
         trino.execute(query).await?;
         Ok(())
     }
-
-    /*
-     left: [DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, payer: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, uploaded_bytes: 500000000, downloaded_bytes: 500000000, rewardable_bytes: 1000000000, first_timestamp: 2026-02-05T22:46:15.754344Z, last_timestamp: 2026-02-05T22:46:15.754344Z }]
-    right: [DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, payer: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, uploaded_bytes: 500000000, downloaded_bytes: 500000000, rewardable_bytes: 1000000000, first_timestamp: 2026-02-05T22:46:15.754344Z, last_timestamp: 2026-02-05T22:46:15.754344Z },
-            DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: MultiSig, address: "1Lb4WV1" }, payer: PublicKeyBinary { network: MainNet, type: MultiSig, address: "1Lb4WV1" }, uploaded_bytes: 500000, downloaded_bytes: 500000, rewardable_bytes: 1000000, first_timestamp: 2026-02-05T22:46:15.899444Z, last_timestamp: 2026-02-05T22:46:15.899444Z }]
-      */
 
     pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<Self>> {
         let all = trino
@@ -236,8 +241,8 @@ pub async fn get_all(
         let mut pg_refs: Vec<&DataTransferSession> = results.iter().collect();
         let mut tr_refs: Vec<&DataTransferSession> = ts_owned.iter().collect();
 
-        pg_refs.sort_by_key(|x| x.first_timestamp);
-        tr_refs.sort_by_key(|x| x.first_timestamp);
+        pg_refs.sort_by_key(|x| (x.first_timestamp, x.pub_key.clone()));
+        tr_refs.sort_by_key(|x| (x.first_timestamp, x.pub_key.clone()));
 
         // Shadow the original names with the sorted reference collections so the following
         // debug_assert_eq! will compare the sorted lists.
@@ -292,61 +297,119 @@ pub async fn save_data_transfer_session_reqs(
     reqs: &[DataTransferSessionReq],
     last_timestamp: DateTime<Utc>,
     trino: Option<&trino_rust_client::Client>,
-) -> Result<(), sqlx::Error> {
-    for req in reqs {
-        save_data_transfer_session_req(txn, req, last_timestamp, trino).await?;
-    }
+) -> anyhow::Result<()> {
+    let sessions = reqs
+        .iter()
+        .map(|x| DataTransferSession::from_req(x, last_timestamp))
+        .collect::<Vec<_>>();
+
+    save_data_transfer_sessions(txn, &sessions, trino).await?;
 
     Ok(())
 }
 
-pub async fn save_data_transfer_session_req(
+pub async fn save_data_transfer_sessions(
     txn: &mut Transaction<'_, Postgres>,
-    req: &DataTransferSessionReq,
-    last_timestamp: DateTime<Utc>,
+    data_transfer_session: &[DataTransferSession],
     trino: Option<&trino_rust_client::Client>,
-) -> Result<(), sqlx::Error> {
-    let dts = DataTransferSession::from_req(req, last_timestamp);
-    save_data_transfer_session(txn, &dts, trino).await?;
-
-    Ok(())
-}
-
-pub async fn save_data_transfer_session(
-    txn: &mut Transaction<'_, Postgres>,
-    data_transfer_session: &DataTransferSession,
-    trino: Option<&trino_rust_client::Client>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-            r#"
-            INSERT INTO data_transfer_sessions
-                (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES
-                ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
-                uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-                downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-                rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-                first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
-                last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
-            "#
-        )
-            .bind(&data_transfer_session.pub_key)
-            .bind(&data_transfer_session.payer)
-            .bind(data_transfer_session.uploaded_bytes)
-            .bind(data_transfer_session.downloaded_bytes)
-            .bind(data_transfer_session.rewardable_bytes)
-            .bind(data_transfer_session.first_timestamp)
-            .bind(data_transfer_session.last_timestamp)
-            .execute(&mut **txn)
-            .await?;
+) -> anyhow::Result<()> {
+    postgres_save_data_transfer_sessions(txn, data_transfer_session).await?;
 
     if let Some(trino) = trino {
-        data_transfer_session
-            .trino_write(trino)
+        DataTransferSession::trino_write(data_transfer_session, trino)
             .await
             .expect("writing to trino");
     }
+
+    Ok(())
+}
+
+pub async fn postgres_save_data_transfer_sessions(
+    txn: &mut Transaction<'_, Postgres>,
+    data_transfer_session: &[DataTransferSession],
+) -> anyhow::Result<()> {
+    // Pre-aggregate by (pub_key, payer) to avoid "ON CONFLICT DO UPDATE command
+    // cannot affect row a second time" when duplicates exist in a single batch.
+    let mut merged: HashMap<(String, String), DataTransferSession> = HashMap::new();
+    for s in data_transfer_session {
+        let key = (s.pub_key.to_string(), s.payer.to_string());
+        merged
+            .entry(key)
+            .and_modify(|existing| {
+                existing.uploaded_bytes += s.uploaded_bytes;
+                existing.downloaded_bytes += s.downloaded_bytes;
+                existing.rewardable_bytes += s.rewardable_bytes;
+                existing.first_timestamp = existing.first_timestamp.min(s.first_timestamp);
+                existing.last_timestamp = existing.last_timestamp.max(s.last_timestamp);
+            })
+            .or_insert_with(|| s.clone());
+    }
+
+    let merged_sessions: Vec<DataTransferSession> = merged.into_values().collect();
+
+    let pub_keys = merged_sessions
+        .iter()
+        .map(|s| s.pub_key.to_string())
+        .collect::<Vec<String>>();
+    let payers = merged_sessions
+        .iter()
+        .map(|s| s.payer.to_string())
+        .collect::<Vec<String>>();
+    let uploaded = merged_sessions
+        .iter()
+        .map(|s| s.uploaded_bytes)
+        .collect::<Vec<i64>>();
+    let downloaded = merged_sessions
+        .iter()
+        .map(|s| s.downloaded_bytes)
+        .collect::<Vec<i64>>();
+    let rewardable = merged_sessions
+        .iter()
+        .map(|s| s.rewardable_bytes)
+        .collect::<Vec<i64>>();
+    let first_ts = merged_sessions
+        .iter()
+        .map(|s| s.first_timestamp)
+        .collect::<Vec<DateTime<Utc>>>();
+    let last_ts = merged_sessions
+        .iter()
+        .map(|s| s.last_timestamp)
+        .collect::<Vec<DateTime<Utc>>>();
+
+    sqlx::query(
+        r#"
+        INSERT INTO data_transfer_sessions
+            (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+        SELECT
+            pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp
+        FROM UNNEST(
+            $1::text[],
+            $2::text[],
+            $3::bigint[],
+            $4::bigint[],
+            $5::bigint[],
+            $6::timestamptz[],
+            $7::timestamptz[]
+        ) AS t(
+            pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp
+        )
+        ON CONFLICT (pub_key, payer) DO UPDATE SET
+            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+            first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
+            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+        "#
+    )
+    .bind(pub_keys)
+    .bind(payers)
+    .bind(uploaded)
+    .bind(downloaded)
+    .bind(rewardable)
+    .bind(first_ts)
+    .bind(last_ts)
+    .execute(&mut **txn)
+    .await.context("inserting multiple into postgres")?;
 
     Ok(())
 }

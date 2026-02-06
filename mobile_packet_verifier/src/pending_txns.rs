@@ -133,7 +133,7 @@ pub async fn remove_pending_txn_failure(
     conn: &PgPool,
     signature: &Signature,
     trino: Option<&trino_rust_client::Client>,
-) -> Result<(), sqlx::Error> {
+) -> anyhow::Result<()> {
     let mut txn = conn.begin().await?;
     sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
         .bind(signature.to_string())
@@ -152,9 +152,7 @@ pub async fn remove_pending_txn_failure(
     .fetch_all(&mut *txn)
     .await?;
 
-    for session in transfer_sessions.iter() {
-        pending_burns::save_data_transfer_session(&mut txn, session, trino).await?;
-    }
+    pending_burns::save_data_transfer_sessions(&mut txn, &transfer_sessions, trino).await?;
 
     txn.commit().await?;
 

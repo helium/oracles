@@ -13,21 +13,29 @@ use helium_proto::services::poc_mobile::{
 use sqlx::{Postgres, Transaction};
 
 use crate::{
-    banning::BannedRadios, bytes_to_dc, event_ids, pending_burns, MobileConfigResolverExt,
+    banning::BannedRadios, bytes_to_dc, event_ids,
+    iceberg::data_transfer_session::TrinoDataTransferSession, pending_burns,
+    MobileConfigResolverExt,
 };
+
+#[derive(Default)]
+pub struct AccumulateResult {
+    pub valid: Vec<TrinoDataTransferSession>,
+    pub session_reqs: Vec<DataTransferSessionReq>,
+}
 
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
     banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    _curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-) -> anyhow::Result<Vec<DataTransferSessionReq>> {
+) -> anyhow::Result<AccumulateResult> {
     tokio::pin!(reports);
 
     let mut metrics = AccumulateMetrics::new();
-    let mut session_reqs = vec![];
+
+    let mut result = AccumulateResult::default();
 
     while let Some(report) = reports.next().await {
         if report.report.data_transfer_usage.radio_access_technology
@@ -38,12 +46,17 @@ pub async fn accumulate_sessions(
         }
 
         let report_validity = verify_report(txn, mobile_config, &banned_radios, &report).await?;
+        // go to iceberg only if it's valid, event if it's zero rewardable bytes
         write_verified_report(
             verified_data_session_report_sink,
             report_validity,
             report.clone(),
         )
         .await?;
+
+        if report_validity == ReportStatus::Valid {
+            result.valid.push(report.clone().into());
+        }
 
         if report_validity != ReportStatus::Valid {
             continue;
@@ -54,14 +67,15 @@ pub async fn accumulate_sessions(
         }
 
         metrics.add_report(&report);
-        session_reqs.push(report.report);
+
+        result.session_reqs.push(report.report);
         // pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
         // .await?;
     }
 
     metrics.flush();
 
-    Ok(session_reqs)
+    Ok(result)
 }
 
 async fn verify_report(

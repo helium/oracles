@@ -1,5 +1,5 @@
 use crate::{
-    banning::{self},
+    banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
     pending_burns,
@@ -7,6 +7,7 @@ use crate::{
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
 };
@@ -15,11 +16,12 @@ use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
+use futures::Stream;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
 use solana::burn::{SolanaNetwork, SolanaRpc};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{
     sync::mpsc::Receiver,
@@ -123,13 +125,46 @@ where
         )
         .await?;
 
-        pending_burns::save_data_transfer_session_reqs(&mut transaction, &reports, ts, None)
-            .await?;
+        pending_burns::save_data_transfer_session_reqs(
+            &mut transaction,
+            &reports.session_reqs,
+            ts,
+            None,
+        )
+        .await?;
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
         Ok(())
     }
+}
+
+pub async fn handle_data_transfer_session_file(
+    txn: &mut Transaction<'_, Postgres>,
+    banned_radios: BannedRadios,
+    mobile_config: &impl MobileConfigResolverExt,
+    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    curr_file_ts: DateTime<Utc>,
+    reports: impl Stream<Item = DataTransferSessionIngestReport>,
+    trino: Option<&trino_rust_client::Client>,
+) -> anyhow::Result<()> {
+    let reports = crate::accumulate::accumulate_sessions(
+        mobile_config,
+        banned_radios,
+        txn,
+        verified_data_session_report_sink,
+        reports,
+    )
+    .await?;
+
+    pending_burns::save_data_transfer_session_reqs(txn, &reports.session_reqs, curr_file_ts, None)
+        .await?;
+
+    if let Some(trino) = trino {
+        crate::iceberg::data_transfer_session::write(trino, &reports.valid).await?;
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, clap::Args)]

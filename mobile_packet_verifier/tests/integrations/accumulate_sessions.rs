@@ -174,7 +174,7 @@ async fn write_dts() -> anyhow::Result<()> {
     let dst = DataTransferSession::from_req(&req, Utc::now());
 
     let client = harness.trino();
-    dst.trino_write(client).await?;
+    DataTransferSession::trino_write(&[dst.clone()], client).await?;
     let all = DataTransferSession::get_all(client).await?;
 
     assert_eq!(all, vec![dst]);
@@ -595,7 +595,8 @@ async fn run_accumulate_sessions(
     )
     .await?;
 
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports, ts, trino).await?;
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports.session_reqs, ts, trino)
+        .await?;
 
     txn.commit().await?;
 
