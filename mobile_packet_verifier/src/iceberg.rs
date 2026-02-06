@@ -1,7 +1,3 @@
-// NOTE(mj): putting 6 decimals helps with PartialEq when doing a roundtrip, but may be overkill.
-// Does make life a lot easier though.
-//first_timestamp = self.first_timestamp.format("%Y-%m-%d %H:%M:%S%.6f"),
-
 pub mod data_transfer_session {
 
     use chrono::DateTime;
@@ -12,9 +8,11 @@ pub mod data_transfer_session {
     use trino_rust_client::Trino;
 
     const TABLE_NAME: &str = "data_transfer_sessions";
+    // NOTE(mj): putting 6 decimals helps with PartialEq when doing a roundtrip,
+    // but may be overkill. Does make life a lot easier though.
     const DT_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.6f";
 
-    #[derive(Debug, Trino, Serialize, Deserialize)]
+    #[derive(Debug, Trino, Serialize, Deserialize, PartialEq)]
     pub struct TrinoDataTransferSession {
         report_received_timestamp: DateTime<FixedOffset>,
         // -- request

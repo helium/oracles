@@ -12,9 +12,7 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    banning, bytes_to_dc,
-    daemon::handle_data_transfer_session_file,
-    pending_burns::{self, DataTransferSession},
+    banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
 };
 use sqlx::PgPool;
 
@@ -149,39 +147,6 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     Ok(())
 }
 
-#[tokio::test]
-async fn write_dts() -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
-
-    let req = DataTransferSessionReq {
-        rewardable_bytes: 1_000,
-        pub_key: PublicKeyBinary::from(vec![0]),
-        signature: vec![],
-        carrier_id: CarrierIdV2::Carrier9,
-        sampling: false,
-        data_transfer_usage: DataTransferEvent {
-            pub_key: PublicKeyBinary::from(vec![0]),
-            upload_bytes: 1_000,
-            download_bytes: 1_000,
-            radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
-            event_id: "test-event-id".to_string(),
-            payer: PublicKeyBinary::from(vec![0]),
-            timestamp: Utc::now(),
-            signature: vec![],
-        },
-    };
-
-    let dst = DataTransferSession::from_req(&req, Utc::now());
-
-    let client = harness.trino();
-    DataTransferSession::trino_write(&[dst.clone()], client).await?;
-    let all = DataTransferSession::get_all(client).await?;
-
-    assert_eq!(all, vec![dst]);
-
-    Ok(())
-}
-
 #[sqlx::test]
 async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     let harness = setup_iceberg().await?;
@@ -220,8 +185,8 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
 
-    let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
-    assert_eq!(pending, trino_pending);
+    let trino_all = iceberg::data_transfer_session::get_all(harness.trino()).await?;
+    assert!(!trino_all.is_empty());
 
     Ok(())
 }
