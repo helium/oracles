@@ -65,7 +65,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
         .try_fold(0, |total, batch| async move {
-            let addresses: Vec<_> = batch.iter().map(|mhi| mhi.entity_key.clone()).collect();
+            let addresses: Vec<_> = batch.iter().map(|mhi| &mhi.entity_key).collect();
             let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
             let mut existing_map = existing_gateways
                 .into_iter()

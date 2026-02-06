@@ -377,7 +377,7 @@ impl Gateway {
 
     pub async fn get_by_addresses<'a>(
         db: impl PgExecutor<'a>,
-        addresses: Vec<PublicKeyBinary>,
+        addresses: Vec<&PublicKeyBinary>,
     ) -> anyhow::Result<Vec<Self>> {
         let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
 
