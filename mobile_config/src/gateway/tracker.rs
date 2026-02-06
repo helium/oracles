@@ -63,14 +63,14 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
         .try_chunks(BATCH_SIZE)
-        .map_err(|TryChunksError(_gateways, err)| err)
+        .map_err(|TryChunksError(_, err)| err)
         .try_fold(0, |total, batch| async move {
             let addresses: Vec<_> = batch.iter().map(|mhi| &mhi.entity_key).collect();
             let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
-            let mut existing_map = existing_gateways
-                .into_iter()
-                .map(|gw| (gw.address.clone(), gw))
-                .collect::<HashMap<_, _>>();
+            let mut existing_map: HashMap<_, _> = existing_gateways
+                .iter()
+                .map(|gw| (&gw.address, gw))
+                .collect();
 
             let mut to_insert = Vec::with_capacity(batch.len());
 
