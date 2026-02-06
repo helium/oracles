@@ -9,12 +9,8 @@ use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::common::setup_iceberg;
-
 #[sqlx::test]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
-
     let payer_insufficent = PublicKeyBinary::from(vec![1]);
     let payer_sufficient = PublicKeyBinary::from(vec![2]);
     const ORIGINAL_BALANCE: u64 = 10_000;
@@ -35,12 +31,11 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
             (&payer_insufficent, &payer_insufficent, 1_000_000_000), // exceed balance
             (&payer_sufficient, &payer_sufficient, 1_000_000),       // within balance
         ],
-        Some(harness.trino()),
     )
     .await?;
 
     // Ensure we see 2 pending burns
-    let pre_burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let pre_burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(pre_burns.len(), 2, "2 burns for 2 payers");
 
     // Setup the Burner
@@ -54,10 +49,10 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Burn what we can
-    burner.burn(&pool, Some(harness.trino())).await?;
+    burner.burn(&pool).await?;
 
     // 1 burn succeeded, the other payer has insufficient balance
-    let burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(burns.len(), 1, "1 burn left");
 
     // Ensure no pending transactions
@@ -87,8 +82,6 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
-
     let payer_one = PublicKeyBinary::from(vec![1]);
     let payer_two = PublicKeyBinary::from(vec![2]);
 
@@ -101,11 +94,10 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             (&payer_one, &payer_one, 1_000),
             (&payer_two, &payer_two, 1_000),
         ],
-        Some(harness.trino()),
     )
     .await?;
 
-    let burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(burns.len(), 2, "two burns for two payers");
 
     // First transaction is confirmed
@@ -117,7 +109,6 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         1_000,
         &confirmed_signature,
         Utc::now() - chrono::Duration::minutes(2),
-        Some(harness.trino()),
     )
     .await?;
 
@@ -130,7 +121,6 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         500,
         &unconfirmed_signature,
         Utc::now() - chrono::Duration::minutes(2),
-        Some(harness.trino()),
     )
     .await?;
     assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 2);
@@ -147,15 +137,13 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         0,
         std::time::Duration::default(),
     );
-    burner
-        .confirm_pending_txns(&pool, Some(harness.trino()))
-        .await?;
+    burner.confirm_pending_txns(&pool).await?;
 
     // confirmed and unconfirmed txns have been cleared
     assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 0);
 
     // The unconfirmed txn is moved back to ready for burning
-    let burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(burns.len(), 1, "the unconfirmed txn has moved back to burn");
 
     let payer_burn = &burns[0];
@@ -168,8 +156,6 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
-
     // Insert a pending txn for some sessions.
     // Insert more sessions after the pending txn.
     // Confirming a txn should write out the sessions that were present before the txn.
@@ -183,7 +169,6 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
-        Some(harness.trino()),
     )
     .await?;
 
@@ -195,7 +180,6 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         1_000,
         &signature,
         Utc::now() - chrono::Duration::minutes(2),
-        Some(harness.trino()),
     )
     .await?;
 
@@ -203,7 +187,6 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
-        Some(harness.trino()),
     )
     .await?;
 
@@ -216,9 +199,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         0,
         std::time::Duration::default(),
     );
-    burner
-        .confirm_pending_txns(&pool, Some(harness.trino()))
-        .await?;
+    burner.confirm_pending_txns(&pool).await?;
 
     // In flight session is written out
     let written_sessions = get_written_sessions(&mut valid_sessions_rx);
@@ -229,7 +210,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     );
 
     // Late added session is still waiting for burn
-    let payer_burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(payer_burns.len(), 1);
 
     let payer_burn = &payer_burns[0];
@@ -248,8 +229,6 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
 fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
-
     // After making a pending_txn, and the data sessions are moved for
     // processing. If the txn cannot be finalized, the data sessions that were
     // going to be written need to be moved back to being considered for burn.
@@ -262,7 +241,6 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
-        Some(harness.trino()),
     )
     .await?;
 
@@ -273,7 +251,6 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         1_000,
         &signature,
         Utc::now() - chrono::Duration::minutes(2),
-        Some(harness.trino()),
     )
     .await?;
 
@@ -281,12 +258,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
-        Some(harness.trino()),
     )
     .await?;
 
     // There are sessions for burning, but we cannot because there is also a pending txn.
-    let payer_burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(
         payer_burns.len(),
         1,
@@ -315,16 +291,14 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     );
 
     // Txn fails to be finalized here
-    burner
-        .confirm_pending_txns(&pool, Some(harness.trino()))
-        .await?;
+    burner.confirm_pending_txns(&pool).await?;
 
     let txn_count = pending_txns::pending_txn_count(&pool).await?;
     assert_eq!(txn_count, 0, "should be no more pending txns");
 
     // Sessions are merged with 2nd set of sessions for burning.
     // There is still only 1 payer bur, but the amount contains both sets of sessions.
-    let payer_burns = pending_burns::get_all_payer_burns(&pool, Some(harness.trino())).await?;
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(payer_burns.len(), 1, "still have 1 butn to go");
     assert_eq!(
         payer_burns[0].total_dcs,
@@ -337,7 +311,6 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 
 #[sqlx::test]
 fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
     // Trigger a burn when there are data sessions that can be burned _and_ pending txns.
     // Nothing should happen until the pending_txns are gone.
 
@@ -349,7 +322,6 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
-        Some(harness.trino()),
     )
     .await?;
 
@@ -361,7 +333,6 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         1_000,
         &signature,
         Utc::now() - chrono::Duration::minutes(2),
-        Some(harness.trino()),
     )
     .await?;
 
@@ -369,7 +340,6 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     save_data_transfer_sessions(
         &pool,
         &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
-        Some(harness.trino()),
     )
     .await?;
 
@@ -386,7 +356,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         std::time::Duration::default(),
     );
     burner
-        .burn(&pool, Some(harness.trino()))
+        .burn(&pool)
         .await
         .context("burning with pending txn")?;
 
@@ -399,11 +369,8 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
-    pending_txns::remove_pending_txn_failure(&pool, &signature, Some(harness.trino())).await?;
-    burner
-        .burn(&pool, Some(harness.trino()))
-        .await
-        .context("burning after ")?;
+    pending_txns::remove_pending_txn_failure(&pool, &signature).await?;
+    burner.burn(&pool).await.context("burning after ")?;
 
     // Written sessions should be all combined values
     let written_sessions = get_written_sessions(&mut valid_sessions_rx);
@@ -448,7 +415,6 @@ fn mk_data_transfer_session(
 async fn save_data_transfer_sessions(
     pool: &PgPool,
     sessions: &[(&PublicKeyBinary, &PublicKeyBinary, u64)],
-    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     let mut txn = pool.begin().await?;
 
@@ -457,7 +423,7 @@ async fn save_data_transfer_sessions(
         .map(|(payer, pubkey, amount)| mk_data_transfer_session(payer, pubkey, *amount))
         .collect::<Vec<_>>();
 
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &sessions, Utc::now(), trino).await?;
+    pending_burns::save_data_transfer_session_reqs(&mut txn, &sessions, Utc::now()).await?;
 
     // for (payer, pubkey, amount) in sessions {
     //     let session = mk_data_transfer_session(payer, pubkey, *amount);

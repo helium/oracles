@@ -69,7 +69,8 @@ pub mod data_transfer_session {
     pub async fn get_all(
         trino: &trino_rust_client::Client,
     ) -> anyhow::Result<Vec<TrinoDataTransferSession>> {
-        todo!()
+        let all = trino.get_all(format!("SELECT * from {TABLE_NAME}")).await?;
+        Ok(all.into_vec())
     }
 
     impl From<DataTransferSessionIngestReport> for TrinoDataTransferSession {

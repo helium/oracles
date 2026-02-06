@@ -37,18 +37,14 @@ where
     S: SolanaNetwork,
 {
     pub async fn confirm_and_burn(&self, pool: &PgPool) -> anyhow::Result<()> {
-        self.confirm_pending_txns(pool, None)
+        self.confirm_pending_txns(pool)
             .await
             .context("confirming pending txns")?;
-        self.burn(pool, None).await.context("burning")?;
+        self.burn(pool).await.context("burning")?;
         Ok(())
     }
 
-    pub async fn confirm_pending_txns(
-        &self,
-        pool: &PgPool,
-        trino: Option<&trino_rust_client::Client>,
-    ) -> anyhow::Result<()> {
+    pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
         let pending_txns = pending_txns::fetch_all_pending_txns(pool).await?;
         tracing::info!(count = pending_txns.len(), "confirming pending txns");
 
@@ -78,25 +74,21 @@ where
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
-                pending_txns::remove_pending_txn_failure(pool, &signature, trino).await?;
+                pending_txns::remove_pending_txn_failure(pool, &signature).await?;
             }
         }
 
         Ok(())
     }
 
-    pub async fn burn(
-        &self,
-        pool: &PgPool,
-        trino: Option<&trino_rust_client::Client>,
-    ) -> anyhow::Result<()> {
+    pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
         let pending_txns = pending_txns::pending_txn_count(pool).await?;
         if pending_txns > 0 {
             tracing::error!(pending_txns, "ignoring burn");
             return Ok(());
         }
 
-        for payer_pending_burn in pending_burns::get_all_payer_burns(pool, trino).await? {
+        for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
             let total_dcs = payer_pending_burn.total_dcs;
             let payer = payer_pending_burn.payer;
             let sessions = payer_pending_burn.sessions;
@@ -115,7 +107,7 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature(), trino)
+            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature())
                 .await
                 .context("adding pending txns and moving sessions")?;
             match self.solana.submit_transaction(&txn).await {
@@ -127,7 +119,6 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        trino,
                     )
                     .await?;
                 }
@@ -145,11 +136,9 @@ where
                     );
 
                     // block on confirmation
-                    self.transaction_confirmation_check(
-                        pool, err, txn, payer, total_dcs, sessions, trino,
-                    )
-                    .instrument(span)
-                    .await;
+                    self.transaction_confirmation_check(pool, err, txn, payer, total_dcs, sessions)
+                        .instrument(span)
+                        .await;
                 }
             }
         }
@@ -165,7 +154,6 @@ where
         payer: PublicKeyBinary,
         total_dcs: u64,
         sessions: Vec<pending_burns::DataTransferSession>,
-        trino: Option<&trino_rust_client::Client>,
     ) {
         tracing::warn!(?err, "starting txn confirmation check");
         // We don't know if the txn actually made it, maybe it did
@@ -185,7 +173,6 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        trino,
                     )
                     .await;
                     if let Err(err) = txn_success {
@@ -226,7 +213,6 @@ async fn handle_transaction_success(
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<ValidDataTransferSession>,
-    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -237,7 +223,7 @@ async fn handle_transaction_success(
     .increment(total_dcs);
 
     // Delete from the data transfer session and write out to S3
-    pending_burns::delete_for_payer(pool, &payer, trino).await?;
+    pending_burns::delete_for_payer(pool, &payer).await?;
     pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 

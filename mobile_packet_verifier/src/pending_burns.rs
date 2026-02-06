@@ -226,39 +226,16 @@ pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn get_all(
-    conn: &Pool<Postgres>,
-    trino: Option<&trino_rust_client::Client>,
-) -> anyhow::Result<Vec<DataTransferSession>> {
+pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSession>> {
     let results = sqlx::query_as("SELECT * FROM data_transfer_sessions")
         .fetch_all(conn)
         .await?;
 
-    if let Some(trino) = trino {
-        let ts_owned = DataTransferSession::get_all(trino).await?;
-
-        // Create vectors of references so we can sort without moving the owned collections.
-        let mut pg_refs: Vec<&DataTransferSession> = results.iter().collect();
-        let mut tr_refs: Vec<&DataTransferSession> = ts_owned.iter().collect();
-
-        pg_refs.sort_by_key(|x| (x.first_timestamp, x.pub_key.clone()));
-        tr_refs.sort_by_key(|x| (x.first_timestamp, x.pub_key.clone()));
-
-        // Shadow the original names with the sorted reference collections so the following
-        // debug_assert_eq! will compare the sorted lists.
-        let results = pg_refs;
-        let ts = tr_refs;
-        debug_assert_eq!(results, ts, "trino results should match postgres");
-    }
-
     Ok(results)
 }
 
-pub async fn get_all_payer_burns(
-    conn: &Pool<Postgres>,
-    trino: Option<&trino_rust_client::Client>,
-) -> anyhow::Result<Vec<PendingPayerBurn>> {
-    let pending_payer_burns = get_all(conn, trino)
+pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<PendingPayerBurn>> {
+    let pending_payer_burns = get_all(conn)
         .await?
         .into_iter()
         .fold(
@@ -296,14 +273,13 @@ pub async fn save_data_transfer_session_reqs(
     txn: &mut Transaction<'_, Postgres>,
     reqs: &[DataTransferSessionReq],
     last_timestamp: DateTime<Utc>,
-    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     let sessions = reqs
         .iter()
         .map(|x| DataTransferSession::from_req(x, last_timestamp))
         .collect::<Vec<_>>();
 
-    save_data_transfer_sessions(txn, &sessions, trino).await?;
+    save_data_transfer_sessions(txn, &sessions).await?;
 
     Ok(())
 }
@@ -311,15 +287,8 @@ pub async fn save_data_transfer_session_reqs(
 pub async fn save_data_transfer_sessions(
     txn: &mut Transaction<'_, Postgres>,
     data_transfer_session: &[DataTransferSession],
-    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     postgres_save_data_transfer_sessions(txn, data_transfer_session).await?;
-
-    if let Some(trino) = trino {
-        DataTransferSession::trino_write(data_transfer_session, trino)
-            .await
-            .expect("writing to trino");
-    }
 
     Ok(())
 }
@@ -417,16 +386,11 @@ pub async fn postgres_save_data_transfer_sessions(
 pub async fn delete_for_payer(
     conn: &Pool<Postgres>,
     payer: &PublicKeyBinary,
-    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
         .bind(payer)
         .execute(conn)
         .await?;
-
-    if let Some(trino) = trino {
-        DataTransferSession::trino_delete(trino, payer).await?;
-    };
 
     Ok(())
 }

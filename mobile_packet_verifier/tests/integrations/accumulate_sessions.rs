@@ -12,8 +12,8 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    accumulate::accumulate_sessions,
     banning, bytes_to_dc,
+    daemon::handle_data_transfer_session_file,
     pending_burns::{self, DataTransferSession},
 };
 use sqlx::PgPool;
@@ -34,7 +34,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
 
     report_rx.assert_is_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -99,7 +99,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 
     report_rx.assert_num_msgs(2)?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].dc_to_burn(), bytes_to_dc(2_000));
 
@@ -143,7 +143,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
 
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -217,7 +217,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
 
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
 
     let trino_pending = DataTransferSession::get_all(harness.trino()).await?;
@@ -263,7 +263,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
     // record not written to file or db
     report_rx.assert_is_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -305,7 +305,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -347,7 +347,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -394,7 +394,7 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -441,7 +441,7 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     // record written to file, but not db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
 
     Ok(())
@@ -488,7 +488,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     // record written to file and db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(!pending.is_empty());
     Ok(())
 }
@@ -558,19 +558,11 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     // record written to file and db
     report_rx.assert_not_empty()?;
 
-    let pending = pending_burns::get_all(&pool, Some(harness.trino())).await?;
+    let pending = pending_burns::get_all(&pool).await?;
     assert!(!pending.is_empty());
 
     Ok(())
 }
-
-// async fn run_accumulate_sessions(
-//     pool: &PgPool,
-//     reports: Vec<DataTransferSessionIngestReport>,
-//     mobile_config: TestMobileConfig,
-// ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
-//     run_accumulate_sessions_trino(pool, reports, mobile_config, None).await
-// }
 
 async fn run_accumulate_sessions(
     pool: &PgPool,
@@ -585,18 +577,17 @@ async fn run_accumulate_sessions(
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    let reports = accumulate_sessions(
-        &mobile_config,
-        banned_radios,
+
+    handle_data_transfer_session_file(
         &mut txn,
+        banned_radios,
+        &mobile_config,
         &verified_sessions,
         ts,
         futures::stream::iter(reports),
+        trino,
     )
     .await?;
-
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports.session_reqs, ts, trino)
-        .await?;
 
     txn.commit().await?;
 

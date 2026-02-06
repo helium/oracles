@@ -115,20 +115,13 @@ where
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        let reports = crate::accumulate::accumulate_sessions(
-            &self.mobile_config_resolver,
-            banned_radios,
+        handle_data_transfer_session_file(
             &mut transaction,
+            banned_radios,
+            &self.mobile_config_resolver,
             &self.verified_data_session_report_sink,
             ts,
             reports,
-        )
-        .await?;
-
-        pending_burns::save_data_transfer_session_reqs(
-            &mut transaction,
-            &reports.session_reqs,
-            ts,
             None,
         )
         .await?;
@@ -157,7 +150,7 @@ pub async fn handle_data_transfer_session_file(
     )
     .await?;
 
-    pending_burns::save_data_transfer_session_reqs(txn, &reports.session_reqs, curr_file_ts, None)
+    pending_burns::save_data_transfer_session_reqs(txn, &reports.session_reqs, curr_file_ts)
         .await?;
 
     if let Some(trino) = trino {

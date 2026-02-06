@@ -9,9 +9,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
-use mobile_packet_verifier::{
-    accumulate::accumulate_sessions, banning, dc_to_bytes, pending_burns,
-};
+use mobile_packet_verifier::{banning, daemon::handle_data_transfer_session_file, dc_to_bytes};
 use sqlx::{types::Uuid, PgPool};
 
 use crate::common::{setup_iceberg, TestMobileConfig};
@@ -63,7 +61,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
         Some(harness.trino()),
     )
     .await?;
-    run_burner(&pool, &payer_key, Some(harness.trino())).await?;
+    run_burner(&pool, &payer_key).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
@@ -83,27 +81,23 @@ async fn run_accumulate_sessions(
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    let reports = accumulate_sessions(
-        &mobile_config,
-        banned_radios,
+    handle_data_transfer_session_file(
         &mut txn,
+        banned_radios,
+        &mobile_config,
         &verified_sessions,
         ts,
         futures::stream::iter(reports),
+        trino,
     )
     .await?;
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &reports.session_reqs, ts, trino)
-        .await?;
+
     txn.commit().await?;
 
     Ok(verified_sessions_rx)
 }
 
-async fn run_burner(
-    pool: &PgPool,
-    payer_key: &PublicKeyBinary,
-    trino: Option<&trino_rust_client::Client>,
-) -> anyhow::Result<()> {
+async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
@@ -114,7 +108,7 @@ async fn run_burner(
         0,
         std::time::Duration::default(),
     )
-    .burn(pool, trino)
+    .burn(pool)
     .await?;
 
     Ok(())
