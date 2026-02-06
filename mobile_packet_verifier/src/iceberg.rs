@@ -12,6 +12,7 @@ pub mod data_transfer_session {
     use trino_rust_client::Trino;
 
     const TABLE_NAME: &str = "data_transfer_sessions";
+    const DT_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.6f";
 
     #[derive(Debug, Trino, Serialize, Deserialize)]
     pub struct TrinoDataTransferSession {
@@ -63,7 +64,64 @@ pub mod data_transfer_session {
         trino: &trino_rust_client::Client,
         data: &[TrinoDataTransferSession],
     ) -> anyhow::Result<()> {
-        todo!()
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        let data = data
+            .iter()
+            .map(to_trino_insert)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let query = format!(
+            "
+            INSERT INTO {TABLE_NAME}
+            (
+                report_received_timestamp, request_pub_key, rewardable_bytes, carrier_id,
+                sampling, data_transfer_event_pub_key, upload_bytes, download_byte,
+                radio_access_thechnology, event_id, payer, timestamp
+            )
+            VALUES {data}
+        "
+        );
+
+        trino.execute(query).await?;
+
+        Ok(())
+    }
+
+    fn to_trino_insert(val: &TrinoDataTransferSession) -> String {
+        format!(
+            "
+            (
+            TIMESTAMP '{report_received_timestamp}',
+            '{request_pub_key}',
+            {rewardable_bytes},
+            '{carrier_id}',
+            {sampling},
+            '{data_transfer_event_pub_key}',
+            {upload_bytes},
+            {download_byte},
+            '{radio_access_thechnology}',
+            '{event_id}',
+            '{payer}',
+            TIMESTAMP '{timestamp}'
+            )
+            ",
+            report_received_timestamp = val.report_received_timestamp.format(DT_FORMAT),
+            request_pub_key = val.request_pub_key,
+            rewardable_bytes = val.rewardable_bytes,
+            carrier_id = val.carrier_id,
+            sampling = val.sampling,
+            data_transfer_event_pub_key = val.data_transfer_event_pub_key,
+            upload_bytes = val.upload_bytes,
+            download_byte = val.download_byte,
+            radio_access_thechnology = val.radio_access_thechnology,
+            event_id = val.event_id,
+            payer = val.payer,
+            timestamp = val.timestamp.format(DT_FORMAT),
+        )
     }
 
     pub async fn get_all(
