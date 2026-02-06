@@ -198,13 +198,50 @@ impl Gateway {
         self.hash_params.location_asserts
     }
 
-    // TODO rework to &String?
     pub fn owner(&self) -> Option<&str> {
         self.hash_params.owner.as_deref()
     }
 
     pub fn compute_hash(&self) -> String {
         self.hash_params.compute_hash()
+    }
+
+    pub fn new_if_changed(
+        &self,
+        mhi: &MobileHotspotInfo,
+        hash_params: HashParams,
+        new_hash: String,
+        refreshed_at: DateTime<Utc>,
+    ) -> Option<Gateway> {
+        if self.hash == new_hash {
+            return None;
+        }
+
+        let loc_changed = mhi.location != self.location().map(|v| v as i64);
+
+        let owner_changed = mhi.owner.is_some() && mhi.owner.as_deref() != self.owner();
+
+        let location_changed_at = if loc_changed {
+            Some(refreshed_at)
+        } else {
+            self.location_changed_at
+        };
+
+        let owner_changed_at = if owner_changed {
+            Some(refreshed_at)
+        } else {
+            self.owner_changed_at
+        };
+
+        Some(Gateway {
+            address: mhi.entity_key.clone(),
+            created_at: mhi.created_at,
+            last_changed_at: refreshed_at,
+            hash: new_hash,
+            location_changed_at,
+            owner_changed_at,
+            hash_params,
+        })
     }
 
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {

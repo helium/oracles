@@ -98,43 +98,11 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         to_insert.push(gw);
                     }
                     Some(last_gw) => {
-                        if last_gw.hash == new_hash {
-                            // nothing changed
-                            continue;
+                        if let Some(gw) =
+                            last_gw.new_if_changed(&mhi, hash_params, new_hash, refreshed_at)
+                        {
+                            to_insert.push(gw);
                         }
-                        let loc_changed = mhi.location != last_gw.location().map(|v| v as i64);
-
-                        let owner_changed = if mhi.owner.is_none() {
-                            false
-                        } else {
-                            mhi.owner.as_deref() != last_gw.owner()
-                        };
-
-                        let last_changed_at = refreshed_at;
-
-                        let location_changed_at = if loc_changed {
-                            Some(refreshed_at)
-                        } else {
-                            last_gw.location_changed_at
-                        };
-
-                        let owner_changed_at = if owner_changed {
-                            Some(refreshed_at)
-                        } else {
-                            last_gw.owner_changed_at
-                        };
-
-                        let gw = Gateway {
-                            address: mhi.entity_key.clone(),
-                            created_at: mhi.created_at,
-                            last_changed_at,
-                            hash: new_hash,
-                            location_changed_at,
-                            owner_changed_at,
-                            hash_params,
-                        };
-
-                        to_insert.push(gw);
                     }
                 }
             }
