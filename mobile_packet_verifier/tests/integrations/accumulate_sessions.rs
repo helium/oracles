@@ -8,7 +8,6 @@ use file_store_oracles::{
     mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
 };
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
@@ -19,15 +18,7 @@ use mobile_packet_verifier::{
 };
 use sqlx::PgPool;
 
-use crate::common::{TestChannelExt, TestMobileConfig};
-
-async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
-    let harness = IcebergTestHarness::new().await?;
-    harness
-        .create_table(DataTransferSession::table_def(harness.schema_name()))
-        .await?;
-    Ok(harness)
-}
+use crate::common::{setup_iceberg, TestChannelExt, TestMobileConfig};
 
 #[sqlx::test]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {

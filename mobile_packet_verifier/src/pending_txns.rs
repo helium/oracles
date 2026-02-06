@@ -58,8 +58,9 @@ pub async fn add_pending_txn(
     payer: &PublicKeyBinary,
     amount: u64,
     signature: &Signature,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
-    do_add_pending_txn(conn, payer, amount, signature, Utc::now()).await
+    do_add_pending_txn(conn, payer, amount, signature, Utc::now(), trino).await
 }
 
 pub async fn do_add_pending_txn(
@@ -68,6 +69,7 @@ pub async fn do_add_pending_txn(
     amount: u64,
     signature: &Signature,
     time_of_submission: DateTime<Utc>,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
     let mut txn = conn.begin().await?;
     sqlx::query(
@@ -117,6 +119,12 @@ pub async fn do_add_pending_txn(
     .execute(&mut *txn)
     .await?;
 
+    if let Some(trino) = trino {
+        DataTransferSession::trino_delete(trino, payer)
+            .await
+            .expect("deleting from add_pending_txn");
+    }
+
     txn.commit().await?;
     Ok(())
 }
@@ -124,6 +132,7 @@ pub async fn do_add_pending_txn(
 pub async fn remove_pending_txn_failure(
     conn: &PgPool,
     signature: &Signature,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
     let mut txn = conn.begin().await?;
     sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
@@ -144,7 +153,7 @@ pub async fn remove_pending_txn_failure(
     .await?;
 
     for session in transfer_sessions.iter() {
-        pending_burns::save_data_transfer_session(&mut txn, session).await?;
+        pending_burns::save_data_transfer_session(&mut txn, session, trino).await?;
     }
 
     txn.commit().await?;

@@ -12,12 +12,14 @@ use helium_proto::services::poc_mobile::{
 use mobile_packet_verifier::{accumulate::accumulate_sessions, banning, dc_to_bytes};
 use sqlx::{types::Uuid, PgPool};
 
-use crate::common::TestMobileConfig;
+use crate::common::{setup_iceberg, TestMobileConfig};
 
 #[sqlx::test]
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
+    let harness = setup_iceberg().await?;
+
     let payer_key =
         PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
 
@@ -53,7 +55,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
 
     // accumulate and burn
     run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
-    run_burner(&pool, &payer_key).await?;
+    run_burner(&pool, &payer_key, Some(harness.trino())).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
@@ -85,7 +87,11 @@ async fn run_accumulate_sessions(
     Ok(verified_sessions_rx)
 }
 
-async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Result<()> {
+async fn run_burner(
+    pool: &PgPool,
+    payer_key: &PublicKeyBinary,
+    trino: Option<&trino_rust_client::Client>,
+) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
@@ -96,7 +102,7 @@ async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Resul
         0,
         std::time::Duration::default(),
     )
-    .burn(pool)
+    .burn(pool, trino)
     .await?;
 
     Ok(())

@@ -129,9 +129,41 @@ impl DataTransferSession {
         Ok(())
     }
 
+    pub async fn trino_delete(
+        trino: &trino_rust_client::Client,
+        payer: &PublicKeyBinary,
+    ) -> anyhow::Result<()> {
+        let query = format!(
+            "DELETE FROM {table_name} WHERE payer = '{payer}'",
+            table_name = Self::TABLE_NAME,
+            payer = payer.to_string()
+        );
+
+        trino.execute(query).await?;
+        Ok(())
+    }
+
+    /*
+     left: [DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, payer: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, uploaded_bytes: 500000000, downloaded_bytes: 500000000, rewardable_bytes: 1000000000, first_timestamp: 2026-02-05T22:46:15.754344Z, last_timestamp: 2026-02-05T22:46:15.754344Z }]
+    right: [DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, payer: PublicKeyBinary { network: MainNet, type: Ed25519, address: "18AV53K" }, uploaded_bytes: 500000000, downloaded_bytes: 500000000, rewardable_bytes: 1000000000, first_timestamp: 2026-02-05T22:46:15.754344Z, last_timestamp: 2026-02-05T22:46:15.754344Z },
+            DataTransferSession { pub_key: PublicKeyBinary { network: MainNet, type: MultiSig, address: "1Lb4WV1" }, payer: PublicKeyBinary { network: MainNet, type: MultiSig, address: "1Lb4WV1" }, uploaded_bytes: 500000, downloaded_bytes: 500000, rewardable_bytes: 1000000, first_timestamp: 2026-02-05T22:46:15.899444Z, last_timestamp: 2026-02-05T22:46:15.899444Z }]
+      */
+
     pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<Self>> {
         let all = trino
-            .get_all::<DataTransferSessionTrino>(format!("SELECT * from {}", Self::TABLE_NAME))
+            .get_all::<DataTransferSessionTrino>(format!(
+                "SELECT \
+                    pub_key, \
+                    any_value(payer) AS payer, \
+                    SUM(uploaded_bytes) AS uploaded_bytes, \
+                    SUM(downloaded_bytes) AS downloaded_bytes, \
+                    SUM(rewardable_bytes) AS rewardable_bytes, \
+                    MIN(first_timestamp) AS first_timestamp, \
+                    MAX(last_timestamp) AS last_timestamp \
+                 FROM {} \
+                 GROUP BY pub_key",
+                Self::TABLE_NAME
+            ))
             .await;
 
         let all = match all {
@@ -198,15 +230,30 @@ pub async fn get_all(
         .await?;
 
     if let Some(trino) = trino {
-        let ts = DataTransferSession::get_all(trino).await?;
+        let ts_owned = DataTransferSession::get_all(trino).await?;
+
+        // Create vectors of references so we can sort without moving the owned collections.
+        let mut pg_refs: Vec<&DataTransferSession> = results.iter().collect();
+        let mut tr_refs: Vec<&DataTransferSession> = ts_owned.iter().collect();
+
+        pg_refs.sort_by_key(|x| x.first_timestamp);
+        tr_refs.sort_by_key(|x| x.first_timestamp);
+
+        // Shadow the original names with the sorted reference collections so the following
+        // debug_assert_eq! will compare the sorted lists.
+        let results = pg_refs;
+        let ts = tr_refs;
         debug_assert_eq!(results, ts, "trino results should match postgres");
     }
 
     Ok(results)
 }
 
-pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<PendingPayerBurn>> {
-    let pending_payer_burns = get_all(conn, None)
+pub async fn get_all_payer_burns(
+    conn: &Pool<Postgres>,
+    trino: Option<&trino_rust_client::Client>,
+) -> anyhow::Result<Vec<PendingPayerBurn>> {
+    let pending_payer_burns = get_all(conn, trino)
         .await?
         .into_iter()
         .fold(
@@ -260,11 +307,7 @@ pub async fn save_data_transfer_session_req(
     trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
     let dts = DataTransferSession::from_req(req, last_timestamp);
-    save_data_transfer_session(txn, &dts).await?;
-
-    if let Some(client) = trino {
-        dts.trino_write(client).await.expect("writing to trino");
-    }
+    save_data_transfer_session(txn, &dts, trino).await?;
 
     Ok(())
 }
@@ -272,6 +315,7 @@ pub async fn save_data_transfer_session_req(
 pub async fn save_data_transfer_session(
     txn: &mut Transaction<'_, Postgres>,
     data_transfer_session: &DataTransferSession,
+    trino: Option<&trino_rust_client::Client>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
             r#"
@@ -297,17 +341,29 @@ pub async fn save_data_transfer_session(
             .execute(&mut **txn)
             .await?;
 
+    if let Some(trino) = trino {
+        data_transfer_session
+            .trino_write(trino)
+            .await
+            .expect("writing to trino");
+    }
+
     Ok(())
 }
 
 pub async fn delete_for_payer(
     conn: &Pool<Postgres>,
     payer: &PublicKeyBinary,
+    trino: Option<&trino_rust_client::Client>,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
         .bind(payer)
         .execute(conn)
         .await?;
+
+    if let Some(trino) = trino {
+        DataTransferSession::trino_delete(trino, payer).await?;
+    };
 
     Ok(())
 }
