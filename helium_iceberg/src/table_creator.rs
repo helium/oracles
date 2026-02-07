@@ -1,7 +1,10 @@
 use crate::catalog::Catalog;
 use crate::writer::IcebergTable;
 use crate::{Error, Result, Settings};
-use iceberg::spec::{NestedField, PartitionSpec, PrimitiveType, Schema, Transform, Type};
+use iceberg::spec::{
+    NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection, SortField,
+    SortOrder, Transform, Type,
+};
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -736,5 +739,128 @@ mod tests {
         assert!(err
             .to_string()
             .contains("identifier field 'score' cannot be float or double type"));
+    }
+
+    #[test]
+    fn test_sort_field_definition_ascending() {
+        let sf = SortFieldDefinition::ascending("created_at");
+        assert_eq!(sf.source_name, "created_at");
+        assert_eq!(sf.transform, Transform::Identity);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+        assert_eq!(sf.null_order, NullOrder::First);
+    }
+
+    #[test]
+    fn test_sort_field_definition_descending() {
+        let sf = SortFieldDefinition::descending("updated_at");
+        assert_eq!(sf.source_name, "updated_at");
+        assert_eq!(sf.transform, Transform::Identity);
+        assert_eq!(sf.direction, SortDirection::Descending);
+        assert_eq!(sf.null_order, NullOrder::Last);
+    }
+
+    #[test]
+    fn test_sort_field_definition_with_transform() {
+        let sf = SortFieldDefinition::ascending("timestamp").with_transform(Transform::Day);
+        assert_eq!(sf.transform, Transform::Day);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+    }
+
+    #[test]
+    fn test_sort_field_definition_with_null_order() {
+        let sf = SortFieldDefinition::ascending("name").with_null_order(NullOrder::Last);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+        assert_eq!(sf.null_order, NullOrder::Last);
+    }
+
+    #[test]
+    fn test_table_definition_builder_with_sort_fields() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_sort_fields([
+                SortFieldDefinition::ascending("id"),
+                SortFieldDefinition::descending("id"),
+            ])
+            .build()
+            .expect("should build");
+
+        assert_eq!(definition.sort_fields.len(), 2);
+    }
+
+    #[test]
+    fn test_build_sort_order() {
+        let definition = TableDefinition::builder("test")
+            .with_fields([
+                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
+                FieldDefinition::required(
+                    "created_at",
+                    Type::Primitive(PrimitiveType::Timestamptz),
+                ),
+                FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
+            ])
+            .with_sort_fields([
+                SortFieldDefinition::ascending("created_at"),
+                SortFieldDefinition::descending("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let sort_order = definition
+            .build_sort_order(&schema)
+            .expect("should build sort order");
+
+        assert!(!sort_order.is_unsorted());
+        assert_eq!(sort_order.fields.len(), 2);
+
+        assert_eq!(sort_order.fields[0].source_id, 2); // created_at
+        assert_eq!(sort_order.fields[0].direction, SortDirection::Ascending);
+        assert_eq!(sort_order.fields[0].null_order, NullOrder::First);
+        assert_eq!(sort_order.fields[0].transform, Transform::Identity);
+
+        assert_eq!(sort_order.fields[1].source_id, 3); // name
+        assert_eq!(sort_order.fields[1].direction, SortDirection::Descending);
+        assert_eq!(sort_order.fields[1].null_order, NullOrder::Last);
+        assert_eq!(sort_order.fields[1].transform, Transform::Identity);
+    }
+
+    #[test]
+    fn test_build_sort_order_empty() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let sort_order = definition
+            .build_sort_order(&schema)
+            .expect("should build sort order");
+
+        assert!(sort_order.is_unsorted());
+    }
+
+    #[test]
+    fn test_sort_order_missing_source_field() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_sort_field(SortFieldDefinition::ascending("nonexistent"))
+            .build()
+            .expect("should build definition");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let result = definition.build_sort_order(&schema);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("nonexistent"));
     }
 }
