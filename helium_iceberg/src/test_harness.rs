@@ -80,11 +80,13 @@ impl IcebergTestHarness {
             catalog_name: config.catalog_name.clone(),
             warehouse: None,
             auth_token: None,
+            s3_access_key: Some(config.s3_access_key.clone()),
+            s3_secret_key: Some(config.s3_secret_key.clone()),
         };
         let iceberg_catalog = Catalog::connect(&iceberg_settings).await?;
 
         // Create unique namespace for this test
-        let ns = NamespaceIdent::new(schema_name.clone());
+        let ns = NamespaceIdent::new(namespace.clone());
         iceberg_catalog
             .as_ref()
             .create_namespace(&ns, HashMap::new())
@@ -145,6 +147,10 @@ pub struct HarnessConfig {
     pub trino_user: String,
     /// Iceberg REST URL from host (for test harness to connect).
     pub iceberg_rest_url: String,
+    /// S3 access key for MinIO/S3 writes from the host.
+    pub s3_access_key: String,
+    /// S3 secret key for MinIO/S3 writes from the host.
+    pub s3_secret_key: String,
 }
 
 impl Default for HarnessConfig {
@@ -155,6 +161,8 @@ impl Default for HarnessConfig {
             trino_port: DEFAULT_TRINO_PORT,
             trino_user: "test".to_string(),
             iceberg_rest_url: DEFAULT_ICEBERG_REST_URL.to_string(),
+            s3_access_key: "admin".to_string(),
+            s3_secret_key: "password".to_string(),
         }
     }
 }

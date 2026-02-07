@@ -94,6 +94,17 @@ impl AuthConfig {
         }
         props
     }
+
+    /// NOTE(mj): These are needed when attempting to write to minio _through_
+    /// the RestCatalog from _outside_ of Docker. The RestCatalog has permission
+    /// to write because of Environment variables provided through the
+    /// iceberg-compose.yml and Trino has access to Minio through the same
+    /// thing. But outside of Docker, we need to be able to pass these
+    /// environment variables through the settings.
+    #[serde(skip_serializing)]
+    pub s3_access_key: Option<String>,
+    #[serde(skip_serializing)]
+    pub s3_secret_key: Option<String>,
 }
 
 impl Settings {
