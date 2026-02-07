@@ -12,12 +12,13 @@ pub use error::{Error, Result};
 pub use memory_writer::MemoryDataWriter;
 pub use settings::Settings;
 pub use table_creator::{
-    FieldDefinition, PartitionDefinition, TableCreator, TableDefinition, TableDefinitionBuilder,
+    FieldDefinition, PartitionDefinition, SortFieldDefinition, TableCreator, TableDefinition,
+    TableDefinitionBuilder,
 };
 pub use writer::{DataWriter, IcebergTable, IcebergTableBuilder};
 
 // Re-export iceberg types for ergonomic API usage
-pub use iceberg::spec::{PrimitiveType, Transform, Type};
+pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
 
 #[cfg(test)]
 tls_init::include_tls_tests!();

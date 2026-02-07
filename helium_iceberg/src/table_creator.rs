@@ -1,7 +1,10 @@
 use crate::catalog::Catalog;
 use crate::writer::IcebergTable;
 use crate::{Error, Result, Settings};
-use iceberg::spec::{NestedField, PartitionSpec, PrimitiveType, Schema, Transform, Type};
+use iceberg::spec::{
+    NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection, SortField,
+    SortOrder, Transform, Type,
+};
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -119,12 +122,71 @@ impl PartitionDefinition {
     }
 }
 
+/// Defines a sort field for a table's sort order.
+#[derive(Debug, Clone)]
+pub struct SortFieldDefinition {
+    source_name: String,
+    transform: Transform,
+    direction: SortDirection,
+    null_order: NullOrder,
+}
+
+impl SortFieldDefinition {
+    /// Create a new sort field definition with all parameters specified.
+    pub fn new(
+        source_name: impl Into<String>,
+        transform: Transform,
+        direction: SortDirection,
+        null_order: NullOrder,
+    ) -> Self {
+        Self {
+            source_name: source_name.into(),
+            transform,
+            direction,
+            null_order,
+        }
+    }
+
+    /// Create an ascending sort field with identity transform and nulls-first.
+    pub fn ascending(source_name: impl Into<String>) -> Self {
+        Self::new(
+            source_name,
+            Transform::Identity,
+            SortDirection::Ascending,
+            NullOrder::First,
+        )
+    }
+
+    /// Create a descending sort field with identity transform and nulls-last.
+    pub fn descending(source_name: impl Into<String>) -> Self {
+        Self::new(
+            source_name,
+            Transform::Identity,
+            SortDirection::Descending,
+            NullOrder::Last,
+        )
+    }
+
+    /// Override the transform for this sort field.
+    pub fn with_transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    /// Override the null ordering for this sort field.
+    pub fn with_null_order(mut self, null_order: NullOrder) -> Self {
+        self.null_order = null_order;
+        self
+    }
+}
+
 /// A complete table definition including schema, partitioning, and properties.
 #[derive(Debug, Clone)]
 pub struct TableDefinition {
     name: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
+    sort_fields: Vec<SortFieldDefinition>,
     properties: HashMap<String, String>,
     location: Option<String>,
 }
@@ -174,6 +236,37 @@ impl TableDefinition {
             .map_err(Error::Iceberg)
     }
 
+    /// Build the sort order from sort field definitions.
+    fn build_sort_order(&self, schema: &Schema) -> Result<SortOrder> {
+        if self.sort_fields.is_empty() {
+            return Ok(SortOrder::unsorted_order());
+        }
+
+        let sort_fields: Vec<SortField> = self
+            .sort_fields
+            .iter()
+            .map(|sf| {
+                let field = schema.field_by_name(&sf.source_name).ok_or_else(|| {
+                    Error::Iceberg(iceberg::Error::new(
+                        iceberg::ErrorKind::DataInvalid,
+                        format!("sort field source '{}' not found in schema", sf.source_name),
+                    ))
+                })?;
+                Ok(SortField::builder()
+                    .source_id(field.id)
+                    .transform(sf.transform)
+                    .direction(sf.direction)
+                    .null_order(sf.null_order)
+                    .build())
+            })
+            .collect::<Result<_>>()?;
+
+        SortOrder::builder()
+            .with_fields(sort_fields)
+            .build(schema)
+            .map_err(Error::Iceberg)
+    }
+
     /// Build the partition spec from partition definitions.
     fn build_partition_spec(&self, schema: &Schema) -> Result<PartitionSpec> {
         let schema_ref = Arc::new(schema.clone());
@@ -199,6 +292,7 @@ pub struct TableDefinitionBuilder {
     name: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
+    sort_fields: Vec<SortFieldDefinition>,
     properties: HashMap<String, String>,
     location: Option<String>,
 }
@@ -210,6 +304,7 @@ impl TableDefinitionBuilder {
             name: name.into(),
             fields: Vec::new(),
             partitions: Vec::new(),
+            sort_fields: Vec::new(),
             properties: HashMap::new(),
             location: None,
         }
@@ -239,6 +334,21 @@ impl TableDefinitionBuilder {
         partitions: impl IntoIterator<Item = PartitionDefinition>,
     ) -> Self {
         self.partitions.extend(partitions);
+        self
+    }
+
+    /// Add a single sort field definition.
+    pub fn with_sort_field(mut self, sort_field: SortFieldDefinition) -> Self {
+        self.sort_fields.push(sort_field);
+        self
+    }
+
+    /// Add multiple sort field definitions.
+    pub fn with_sort_fields(
+        mut self,
+        sort_fields: impl IntoIterator<Item = SortFieldDefinition>,
+    ) -> Self {
+        self.sort_fields.extend(sort_fields);
         self
     }
 
@@ -298,6 +408,7 @@ impl TableDefinitionBuilder {
             name: self.name,
             fields: self.fields,
             partitions: self.partitions,
+            sort_fields: self.sort_fields,
             properties: self.properties,
             location: self.location,
         })
@@ -343,6 +454,7 @@ impl TableCreator {
 
         let schema = definition.build_schema()?;
         let partition_spec = definition.build_partition_spec(&schema)?;
+        let sort_order = definition.build_sort_order(&schema)?;
 
         let table_creation = definition
             .location
@@ -352,6 +464,7 @@ impl TableCreator {
                     .location(loc)
                     .schema(schema.clone())
                     .partition_spec(partition_spec.clone())
+                    .sort_order(sort_order.clone())
                     .properties(definition.properties.clone())
                     .build()
             })
@@ -360,6 +473,7 @@ impl TableCreator {
                     .name(definition.name)
                     .schema(schema)
                     .partition_spec(partition_spec)
+                    .sort_order(sort_order)
                     .properties(definition.properties)
                     .build()
             });
@@ -625,5 +739,128 @@ mod tests {
         assert!(err
             .to_string()
             .contains("identifier field 'score' cannot be float or double type"));
+    }
+
+    #[test]
+    fn test_sort_field_definition_ascending() {
+        let sf = SortFieldDefinition::ascending("created_at");
+        assert_eq!(sf.source_name, "created_at");
+        assert_eq!(sf.transform, Transform::Identity);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+        assert_eq!(sf.null_order, NullOrder::First);
+    }
+
+    #[test]
+    fn test_sort_field_definition_descending() {
+        let sf = SortFieldDefinition::descending("updated_at");
+        assert_eq!(sf.source_name, "updated_at");
+        assert_eq!(sf.transform, Transform::Identity);
+        assert_eq!(sf.direction, SortDirection::Descending);
+        assert_eq!(sf.null_order, NullOrder::Last);
+    }
+
+    #[test]
+    fn test_sort_field_definition_with_transform() {
+        let sf = SortFieldDefinition::ascending("timestamp").with_transform(Transform::Day);
+        assert_eq!(sf.transform, Transform::Day);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+    }
+
+    #[test]
+    fn test_sort_field_definition_with_null_order() {
+        let sf = SortFieldDefinition::ascending("name").with_null_order(NullOrder::Last);
+        assert_eq!(sf.direction, SortDirection::Ascending);
+        assert_eq!(sf.null_order, NullOrder::Last);
+    }
+
+    #[test]
+    fn test_table_definition_builder_with_sort_fields() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_sort_fields([
+                SortFieldDefinition::ascending("id"),
+                SortFieldDefinition::descending("id"),
+            ])
+            .build()
+            .expect("should build");
+
+        assert_eq!(definition.sort_fields.len(), 2);
+    }
+
+    #[test]
+    fn test_build_sort_order() {
+        let definition = TableDefinition::builder("test")
+            .with_fields([
+                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
+                FieldDefinition::required(
+                    "created_at",
+                    Type::Primitive(PrimitiveType::Timestamptz),
+                ),
+                FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
+            ])
+            .with_sort_fields([
+                SortFieldDefinition::ascending("created_at"),
+                SortFieldDefinition::descending("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let sort_order = definition
+            .build_sort_order(&schema)
+            .expect("should build sort order");
+
+        assert!(!sort_order.is_unsorted());
+        assert_eq!(sort_order.fields.len(), 2);
+
+        assert_eq!(sort_order.fields[0].source_id, 2); // created_at
+        assert_eq!(sort_order.fields[0].direction, SortDirection::Ascending);
+        assert_eq!(sort_order.fields[0].null_order, NullOrder::First);
+        assert_eq!(sort_order.fields[0].transform, Transform::Identity);
+
+        assert_eq!(sort_order.fields[1].source_id, 3); // name
+        assert_eq!(sort_order.fields[1].direction, SortDirection::Descending);
+        assert_eq!(sort_order.fields[1].null_order, NullOrder::Last);
+        assert_eq!(sort_order.fields[1].transform, Transform::Identity);
+    }
+
+    #[test]
+    fn test_build_sort_order_empty() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let sort_order = definition
+            .build_sort_order(&schema)
+            .expect("should build sort order");
+
+        assert!(sort_order.is_unsorted());
+    }
+
+    #[test]
+    fn test_sort_order_missing_source_field() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_sort_field(SortFieldDefinition::ascending("nonexistent"))
+            .build()
+            .expect("should build definition");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let result = definition.build_sort_order(&schema);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("nonexistent"));
     }
 }

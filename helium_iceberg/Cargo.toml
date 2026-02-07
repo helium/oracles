@@ -27,6 +27,7 @@ parquet = "57"
 tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
 tracing-subscriber = { workspace = true }
