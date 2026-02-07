@@ -36,6 +36,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    trino_client: Option<trino_rust_client::Client>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -46,6 +47,7 @@ impl<S, MCR> Daemon<S, MCR> {
         burner: Burner<S>,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+        trino_client: Option<trino_rust_client::Client>,
     ) -> Self {
         Self {
             pool,
@@ -55,6 +57,7 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
+            trino_client,
         }
     }
 }
@@ -122,7 +125,7 @@ where
             &self.verified_data_session_report_sink,
             ts,
             reports,
-            None,
+            self.trino_client.as_ref(),
         )
         .await?;
 
@@ -231,6 +234,7 @@ impl Cmd {
             burner,
             resolver,
             invalid_sessions,
+            None, // To be filled in later
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
