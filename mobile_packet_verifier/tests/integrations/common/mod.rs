@@ -7,7 +7,7 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new().await?;
     harness
         .create_table(iceberg::data_transfer_session::table_definition(
-            harness.schema_name(),
+            harness.namespace(),
         ))
         .await?;
     Ok(harness)
