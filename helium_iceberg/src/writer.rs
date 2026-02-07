@@ -114,7 +114,23 @@ impl IcebergTable {
             .ok_or_else(|| Error::Writer("no batch produced".into()))
     }
 
-    async fn write_and_commit(&self, batch: RecordBatch) -> Result {
+    /// Reload table metadata from the catalog.
+    pub(crate) async fn reload(&mut self) -> Result {
+        use iceberg::Catalog as IcebergCatalog;
+        self.table = self
+            .catalog
+            .as_ref()
+            .load_table(self.table.identifier())
+            .await
+            .map_err(Error::Iceberg)?;
+        Ok(())
+    }
+
+    /// Write a record batch to data files without committing.
+    pub(crate) async fn write_data_files(
+        &self,
+        batch: RecordBatch,
+    ) -> Result<Vec<iceberg::spec::DataFile>> {
         let schema = self.table.metadata().current_schema().clone();
         let partition_spec = self.table.metadata().default_partition_spec().clone();
         let file_io = self.table.file_io().clone();
@@ -157,9 +173,46 @@ impl IcebergTable {
                 .map_err(Error::Iceberg)?;
         }
 
-        let data_files = fanout_writer.close().await.map_err(Error::Iceberg)?;
+        fanout_writer.close().await.map_err(Error::Iceberg)
+    }
 
+    async fn write_and_commit(&self, batch: RecordBatch) -> Result {
+        let data_files = self.write_data_files(batch).await?;
         self.commit_files(data_files).await
+    }
+
+    /// Create a branch from the current main snapshot.
+    pub async fn create_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::create_branch(&self.catalog, &self.table, branch_name).await
+    }
+
+    /// Write records to a named branch (not main).
+    pub async fn write_to_branch<T: Serialize + Send + Sync + 'static>(
+        &mut self,
+        branch_name: &str,
+        records: Vec<T>,
+    ) -> Result {
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        self.reload().await?;
+        let batch = self.records_to_batch(&records)?;
+        let data_files = self.write_data_files(batch).await?;
+        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files).await
+    }
+
+    /// Fast-forward main to a branch's snapshot, then delete the branch.
+    pub async fn publish_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::publish_branch(&self.catalog, &self.table, branch_name).await
+    }
+
+    /// Delete a branch.
+    pub async fn delete_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::delete_branch(&self.catalog, &self.table, branch_name).await
     }
 
     async fn commit_files(&self, data_files: Vec<iceberg::spec::DataFile>) -> Result {

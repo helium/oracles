@@ -376,6 +376,30 @@ impl TableDefinitionBuilder {
         self
     }
 
+    /// Set the minimum number of snapshots to keep when expiring snapshots.
+    pub fn with_min_snapshots_to_keep(self, min_snapshots: i32) -> Self {
+        self.with_property(
+            "history.expire.min-snapshots-to-keep",
+            min_snapshots.to_string(),
+        )
+    }
+
+    /// Set the maximum age of snapshots to keep when expiring.
+    pub fn with_max_snapshot_age(self, duration: std::time::Duration) -> Self {
+        self.with_property(
+            "history.expire.max-snapshot-age-ms",
+            duration.as_millis().to_string(),
+        )
+    }
+
+    /// Set the maximum age of snapshot references to keep when expiring.
+    pub fn with_max_ref_age(self, duration: std::time::Duration) -> Self {
+        self.with_property(
+            "history.expire.max-ref-age-ms",
+            duration.as_millis().to_string(),
+        )
+    }
+
     /// Build the TableDefinition.
     pub fn build(self) -> Result<TableDefinition> {
         if self.fields.is_empty() {
@@ -862,5 +886,62 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("nonexistent"));
+    }
+
+    #[test]
+    fn test_with_min_snapshots_to_keep() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_min_snapshots_to_keep(5)
+            .build()
+            .expect("should build");
+
+        assert_eq!(
+            definition
+                .properties
+                .get("history.expire.min-snapshots-to-keep"),
+            Some(&"5".to_string())
+        );
+    }
+
+    #[test]
+    fn test_with_max_snapshot_age() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_max_snapshot_age(std::time::Duration::from_secs(86400))
+            .build()
+            .expect("should build");
+
+        assert_eq!(
+            definition
+                .properties
+                .get("history.expire.max-snapshot-age-ms"),
+            Some(&"86400000".to_string())
+        );
+    }
+
+    #[test]
+    fn test_with_max_ref_age() {
+        let definition = TableDefinition::builder("test")
+            .with_field(FieldDefinition::required(
+                "id",
+                Type::Primitive(PrimitiveType::Long),
+            ))
+            .with_max_ref_age(std::time::Duration::from_secs(3600))
+            .build()
+            .expect("should build");
+
+        assert_eq!(
+            definition
+                .properties
+                .get("history.expire.max-ref-age-ms"),
+            Some(&"3600000".to_string())
+        );
     }
 }

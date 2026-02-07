@@ -1,5 +1,6 @@
 extern crate tls_init;
 
+mod branch;
 mod catalog;
 mod error;
 mod memory_writer;

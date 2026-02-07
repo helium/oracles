@@ -18,6 +18,11 @@ tracing = { workspace = true }
 iceberg = "0.8"
 iceberg-catalog-rest = "0.8"
 
+# HTTP client for direct catalog API calls (branch operations)
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
 # Arrow dependencies
 arrow-array = "57"
 arrow-json = "57"
