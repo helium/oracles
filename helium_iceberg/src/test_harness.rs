@@ -54,7 +54,7 @@ const DEFAULT_ICEBERG_REST_URL: &str = "http://localhost:9001/iceberg";
 /// The Trino client is pre-configured with the catalog and schema,
 /// so queries can reference tables directly without qualification.
 pub struct IcebergTestHarness {
-    schema_name: String,
+    namespace: String,
     trino: trino_rust_client::Client,
     iceberg_catalog: Catalog,
 }
@@ -72,7 +72,7 @@ impl IcebergTestHarness {
 
     /// Create a new test harness with custom configuration.
     pub async fn with_config(config: HarnessConfig) -> Result<Self> {
-        let schema_name = format!("test_{}", Uuid::new_v4().as_simple());
+        let namespace = format!("test_{}", Uuid::new_v4().as_simple());
 
         // Connect to Iceberg catalog
         let iceberg_settings = Settings {
@@ -97,14 +97,14 @@ impl IcebergTestHarness {
         let trino = ClientBuilder::new(&config.trino_user, &config.trino_host)
             .port(config.trino_port)
             .catalog(&config.catalog_name)
-            .schema(&schema_name)
+            .schema(&namespace)
             .build()
             .map_err(|e| Error::Catalog(format!("failed to create trino client: {}", e)))?;
 
-        tracing::info!(schema_name, catalog_name = %config.catalog_name, "test harness initialized");
+        tracing::info!(namespace, catalog_name = %config.catalog_name, "test harness initialized");
 
         Ok(Self {
-            schema_name,
+            namespace,
             trino,
             iceberg_catalog,
         })
@@ -123,16 +123,16 @@ impl IcebergTestHarness {
         &self.iceberg_catalog
     }
 
-    /// Get the unique schema name for this test (e.g., `test_abc123`).
-    pub fn schema_name(&self) -> &str {
-        &self.schema_name
+    /// Get the unique namespace name for this test (e.g., `test_abc123`).
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
-    /// Create a table in the test schema using helium_iceberg.
+    /// Create a table in the test namespace using helium_iceberg.
     pub async fn create_table(&self, definition: TableDefinition) -> Result<()> {
         let creator = TableCreator::new(self.iceberg_catalog.clone());
         creator
-            .create_table_if_not_exists(&self.schema_name, definition)
+            .create_table_if_not_exists(&self.namespace, definition)
             .await?;
         Ok(())
     }
@@ -185,7 +185,7 @@ mod tests {
                         FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
                         FieldDefinition::required("age", Type::Primitive(PrimitiveType::Int)),
                     ])
-                    .with_location(format!("s3://iceberg/{}/people", harness.schema_name()))
+                    .with_location(format!("s3://iceberg/{}/people", harness.namespace()))
                     .build()?,
             )
             .await?;
@@ -216,7 +216,7 @@ mod tests {
                         ),
                     ])
                     .with_partition(PartitionDefinition::day("timestamp", "day"))
-                    .with_location(format!("s3://iceberg/{}/events", harness.schema_name()))
+                    .with_location(format!("s3://iceberg/{}/events", harness.namespace()))
                     .build()?,
             )
             .await?;
