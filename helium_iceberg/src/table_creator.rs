@@ -1,5 +1,5 @@
 use crate::catalog::Catalog;
-use crate::writer::IcebergTable;
+use crate::iceberg_table::IcebergTable;
 use crate::{Error, Result, Settings};
 use iceberg::spec::{
     NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection, SortField,

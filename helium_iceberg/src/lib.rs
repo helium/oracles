@@ -3,6 +3,7 @@ extern crate tls_init;
 mod branch;
 mod catalog;
 mod error;
+mod iceberg_table;
 mod memory_writer;
 mod settings;
 mod table_creator;
@@ -10,13 +11,14 @@ mod writer;
 
 pub use catalog::Catalog;
 pub use error::{Error, Result};
+pub use iceberg_table::{IcebergTable, IcebergTableBuilder};
 pub use memory_writer::{MemoryBranchWriter, MemoryDataWriter};
 pub use settings::{AuthConfig, Settings};
 pub use table_creator::{
     FieldDefinition, PartitionDefinition, SortFieldDefinition, TableCreator, TableDefinition,
     TableDefinitionBuilder,
 };
-pub use writer::{BranchWriter, DataWriter, IcebergTable, IcebergTableBuilder};
+pub use writer::{BranchWriter, DataWriter};
 
 // Re-export iceberg types for ergonomic API usage
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
