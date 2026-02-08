@@ -7,6 +7,13 @@ use iceberg_catalog_rest::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// OAuth2 token response from the token endpoint.
+#[derive(serde::Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
 
 /// Response from the REST catalog's config endpoint.
 #[derive(serde::Deserialize)]
@@ -15,6 +22,129 @@ struct CatalogConfigResponse {
     overrides: HashMap<String, String>,
     #[serde(default)]
     defaults: HashMap<String, String>,
+}
+
+/// Authentication strategy for direct REST API calls.
+#[derive(Clone)]
+enum EndpointAuth {
+    None,
+    Token(String),
+    OAuth2 {
+        token_endpoint: String,
+        credential: String,
+        extra_params: HashMap<String, String>,
+        cached_token: Arc<Mutex<Option<String>>>,
+    },
+}
+
+impl EndpointAuth {
+    /// Build from settings, determining the auth strategy.
+    fn from_settings(settings: &Settings) -> Self {
+        if let Some(ref credential) = settings.auth.credential {
+            let token_endpoint = settings
+                .auth
+                .oauth2_server_uri
+                .clone()
+                .unwrap_or_else(|| format!("{}/v1/oauth/tokens", settings.catalog_uri));
+
+            let mut extra_params = HashMap::new();
+            if let Some(ref scope) = settings.auth.scope {
+                extra_params.insert("scope".to_string(), scope.clone());
+            }
+            if let Some(ref audience) = settings.auth.audience {
+                extra_params.insert("audience".to_string(), audience.clone());
+            }
+            if let Some(ref resource) = settings.auth.resource {
+                extra_params.insert("resource".to_string(), resource.clone());
+            }
+
+            Self::OAuth2 {
+                token_endpoint,
+                credential: credential.clone(),
+                extra_params,
+                cached_token: Arc::new(Mutex::new(None)),
+            }
+        } else if let Some(ref token) = settings.auth.token {
+            Self::Token(token.clone())
+        } else {
+            Self::None
+        }
+    }
+
+    /// Fetch a fresh OAuth2 token from the token endpoint.
+    async fn fetch_token(
+        client: &reqwest::Client,
+        token_endpoint: &str,
+        credential: &str,
+        extra_params: &HashMap<String, String>,
+    ) -> Result<String> {
+        let (client_id, client_secret) = credential
+            .split_once(':')
+            .unwrap_or((credential, ""));
+
+        let mut params = vec![
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+        ];
+        let extra: Vec<(&str, &str)> = extra_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        params.extend(extra);
+
+        let response = client
+            .post(token_endpoint)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| Error::Catalog(format!("OAuth2 token request failed: {e}")))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Catalog(format!(
+                "OAuth2 token request returned {status}: {body}"
+            )));
+        }
+
+        response
+            .json::<TokenResponse>()
+            .await
+            .map(|r| r.access_token)
+            .map_err(|e| Error::Catalog(format!("failed to parse OAuth2 token response: {e}")))
+    }
+
+    /// Get a valid token, using the cache if available.
+    async fn get_token(&self, client: &reqwest::Client) -> Result<Option<String>> {
+        match self {
+            Self::None => Ok(None),
+            Self::Token(token) => Ok(Some(token.clone())),
+            Self::OAuth2 {
+                token_endpoint,
+                credential,
+                extra_params,
+                cached_token,
+            } => {
+                let mut guard = cached_token.lock().await;
+                if let Some(ref token) = *guard {
+                    return Ok(Some(token.clone()));
+                }
+                let token =
+                    Self::fetch_token(client, token_endpoint, credential, extra_params).await?;
+                *guard = Some(token.clone());
+                Ok(Some(token))
+            }
+        }
+    }
+
+    /// Invalidate the cached token (called on 401 to trigger a refresh).
+    async fn invalidate(&self) {
+        if let Self::OAuth2 { cached_token, .. } = self {
+            let mut guard = cached_token.lock().await;
+            *guard = None;
+        }
+    }
 }
 
 /// Resolved endpoint configuration for making direct REST API calls.
@@ -26,8 +156,8 @@ struct RestEndpoint {
     prefix: Option<String>,
     /// HTTP client for direct API calls.
     client: reqwest::Client,
-    /// Optional auth token for API calls.
-    auth_token: Option<String>,
+    /// Authentication strategy.
+    auth: EndpointAuth,
 }
 
 impl RestEndpoint {
@@ -50,17 +180,42 @@ impl RestEndpoint {
             .map(|ident| self.table_url(ident))
             .ok_or_else(|| Error::Catalog("table identifier required for commit".into()))?;
 
-        let mut http_request = self.client.post(&url).json(request);
+        let response = self.send_commit(&url, request).await?;
 
-        if let Some(ref token) = self.auth_token {
+        match response.status().as_u16() {
+            200 => return Ok(()),
+            401 => {
+                // Invalidate cached token and retry once
+                self.auth.invalidate().await;
+                let retry_response = self.send_commit(&url, request).await?;
+                return Self::handle_commit_response(retry_response).await;
+            }
+            _ => {}
+        }
+
+        Self::handle_commit_response(response).await
+    }
+
+    /// Send the HTTP POST for a commit request, attaching auth.
+    async fn send_commit(
+        &self,
+        url: &str,
+        request: &CommitTableRequest,
+    ) -> Result<reqwest::Response> {
+        let mut http_request = self.client.post(url).json(request);
+
+        if let Some(token) = self.auth.get_token(&self.client).await? {
             http_request = http_request.bearer_auth(token);
         }
 
-        let response = http_request
+        http_request
             .send()
             .await
-            .map_err(|e| Error::Catalog(format!("commit request failed: {e}")))?;
+            .map_err(|e| Error::Catalog(format!("commit request failed: {e}")))
+    }
 
+    /// Map an HTTP response to a Result.
+    async fn handle_commit_response(response: reqwest::Response) -> Result<()> {
         match response.status().as_u16() {
             200 => Ok(()),
             409 => Err(Error::Catalog(
@@ -103,6 +258,7 @@ impl Catalog {
         if let Some(ref warehouse) = settings.warehouse {
             config.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
         }
+        config.extend(settings.auth.props());
 
         let catalog = RestCatalogBuilder::default()
             .load(&settings.catalog_name, config)
@@ -120,6 +276,7 @@ impl Catalog {
     /// Resolve the REST endpoint by fetching the catalog config from the server.
     async fn resolve_endpoint(settings: &Settings) -> Result<RestEndpoint> {
         let client = reqwest::Client::new();
+        let auth = EndpointAuth::from_settings(settings);
 
         let mut config_url = format!("{}/v1/config", settings.catalog_uri);
         if let Some(ref warehouse) = settings.warehouse {
@@ -127,7 +284,7 @@ impl Catalog {
         }
 
         let mut request = client.get(&config_url);
-        if let Some(ref token) = settings.auth_token {
+        if let Some(token) = auth.get_token(&client).await? {
             request = request.bearer_auth(token);
         }
 
@@ -161,7 +318,7 @@ impl Catalog {
             uri,
             prefix,
             client,
-            auth_token: settings.auth_token.clone(),
+            auth,
         })
     }
 

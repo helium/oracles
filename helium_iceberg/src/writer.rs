@@ -34,6 +34,24 @@ where
     }
 }
 
+#[async_trait]
+pub trait BranchWriter<T>: Send + Sync
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    async fn create_branch(&mut self, branch_name: &str) -> Result;
+    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>) -> Result;
+    async fn write_stream_to_branch<S>(&mut self, branch_name: &str, stream: S) -> Result
+    where
+        S: Stream<Item = T> + Send + 'static,
+    {
+        let records: Vec<T> = stream.collect().await;
+        self.write_to_branch(branch_name, records).await
+    }
+    async fn publish_branch(&mut self, branch_name: &str) -> Result;
+    async fn delete_branch(&mut self, branch_name: &str) -> Result;
+}
+
 pub struct IcebergTable {
     pub(crate) catalog: Catalog,
     pub(crate) table: Table,
@@ -181,40 +199,6 @@ impl IcebergTable {
         self.commit_files(data_files).await
     }
 
-    /// Create a branch from the current main snapshot.
-    pub async fn create_branch(&mut self, branch_name: &str) -> Result {
-        self.reload().await?;
-        crate::branch::create_branch(&self.catalog, &self.table, branch_name).await
-    }
-
-    /// Write records to a named branch (not main).
-    pub async fn write_to_branch<T: Serialize + Send + Sync + 'static>(
-        &mut self,
-        branch_name: &str,
-        records: Vec<T>,
-    ) -> Result {
-        if records.is_empty() {
-            return Ok(());
-        }
-
-        self.reload().await?;
-        let batch = self.records_to_batch(&records)?;
-        let data_files = self.write_data_files(batch).await?;
-        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files).await
-    }
-
-    /// Fast-forward main to a branch's snapshot, then delete the branch.
-    pub async fn publish_branch(&mut self, branch_name: &str) -> Result {
-        self.reload().await?;
-        crate::branch::publish_branch(&self.catalog, &self.table, branch_name).await
-    }
-
-    /// Delete a branch.
-    pub async fn delete_branch(&mut self, branch_name: &str) -> Result {
-        self.reload().await?;
-        crate::branch::delete_branch(&self.catalog, &self.table, branch_name).await
-    }
-
     async fn commit_files(&self, data_files: Vec<iceberg::spec::DataFile>) -> Result {
         if data_files.is_empty() {
             return Ok(());
@@ -242,5 +226,38 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
 
         let batch = self.records_to_batch(&records)?;
         self.write_and_commit(batch).await
+    }
+}
+
+#[async_trait]
+impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable {
+    /// Create a branch from the current main snapshot.
+    async fn create_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::create_branch(&self.catalog, &self.table, branch_name).await
+    }
+
+    /// Write records to a named branch (not main).
+    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>) -> Result {
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        self.reload().await?;
+        let batch = self.records_to_batch(&records)?;
+        let data_files = self.write_data_files(batch).await?;
+        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files).await
+    }
+
+    /// Fast-forward main to a branch's snapshot, then delete the branch.
+    async fn publish_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::publish_branch(&self.catalog, &self.table, branch_name).await
+    }
+
+    /// Delete a branch.
+    async fn delete_branch(&mut self, branch_name: &str) -> Result {
+        self.reload().await?;
+        crate::branch::delete_branch(&self.catalog, &self.table, branch_name).await
     }
 }
