@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_DB: POLARIS
     ports:
       - 5432:5432
     volumes:
@@ -21,16 +21,15 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
     networks:
       iceberg_net:
-        aliases:
-          - iceberg.minio
+        # aliases:
+        #   - iceberg.minio
     restart: unless-stopped
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
-      - MINIO_DOMAIN=minio
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
     ports:
       - 9100:9100
       - 9000:9000
@@ -38,65 +37,160 @@ services:
       - minio_data:/data
     command: ["server", "/data", "--console-address", ":9100"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
       timeout: 10s
-      retries: 5
-      start_period: 10s
 
   minio-init:
-    image: minio/mc
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     networks:
       iceberg_net:
-    environment:
-      - AWS_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password
-      - BUCKET_SINK=glacon
-    volumes:
-      - ./infra/minio/init.sh:/init.sh
-    entrypoint: /bin/sh -c "/init.sh"
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - >-
+        mc alias set minio http://minio:9000 admin password &&
+        mc mb minio/iceberg &&
+        mc ls minio ||
+        true
 
-  catalog:
-    build:
-      context: infra/gravitino
-      dockerfile: Dockerfile
-    image: local/catalog
-    networks:
-      iceberg_net:
-    restart: unless-stopped
+  polaris-db-bootstrap:
+    image: apache/polaris-admin-tool:1.3.0-incubating
     depends_on:
-      minio-init:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
+    networks:
+      iceberg_net:
     environment:
-      - GRAVITINO_AUX_SERVICES=iceberg-rest
-      - GRAVITINO_IO_IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - GRAVITINO_WAREHOUSE=s3://iceberg/
-      - GRAVITINO_S3_ENDPOINT=http://minio:9000
-      - GRAVITINO_S3_REGION=us-east-1
-      - GRAVITINO_S3_ACCESS_KEY=admin
-      - GRAVITINO_S3_SECRET_KEY=password
-      - GRAVITINO_CATALOG_BACKEND=jdbc
-      - GRAVITINO_URI=jdbc:postgresql://postgres:5432/postgres
-      - GRAVITINO_JDBC_DRIVER=org.postgresql.Driver
-      - GRAVITINO_JDBC_USER=postgres
-      - GRAVITINO_JDBC_PASSWORD=postgres
+      POLARIS_PERSISTENCE_TYPE: relational-jdbc
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/POLARIS
+      QUARKUS_DATASOURCE_USERNAME: postgres 
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - >- 
+        java -jar /deployments/polaris-admin-tool.jar bootstrap --realm=POLARIS --credential=POLARIS,root,s3cr3t ||
+        true
+
+  polaris:
+    image: apache/polaris:1.3.0-incubating
     ports:
-      - 9001:9001
+      - "8181:8181"
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      polaris-db-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      iceberg_net:
+    environment:
+      AWS_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      POLARIS_PERSISTENCE_TYPE: relational-jdbc
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_MAX_RETRIES: 5
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_INITIAL_DELAY_IN_MS: 100
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_MAX_DURATION_IN_MS: 5000
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/POLARIS
+      QUARKUS_DATASOURCE_USERNAME: postgres 
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      POLARIS_BOOTSTRAP_CREDENTIALS: POLARIS,root,s3cr3t
+      POLARIS_REALM_CONTEXT_REALMS: POLARIS
+      QUARKUS_OTEL_SDK_DISABLED: true
+      polaris.features."ALLOW_INSECURE_STORAGE_TYPES": "true"
+      polaris.features."SUPPORTED_CATALOG_STORAGE_TYPES": "[\"S3\"]"
+      polaris.readiness.ignore-severe-issues: "true"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -f http://localhost:9001/iceberg/v1/config || exit 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "curl", "--fail", "http://localhost:8182/q/health"]
+      interval: 2s
+      timeout: 10s
+      retries: 10
       start_period: 10s
+
+  polaris-setup:
+    image: alpine/curl:8.17.0
+    depends_on:
+      polaris:
+        condition: service_healthy
+    networks:
+      iceberg_net:
+    environment:
+      - CLIENT_ID=${ROOT_CLIENT_ID:-root}
+      - CLIENT_SECRET=${ROOT_CLIENT_SECRET:-s3cr3t}
+      - CATALOG_NAME=${CATALOG_NAME:-iceberg}
+      - REALM=${POLARIS_REALM:-POLARIS}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        apk add --no-cache jq
+
+        echo "Obtaining root access token..."
+        TOKEN_RESPONSE=$$(curl --fail-with-body -s -S -X POST http://polaris:8181/api/catalog/v1/oauth/tokens \
+          -H 'Content-Type: application/x-www-form-urlencoded' \
+          -d "grant_type=client_credentials&client_id=$${CLIENT_ID}&client_secret=$${CLIENT_SECRET}&scope=PRINCIPAL_ROLE:ALL" 2>&1) || {
+          echo "❌ Failed to obtain access token"
+          echo "$$TOKEN_RESPONSE" >&2
+          exit 1
+        }
+
+        TOKEN=$$(echo $$TOKEN_RESPONSE | jq -r '.access_token')
+        if [ -z "$$TOKEN" ] || [ "$$TOKEN" = "null" ]; then
+          echo "❌ Failed to parse access token from response"
+          echo "$$TOKEN_RESPONSE"
+          exit 1
+        fi
+        echo "✅ Obtained access token"
+
+        STATUS=$$(curl \
+            -s \
+            -o /dev/null \
+            -w "%{http_code}" \
+            http://polaris:8181/api/catalog/v1/config?warehouse=iceberg \
+            -H "Authorization: Bearer $$TOKEN") || true
+
+        echo "Status: $$STATUS"
+
+        if [[ $$STATUS != "200" ]]; then
+
+            echo "Creating catalog '$$CATALOG_NAME' in realm $$REALM..."
+            PAYLOAD='{
+                "catalog": {
+                "name": "'$$CATALOG_NAME'",
+                "type": "INTERNAL",
+                "readOnly": false,
+                "properties": {
+                    "default-base-location": "s3://iceberg"
+                },
+                "storageConfigInfo": {
+                    "storageType": "S3",
+                    "allowedLocations": ["s3://iceberg"],
+                    "endpoint": "http://localhost:9000",
+                    "endpointInternal": "http://minio:9000",
+                    "pathStyleAccess": true
+                }
+                }
+            }'
+
+            RESPONSE=$$(curl --fail-with-body -s -S -X POST http://polaris:8181/api/management/v1/catalogs \
+                -H "Authorization: Bearer $$TOKEN" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -H "Polaris-Realm: $$REALM" \
+                -d "$$PAYLOAD" 2>&1) && echo -n "" || {
+                echo "❌ Failed to create catalog"
+                echo "$$RESPONSE" >&2
+                exit 1
+            }
+            echo "✅ Catalog created"
+        fi
 
   trino:
     image: trinodb/trino:latest
