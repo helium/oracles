@@ -96,6 +96,20 @@ impl IcebergTable {
         Ok(())
     }
 
+    /// Create a [`StagedWriter`] session for the write-audit-publish workflow.
+    ///
+    /// This creates a branch and returns a session that supports multiple
+    /// writes followed by either `publish()` or `abort()`.
+    pub async fn staged_writer<T>(
+        &mut self,
+        branch_name: impl Into<String>,
+    ) -> Result<crate::staged_writer::StagedWriter<'_, T, Self>>
+    where
+        T: Serialize + Send + Sync + 'static,
+    {
+        crate::staged_writer::StagedWriter::new(self, branch_name).await
+    }
+
     /// Write a record batch to data files without committing.
     pub(crate) async fn write_data_files(
         &self,
