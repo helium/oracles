@@ -175,7 +175,6 @@ mod tests {
     #[tokio::test]
     async fn test_harness_basic() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new().await?;
-        println!("Harness created with schema: {}", harness.schema_name());
 
         // Create a simple table
         harness
@@ -189,14 +188,12 @@ mod tests {
                     .build()?,
             )
             .await?;
-        println!("Table created");
 
         // Query via Trino - no need to qualify table name
         let _result = harness
             .trino()
             .execute("SELECT * FROM people".to_string())
             .await;
-        println!("Query completed");
 
         Ok(())
     }
