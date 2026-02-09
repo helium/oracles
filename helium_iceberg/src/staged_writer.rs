@@ -1,6 +1,5 @@
 use crate::writer::BranchWriter;
 use crate::Result;
-use futures::{Stream, StreamExt};
 use serde::Serialize;
 use std::marker::PhantomData;
 
@@ -11,7 +10,7 @@ use std::marker::PhantomData;
 /// two cases without inspecting table state themselves.
 pub enum IdempotentWapOutcome<'a, T, W>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
     W: BranchWriter<T>,
 {
     /// The WAP was already completed in a prior attempt — nothing to do.
@@ -30,25 +29,25 @@ where
 /// The `wap_id` is used as both the branch name and the snapshot summary
 /// identifier, enabling idempotent retry detection.
 ///
-/// `write` and `write_stream` consume `self` to enforce a single write per
-/// WAP session at compile time.
+/// `write` consumes `self` to enforce a single write per WAP session at
+/// compile time.
 pub struct StagedWriter<'a, T, W>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
     W: BranchWriter<T>,
 {
-    writer: &'a mut W,
+    writer: &'a W,
     wap_id: String,
     _marker: PhantomData<T>,
 }
 
 impl<'a, T, W> StagedWriter<'a, T, W>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
     W: BranchWriter<T>,
 {
     pub(crate) async fn new(
-        writer: &'a mut W,
+        writer: &'a W,
         wap_id: impl Into<String>,
     ) -> Result<StagedWriter<'a, T, W>> {
         let wap_id = wap_id.into();
@@ -83,38 +82,27 @@ where
         })
     }
 
-    /// Write a stream of records to the staging branch, consuming the writer.
-    ///
-    /// Collects the stream into a `Vec` and delegates to [`write()`](Self::write).
-    /// Returns a [`StagedPublisher`] that can be used to publish the branch.
-    pub async fn write_stream<S>(self, stream: S) -> Result<StagedPublisher<'a, T, W>>
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write(records).await
-    }
 }
 
 /// Handle returned after a successful write, exposing only `publish()`.
 ///
 /// This type is the second half of the typestate pattern: once data has been
-/// written via [`StagedWriter::write`] or [`StagedWriter::write_stream`], the
+/// written via [`StagedWriter::write`], the
 /// caller receives a `StagedPublisher` whose sole operation is to fast-forward
 /// main and clean up the staging branch.
 pub struct StagedPublisher<'a, T, W>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
     W: BranchWriter<T>,
 {
-    writer: &'a mut W,
+    writer: &'a W,
     wap_id: String,
     _marker: PhantomData<T>,
 }
 
 impl<'a, T, W> StagedPublisher<'a, T, W>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
     W: BranchWriter<T>,
 {
     /// Returns the WAP identifier for this session.

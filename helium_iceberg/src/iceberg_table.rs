@@ -18,10 +18,11 @@ use iceberg::writer::partitioning::PartitioningWriter;
 use serde::Serialize;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct IcebergTable<T> {
     pub(crate) catalog: Catalog,
-    pub(crate) table: Table,
+    pub(crate) table: RwLock<Table>,
     pub(crate) _phantom: PhantomData<T>,
 }
 
@@ -35,16 +36,16 @@ impl<T> IcebergTable<T> {
         let table = catalog.load_table(namespace, table_name).await?;
         Ok(Self {
             catalog,
-            table,
+            table: RwLock::new(table),
             _phantom: PhantomData,
         })
     }
 
-    fn records_to_batch(&self, records: &[T]) -> Result<RecordBatch>
+    fn records_to_batch(table: &Table, records: &[T]) -> Result<RecordBatch>
     where
         T: Serialize,
     {
-        let iceberg_schema = self.table.metadata().current_schema();
+        let iceberg_schema = table.metadata().current_schema();
         let arrow_schema = schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
 
         let mut decoder = ReaderBuilder::new(Arc::new(arrow_schema))
@@ -62,14 +63,16 @@ impl<T> IcebergTable<T> {
     }
 
     /// Reload table metadata from the catalog.
-    pub(crate) async fn reload(&mut self) -> Result {
+    pub(crate) async fn reload(&self) -> Result {
         use iceberg::Catalog as IcebergCatalog;
-        self.table = self
+        let identifier = self.table.read().await.identifier().clone();
+        let table = self
             .catalog
             .as_ref()
-            .load_table(self.table.identifier())
+            .load_table(&identifier)
             .await
             .map_err(Error::Iceberg)?;
+        *self.table.write().await = table;
         Ok(())
     }
 
@@ -79,11 +82,11 @@ impl<T> IcebergTable<T> {
     /// writes followed by `publish()`. The `wap_id` is used as both the
     /// branch name and the snapshot summary identifier.
     pub async fn staged_writer(
-        &mut self,
+        &self,
         wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::StagedWriter<'_, T, Self>>
     where
-        T: Serialize + Send + Sync + 'static,
+        T: Serialize + Send + Sync,
     {
         crate::staged_writer::StagedWriter::new(self, wap_id).await
     }
@@ -98,19 +101,21 @@ impl<T> IcebergTable<T> {
     /// - **Written but not published**: publishes the branch, returns `AlreadyComplete`
     /// - **Already published**: returns `AlreadyComplete` (no-op)
     pub async fn idempotent_staged_writer(
-        &mut self,
+        &self,
         wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::IdempotentWapOutcome<'_, T, Self>>
     where
-        T: Serialize + Send + Sync + 'static,
+        T: Serialize + Send + Sync,
     {
         use crate::staged_writer::IdempotentWapOutcome;
 
         let wap_id = wap_id.into();
         self.reload().await?;
 
-        let wap_id_found = has_wap_id(&self.table, &wap_id);
-        let branch_exists = self.table.metadata().snapshot_for_ref(&wap_id).is_some();
+        let table = self.table.read().await;
+        let wap_id_found = has_wap_id(&table, &wap_id);
+        let branch_exists = table.metadata().snapshot_for_ref(&wap_id).is_some();
+        drop(table);
 
         match detect_wap_state(wap_id_found, branch_exists) {
             WapState::NotStarted => {
@@ -120,14 +125,16 @@ impl<T> IcebergTable<T> {
             }
             WapState::StaleBranch => {
                 tracing::debug!(wap_id, "stale branch detected, deleting and recreating");
-                crate::branch::delete_branch(&self.catalog, &self.table, &wap_id).await?;
+                crate::branch::delete_branch(&self.catalog, &*self.table.read().await, &wap_id)
+                    .await?;
                 self.reload().await?;
                 let writer = crate::staged_writer::StagedWriter::new(self, wap_id).await?;
                 Ok(IdempotentWapOutcome::Writer(writer))
             }
             WapState::WrittenNotPublished => {
                 tracing::debug!(wap_id, "written but not published, publishing now");
-                crate::branch::publish_branch(&self.catalog, &self.table, &wap_id).await?;
+                crate::branch::publish_branch(&self.catalog, &*self.table.read().await, &wap_id)
+                    .await?;
                 Ok(IdempotentWapOutcome::AlreadyComplete)
             }
             WapState::AlreadyPublished => {
@@ -142,12 +149,14 @@ impl<T> IcebergTable<T> {
         &self,
         batch: RecordBatch,
     ) -> Result<Vec<iceberg::spec::DataFile>> {
-        let schema = self.table.metadata().current_schema().clone();
-        let partition_spec = self.table.metadata().default_partition_spec().clone();
-        let file_io = self.table.file_io().clone();
+        let table = self.table.read().await;
+        let schema = table.metadata().current_schema().clone();
+        let partition_spec = table.metadata().default_partition_spec().clone();
+        let file_io = table.file_io().clone();
 
         let location_generator =
-            DefaultLocationGenerator::new(self.table.metadata().clone()).map_err(Error::Iceberg)?;
+            DefaultLocationGenerator::new(table.metadata().clone()).map_err(Error::Iceberg)?;
+        drop(table);
         let timestamp_millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
@@ -197,9 +206,11 @@ impl<T> IcebergTable<T> {
             return Ok(());
         }
 
-        let tx = Transaction::new(&self.table);
+        let table = self.table.read().await;
+        let tx = Transaction::new(&table);
         let action = tx.fast_append().add_data_files(data_files);
         let tx = action.apply(tx).map_err(Error::Iceberg)?;
+        drop(table);
 
         tx.commit(self.catalog.as_ref())
             .await
@@ -211,28 +222,30 @@ impl<T> IcebergTable<T> {
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
+impl<T: Serialize + Send + Sync> DataWriter<T> for IcebergTable<T> {
     async fn write(&self, records: Vec<T>) -> Result {
         if records.is_empty() {
             return Ok(());
         }
 
-        let batch = self.records_to_batch(&records)?;
+        let table = self.table.read().await;
+        let batch = Self::records_to_batch(&table, &records)?;
+        drop(table);
         self.write_and_commit(batch).await
     }
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable<T> {
+impl<T: Serialize + Send + Sync> BranchWriter<T> for IcebergTable<T> {
     /// Create a branch from the current main snapshot.
-    async fn create_branch(&mut self, branch_name: &str) -> Result {
+    async fn create_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
-        crate::branch::create_branch(&self.catalog, &self.table, branch_name).await
+        crate::branch::create_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 
     /// Write records to a named branch (not main).
     async fn write_to_branch(
-        &mut self,
+        &self,
         branch_name: &str,
         records: Vec<T>,
         wap_id: &str,
@@ -242,22 +255,30 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable<T> {
         }
 
         self.reload().await?;
-        let batch = self.records_to_batch(&records)?;
+        let table = self.table.read().await;
+        let batch = Self::records_to_batch(&table, &records)?;
+        drop(table);
         let data_files = self.write_data_files(batch).await?;
-        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files, wap_id)
-            .await
+        crate::branch::commit_to_branch(
+            &self.catalog,
+            &*self.table.read().await,
+            branch_name,
+            data_files,
+            wap_id,
+        )
+        .await
     }
 
     /// Fast-forward main to a branch's snapshot, then delete the branch.
-    async fn publish_branch(&mut self, branch_name: &str) -> Result {
+    async fn publish_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
-        crate::branch::publish_branch(&self.catalog, &self.table, branch_name).await
+        crate::branch::publish_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 
     /// Delete a branch.
-    async fn delete_branch(&mut self, branch_name: &str) -> Result {
+    async fn delete_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
-        crate::branch::delete_branch(&self.catalog, &self.table, branch_name).await
+        crate::branch::delete_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 }
 

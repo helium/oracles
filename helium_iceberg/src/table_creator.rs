@@ -512,7 +512,7 @@ impl TableCreator {
 
         Ok(IcebergTable {
             catalog: self.catalog.clone(),
-            table,
+            table: tokio::sync::RwLock::new(table),
             _phantom: PhantomData,
         })
     }

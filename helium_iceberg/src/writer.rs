@@ -1,44 +1,22 @@
 use crate::Result;
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
 use serde::Serialize;
 
 #[async_trait]
 pub trait DataWriter<T>: Send + Sync
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
 {
     async fn write(&self, records: Vec<T>) -> Result;
-
-    async fn write_stream<S>(&self, stream: S) -> Result
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write(records).await
-    }
 }
 
 #[async_trait]
 pub trait BranchWriter<T>: Send + Sync
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
 {
-    async fn create_branch(&mut self, branch_name: &str) -> Result;
-    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>, wap_id: &str)
-        -> Result;
-    async fn write_stream_to_branch<S>(
-        &mut self,
-        branch_name: &str,
-        stream: S,
-        wap_id: &str,
-    ) -> Result
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write_to_branch(branch_name, records, wap_id).await
-    }
-    async fn publish_branch(&mut self, branch_name: &str) -> Result;
-    async fn delete_branch(&mut self, branch_name: &str) -> Result;
+    async fn create_branch(&self, branch_name: &str) -> Result;
+    async fn write_to_branch(&self, branch_name: &str, records: Vec<T>, wap_id: &str) -> Result;
+    async fn publish_branch(&self, branch_name: &str) -> Result;
+    async fn delete_branch(&self, branch_name: &str) -> Result;
 }
