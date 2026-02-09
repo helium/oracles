@@ -160,4 +160,99 @@ pub mod data_transfer_session {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use trino_rust_client::ClientBuilder;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn get_from_test() -> anyhow::Result<()> {
+            let trino = ClientBuilder::new("test", "localhost")
+                .port(8080)
+                .catalog("iceberg")
+                .schema("test_b9d581eaa7804d15a96cb95b5a081cf5")
+                .build()?;
+
+            let all = get_all(&trino).await?;
+            println!("found: {}", all.len());
+
+            // for (index, item) in all.iter().enumerate() {
+            //     println!("({index}): {item:?}");
+            // }
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn writing_with_data_writer() -> anyhow::Result<()> {
+            use helium_iceberg::*;
+
+            let config = HarnessConfig::default();
+            let settings = Settings {
+                catalog_uri: config.iceberg_rest_url.clone(),
+                catalog_name: config.catalog_name.clone(),
+                warehouse: None,
+                auth_token: None,
+                s3_access_key: Some(config.s3_access_key.clone()),
+                s3_secret_key: Some(config.s3_secret_key.clone()),
+            };
+            let catalog = Catalog::connect(&settings).await?;
+
+            let namespace = "test_b9d581eaa7804d15a96cb95b5a081cf5";
+            let table_name = "data_transfer_sessions";
+
+            let exists = catalog.table_exists(namespace, table_name).await?;
+
+            println!("table exists :: {exists}");
+
+            let table = IcebergTable::from_catalog(catalog, namespace, table_name).await?;
+
+            let dts = (0..500)
+                .map(mk_dt)
+                .map(TrinoDataTransferSession::from)
+                .collect::<Vec<_>>();
+
+            use helium_iceberg::DataWriter;
+            let res = table.write(dts).await?;
+            println!("!!! {res:?}");
+
+            Ok(())
+        }
+
+        fn mk_dt(rewardable_bytes: u64) -> DataTransferSessionIngestReport {
+            use chrono::Utc;
+            use file_store_oracles::mobile_session::DataTransferSessionReq;
+            use helium_crypto::PublicKeyBinary;
+            use helium_proto::services::poc_mobile::CarrierIdV2;
+            use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
+            use std::str::FromStr;
+
+            let payer_key =
+                PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")
+                    .expect("valid pubkey");
+
+            DataTransferSessionIngestReport {
+                received_timestamp: Utc::now(),
+                report: DataTransferSessionReq {
+                    rewardable_bytes,
+                    pub_key: PublicKeyBinary::from(vec![1]),
+                    signature: vec![],
+                    carrier_id: CarrierIdV2::Carrier9,
+                    sampling: false,
+                    data_transfer_usage: file_store_oracles::mobile_session::DataTransferEvent {
+                        pub_key: PublicKeyBinary::from(vec![1]),
+                        upload_bytes: 0,
+                        download_bytes: 0,
+                        radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                        event_id: sqlx::types::Uuid::new_v4().to_string(),
+                        payer: payer_key.clone(),
+                        timestamp: Utc::now(),
+                        signature: vec![],
+                    },
+                },
+            }
+        }
+    }
 }
