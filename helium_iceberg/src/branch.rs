@@ -333,7 +333,7 @@ mod tests {
         let snapshot_id = 42;
         let uuid = Uuid::new_v4();
 
-        let updates = vec![TableUpdate::SetSnapshotRef {
+        let updates = [TableUpdate::SetSnapshotRef {
             ref_name: "audit".to_string(),
             reference: SnapshotReference::new(
                 snapshot_id,
@@ -341,7 +341,7 @@ mod tests {
             ),
         }];
 
-        let requirements = vec![
+        let requirements = [
             TableRequirement::UuidMatch { uuid },
             TableRequirement::RefSnapshotIdMatch {
                 r#ref: "audit".to_string(),
@@ -382,7 +382,7 @@ mod tests {
         let main_snapshot_id = Some(42);
         let uuid = Uuid::new_v4();
 
-        let updates = vec![
+        let updates = [
             TableUpdate::SetSnapshotRef {
                 ref_name: MAIN_BRANCH.to_string(),
                 reference: SnapshotReference::new(
@@ -395,7 +395,7 @@ mod tests {
             },
         ];
 
-        let requirements = vec![
+        let requirements = [
             TableRequirement::UuidMatch { uuid },
             TableRequirement::RefSnapshotIdMatch {
                 r#ref: MAIN_BRANCH.to_string(),
@@ -437,11 +437,11 @@ mod tests {
     fn test_delete_branch_updates() {
         let uuid = Uuid::new_v4();
 
-        let updates = vec![TableUpdate::RemoveSnapshotRef {
+        let updates = [TableUpdate::RemoveSnapshotRef {
             ref_name: "audit".to_string(),
         }];
 
-        let requirements = vec![TableRequirement::UuidMatch { uuid }];
+        let requirements = [TableRequirement::UuidMatch { uuid }];
 
         match &updates[0] {
             TableUpdate::RemoveSnapshotRef { ref_name } => {
