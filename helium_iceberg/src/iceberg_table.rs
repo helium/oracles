@@ -99,16 +99,65 @@ impl IcebergTable {
     /// Create a [`StagedWriter`] session for the write-audit-publish workflow.
     ///
     /// This creates a branch and returns a session that supports multiple
-    /// writes followed by either `publish()` or `abort()`.
+    /// writes followed by `publish()`. The `wap_id` is used as both the
+    /// branch name and the snapshot summary identifier.
     pub async fn staged_writer<T>(
         &mut self,
-        branch_name: impl Into<String>,
         wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::StagedWriter<'_, T, Self>>
     where
         T: Serialize + Send + Sync + 'static,
     {
-        crate::staged_writer::StagedWriter::new(self, branch_name, wap_id).await
+        crate::staged_writer::StagedWriter::new(self, wap_id).await
+    }
+
+    /// Create an idempotent [`StagedWriter`] that detects prior WAP state on retry.
+    ///
+    /// Uses the `wap_id` to detect whether this WAP has already been partially
+    /// or fully completed, and recovers appropriately:
+    ///
+    /// - **Not started**: creates a fresh `StagedWriter`
+    /// - **Stale branch** (crash between create & commit): deletes branch, creates fresh
+    /// - **Written but not published**: publishes the branch, returns `AlreadyComplete`
+    /// - **Already published**: returns `AlreadyComplete` (no-op)
+    pub async fn idempotent_staged_writer<T>(
+        &mut self,
+        wap_id: impl Into<String>,
+    ) -> Result<crate::staged_writer::IdempotentWapOutcome<'_, T, Self>>
+    where
+        T: Serialize + Send + Sync + 'static,
+    {
+        use crate::staged_writer::IdempotentWapOutcome;
+
+        let wap_id = wap_id.into();
+        self.reload().await?;
+
+        let wap_id_found = has_wap_id(&self.table, &wap_id);
+        let branch_exists = self.table.metadata().snapshot_for_ref(&wap_id).is_some();
+
+        match detect_wap_state(wap_id_found, branch_exists) {
+            WapState::NotStarted => {
+                tracing::debug!(wap_id, "WAP not started, creating fresh writer");
+                let writer = crate::staged_writer::StagedWriter::new(self, wap_id).await?;
+                Ok(IdempotentWapOutcome::Writer(writer))
+            }
+            WapState::StaleBranch => {
+                tracing::debug!(wap_id, "stale branch detected, deleting and recreating");
+                crate::branch::delete_branch(&self.catalog, &self.table, &wap_id).await?;
+                self.reload().await?;
+                let writer = crate::staged_writer::StagedWriter::new(self, wap_id).await?;
+                Ok(IdempotentWapOutcome::Writer(writer))
+            }
+            WapState::WrittenNotPublished => {
+                tracing::debug!(wap_id, "written but not published, publishing now");
+                crate::branch::publish_branch(&self.catalog, &self.table, &wap_id).await?;
+                Ok(IdempotentWapOutcome::AlreadyComplete)
+            }
+            WapState::AlreadyPublished => {
+                tracing::debug!(wap_id, "already published, nothing to do");
+                Ok(IdempotentWapOutcome::AlreadyComplete)
+            }
+        }
     }
 
     /// Write a record batch to data files without committing.
@@ -232,5 +281,57 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable {
     async fn delete_branch(&mut self, branch_name: &str) -> Result {
         self.reload().await?;
         crate::branch::delete_branch(&self.catalog, &self.table, branch_name).await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WapState {
+    NotStarted,
+    StaleBranch,
+    WrittenNotPublished,
+    AlreadyPublished,
+}
+
+fn detect_wap_state(wap_id_found: bool, branch_exists: bool) -> WapState {
+    match (wap_id_found, branch_exists) {
+        (false, false) => WapState::NotStarted,
+        (false, true) => WapState::StaleBranch,
+        (true, true) => WapState::WrittenNotPublished,
+        (true, false) => WapState::AlreadyPublished,
+    }
+}
+
+fn has_wap_id(table: &Table, wap_id: &str) -> bool {
+    table.metadata().snapshots().any(|snapshot| {
+        snapshot
+            .summary()
+            .additional_properties
+            .get(crate::branch::WAP_ID_KEY)
+            .is_some_and(|v| v == wap_id)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_wap_state_not_started() {
+        assert_eq!(detect_wap_state(false, false), WapState::NotStarted,);
+    }
+
+    #[test]
+    fn test_detect_wap_state_stale_branch() {
+        assert_eq!(detect_wap_state(false, true), WapState::StaleBranch,);
+    }
+
+    #[test]
+    fn test_detect_wap_state_written_not_published() {
+        assert_eq!(detect_wap_state(true, true), WapState::WrittenNotPublished,);
+    }
+
+    #[test]
+    fn test_detect_wap_state_already_published() {
+        assert_eq!(detect_wap_state(true, false), WapState::AlreadyPublished,);
     }
 }

@@ -10,6 +10,8 @@ use iceberg::{TableIdent, TableRequirement, TableUpdate};
 use iceberg_catalog_rest::CommitTableRequest;
 use uuid::Uuid;
 
+pub(crate) const WAP_ID_KEY: &str = "wap.id";
+
 /// Create a branch from the current main snapshot.
 ///
 /// If the table has no snapshots yet, this is a no-op — the branch ref
@@ -77,7 +79,7 @@ pub(crate) async fn commit_to_branch(
         summary_collector.add_file(data_file, schema.clone(), partition_spec.clone());
     }
     let mut additional_properties = summary_collector.build();
-    additional_properties.insert("wap.id".to_string(), wap_id.to_string());
+    additional_properties.insert(WAP_ID_KEY.to_string(), wap_id.to_string());
     let summary = Summary {
         operation: Operation::Append,
         additional_properties,
@@ -90,7 +92,10 @@ pub(crate) async fn commit_to_branch(
         commit_uuid,
         DataFileFormat::Avro
     );
-    let output_file = table.file_io().new_output(&manifest_path).map_err(Error::Iceberg)?;
+    let output_file = table
+        .file_io()
+        .new_output(&manifest_path)
+        .map_err(Error::Iceberg)?;
     let builder = ManifestWriterBuilder::new(
         output_file,
         Some(snapshot_id),
@@ -143,11 +148,9 @@ pub(crate) async fn commit_to_branch(
         .new_output(&manifest_list_path)
         .map_err(Error::Iceberg)?;
     let mut manifest_list_writer = match metadata.format_version() {
-        FormatVersion::V1 => ManifestListWriter::v1(
-            manifest_list_output,
-            snapshot_id,
-            parent_snapshot_id,
-        ),
+        FormatVersion::V1 => {
+            ManifestListWriter::v1(manifest_list_output, snapshot_id, parent_snapshot_id)
+        }
         FormatVersion::V2 => ManifestListWriter::v2(
             manifest_list_output,
             snapshot_id,
@@ -217,9 +220,9 @@ pub(crate) async fn publish_branch(
     validate_branch_name(branch_name)?;
 
     let metadata = table.metadata();
-    let branch_snapshot = metadata.snapshot_for_ref(branch_name).ok_or_else(|| {
-        Error::Branch(format!("branch '{branch_name}' does not exist"))
-    })?;
+    let branch_snapshot = metadata
+        .snapshot_for_ref(branch_name)
+        .ok_or_else(|| Error::Branch(format!("branch '{branch_name}' does not exist")))?;
     let branch_snapshot_id = branch_snapshot.snapshot_id();
 
     let updates = vec![
@@ -365,10 +368,7 @@ mod tests {
             _ => panic!("expected UuidMatch"),
         }
         match &requirements[1] {
-            TableRequirement::RefSnapshotIdMatch {
-                r#ref,
-                snapshot_id,
-            } => {
+            TableRequirement::RefSnapshotIdMatch { r#ref, snapshot_id } => {
                 assert_eq!(r#ref, "audit");
                 assert!(snapshot_id.is_none());
             }
@@ -425,10 +425,7 @@ mod tests {
 
         // Verify main snapshot id requirement
         match &requirements[1] {
-            TableRequirement::RefSnapshotIdMatch {
-                r#ref,
-                snapshot_id,
-            } => {
+            TableRequirement::RefSnapshotIdMatch { r#ref, snapshot_id } => {
                 assert_eq!(r#ref, MAIN_BRANCH);
                 assert_eq!(*snapshot_id, main_snapshot_id);
             }

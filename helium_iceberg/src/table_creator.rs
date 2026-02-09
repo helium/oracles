@@ -938,9 +938,7 @@ mod tests {
             .expect("should build");
 
         assert_eq!(
-            definition
-                .properties
-                .get("history.expire.max-ref-age-ms"),
+            definition.properties.get("history.expire.max-ref-age-ms"),
             Some(&"3600000".to_string())
         );
     }

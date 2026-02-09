@@ -127,7 +127,12 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for MemoryBranchWrite
         Ok(())
     }
 
-    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>, _wap_id: &str) -> Result {
+    async fn write_to_branch(
+        &mut self,
+        branch_name: &str,
+        records: Vec<T>,
+        _wap_id: &str,
+    ) -> Result {
         let branch = self
             .branches
             .get_mut(branch_name)
@@ -312,7 +317,10 @@ mod tests {
             },
         ];
 
-        writer.write_to_branch("staging", records, "test-wap-id").await.unwrap();
+        writer
+            .write_to_branch("staging", records, "test-wap-id")
+            .await
+            .unwrap();
         assert_eq!(writer.branch_records("staging").unwrap().len(), 2);
     }
 

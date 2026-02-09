@@ -78,9 +78,7 @@ impl EndpointAuth {
         credential: &str,
         extra_params: &HashMap<String, String>,
     ) -> Result<String> {
-        let (client_id, client_secret) = credential
-            .split_once(':')
-            .unwrap_or((credential, ""));
+        let (client_id, client_secret) = credential.split_once(':').unwrap_or((credential, ""));
 
         let mut params = vec![
             ("grant_type", "client_credentials"),

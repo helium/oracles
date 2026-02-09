@@ -15,7 +15,7 @@ pub use error::{Error, Result};
 pub use iceberg_table::{IcebergTable, IcebergTableBuilder};
 pub use memory_writer::{MemoryBranchWriter, MemoryDataWriter};
 pub use settings::{AuthConfig, Settings};
-pub use staged_writer::StagedWriter;
+pub use staged_writer::{IdempotentWapOutcome, StagedPublisher, StagedWriter};
 pub use table_creator::{
     FieldDefinition, PartitionDefinition, SortFieldDefinition, TableCreator, TableDefinition,
     TableDefinitionBuilder,
