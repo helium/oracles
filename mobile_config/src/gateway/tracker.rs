@@ -62,7 +62,7 @@ impl Tracker {
 pub async fn backfill_hashes(
     pool: &Pool<Postgres>,
     metadata: &Pool<Postgres>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
     tracing::info!("starting backfill_hashes");
     let start = Instant::now();
 
@@ -81,7 +81,7 @@ pub async fn backfill_hashes(
 
     if count == 0 {
         tracing::info!("no gateways with null hash, skipping backfill");
-        return Ok(());
+        return Ok(0);
     }
 
     tracing::info!(count, "gateways with null hash to backfill");
@@ -117,7 +117,7 @@ pub async fn backfill_hashes(
     let elapsed = start.elapsed();
     tracing::info!(?elapsed, affected = total, "done backfill_hashes");
 
-    Ok(())
+    Ok(total)
 }
 
 pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {

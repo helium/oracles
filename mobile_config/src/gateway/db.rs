@@ -651,3 +651,200 @@ impl FromRow<'_, PgRow> for Gateway {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gateway::{metadata_db::MobileHotspotInfo, service::info::WifiDeploymentInfo};
+    use chrono::{TimeZone, Utc};
+
+    fn base_hash_params() -> HashParams {
+        HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(631_711_281_837_647_359),
+            antenna: Some(10),
+            elevation: Some(20),
+            azimuth: Some(180),
+            location_asserts: Some(3),
+            owner: Some("owner_abc".to_string()),
+        }
+    }
+
+    fn base_mhi(entity_key: PublicKeyBinary) -> MobileHotspotInfo {
+        MobileHotspotInfo {
+            entity_key,
+            refreshed_at: Some(Utc.with_ymd_and_hms(2025, 6, 1, 12, 0, 0).unwrap()),
+            created_at: Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap(),
+            location: Some(631_711_281_837_647_359),
+            is_full_hotspot: Some(true),
+            num_location_asserts: Some(3),
+            is_active: Some(true),
+            dc_onboarding_fee_paid: Some(1_000_000),
+            gateway_type: GatewayType::WifiIndoor,
+            deployment_info: Some(DeploymentInfo::WifiDeploymentInfo(WifiDeploymentInfo {
+                antenna: 10,
+                elevation: 20,
+                azimuth: 180,
+                mechanical_down_tilt: 0,
+                electrical_down_tilt: 0,
+            })),
+            owner: Some("owner_abc".to_string()),
+        }
+    }
+
+    fn dummy_pubkey() -> PublicKeyBinary {
+        PublicKeyBinary::from(vec![1u8; 33])
+    }
+
+    // ── Task 1: HashParams::compute_hash determinism and field sensitivity ──
+
+    #[test]
+    fn compute_hash_is_deterministic() {
+        let params = base_hash_params();
+        assert_eq!(params.compute_hash(), params.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_gateway_type_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.gateway_type = GatewayType::WifiOutdoor;
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_location_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.location = Some(999);
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_antenna_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.antenna = Some(99);
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_elevation_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.elevation = Some(99);
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_azimuth_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.azimuth = Some(99);
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_location_asserts_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.location_asserts = Some(99);
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_when_owner_changes() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.owner = Some("different_owner".to_string());
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+    }
+
+    #[test]
+    fn compute_hash_differs_none_vs_some() {
+        let base = base_hash_params();
+        let mut changed = base.clone();
+        changed.location = None;
+        assert_ne!(base.compute_hash(), changed.compute_hash());
+
+        let mut changed2 = base.clone();
+        changed2.owner = None;
+        assert_ne!(base.compute_hash(), changed2.compute_hash());
+    }
+
+    // ── Task 2: new_if_changed returns None when nothing changed ──
+
+    #[test]
+    fn new_if_changed_returns_none_when_unchanged() {
+        let pk = dummy_pubkey();
+        let mhi = base_mhi(pk.clone());
+
+        let gateway = Gateway::from_mobile_hotspot_info(&mhi);
+        assert!(gateway.new_if_changed(&mhi).is_none());
+    }
+
+    // ── Task 3: new_if_changed timestamp tracking ──
+
+    #[test]
+    fn new_if_changed_updates_location_changed_at_preserves_owner_changed_at() {
+        let pk = dummy_pubkey();
+        let mhi = base_mhi(pk.clone());
+        let old_gateway = Gateway::from_mobile_hotspot_info(&mhi);
+
+        let new_time = Utc.with_ymd_and_hms(2025, 7, 1, 12, 0, 0).unwrap();
+        let mut changed_mhi = mhi.clone();
+        changed_mhi.location = Some(999_999); // only location changes
+        changed_mhi.refreshed_at = Some(new_time);
+
+        let new_gw = old_gateway
+            .new_if_changed(&changed_mhi)
+            .expect("should detect location change");
+
+        assert_eq!(new_gw.location_changed_at, Some(new_time));
+        assert_eq!(new_gw.last_changed_at, new_time);
+        assert_eq!(new_gw.owner_changed_at, old_gateway.owner_changed_at);
+    }
+
+    #[test]
+    fn new_if_changed_updates_owner_changed_at_preserves_location_changed_at() {
+        let pk = dummy_pubkey();
+        let mhi = base_mhi(pk.clone());
+        let old_gateway = Gateway::from_mobile_hotspot_info(&mhi);
+
+        let new_time = Utc.with_ymd_and_hms(2025, 7, 1, 12, 0, 0).unwrap();
+        let mut changed_mhi = mhi.clone();
+        changed_mhi.owner = Some("new_owner".to_string()); // only owner changes
+        changed_mhi.refreshed_at = Some(new_time);
+
+        let new_gw = old_gateway
+            .new_if_changed(&changed_mhi)
+            .expect("should detect owner change");
+
+        assert_eq!(new_gw.owner_changed_at, Some(new_time));
+        assert_eq!(new_gw.last_changed_at, new_time);
+        assert_eq!(new_gw.location_changed_at, old_gateway.location_changed_at);
+    }
+
+    // ── Task 6: new_if_changed owner change when old owner is None ──
+
+    #[test]
+    fn new_if_changed_detects_owner_none_to_some() {
+        let pk = dummy_pubkey();
+        let mut mhi = base_mhi(pk.clone());
+        mhi.owner = None; // start with no owner
+        let old_gateway = Gateway::from_mobile_hotspot_info(&mhi);
+        assert!(old_gateway.owner().is_none());
+
+        let new_time = Utc.with_ymd_and_hms(2025, 7, 1, 12, 0, 0).unwrap();
+        let mut changed_mhi = mhi.clone();
+        changed_mhi.owner = Some("new_owner".to_string());
+        changed_mhi.refreshed_at = Some(new_time);
+
+        let new_gw = old_gateway
+            .new_if_changed(&changed_mhi)
+            .expect("should detect owner appearing");
+
+        assert_eq!(new_gw.owner(), Some("new_owner"));
+        assert_eq!(new_gw.owner_changed_at, Some(new_time));
+    }
+}
