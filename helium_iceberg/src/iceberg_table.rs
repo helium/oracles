@@ -103,11 +103,12 @@ impl IcebergTable {
     pub async fn staged_writer<T>(
         &mut self,
         branch_name: impl Into<String>,
+        wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::StagedWriter<'_, T, Self>>
     where
         T: Serialize + Send + Sync + 'static,
     {
-        crate::staged_writer::StagedWriter::new(self, branch_name).await
+        crate::staged_writer::StagedWriter::new(self, branch_name, wap_id).await
     }
 
     /// Write a record batch to data files without committing.
@@ -204,7 +205,12 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable {
     }
 
     /// Write records to a named branch (not main).
-    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>) -> Result {
+    async fn write_to_branch(
+        &mut self,
+        branch_name: &str,
+        records: Vec<T>,
+        wap_id: &str,
+    ) -> Result {
         if records.is_empty() {
             return Ok(());
         }
@@ -212,7 +218,8 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable {
         self.reload().await?;
         let batch = self.records_to_batch(&records)?;
         let data_files = self.write_data_files(batch).await?;
-        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files).await
+        crate::branch::commit_to_branch(&self.catalog, &self.table, branch_name, data_files, wap_id)
+            .await
     }
 
     /// Fast-forward main to a branch's snapshot, then delete the branch.

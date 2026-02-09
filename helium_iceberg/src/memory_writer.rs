@@ -127,7 +127,7 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for MemoryBranchWrite
         Ok(())
     }
 
-    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>) -> Result {
+    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>, _wap_id: &str) -> Result {
         let branch = self
             .branches
             .get_mut(branch_name)
@@ -312,7 +312,7 @@ mod tests {
             },
         ];
 
-        writer.write_to_branch("staging", records).await.unwrap();
+        writer.write_to_branch("staging", records, "test-wap-id").await.unwrap();
         assert_eq!(writer.branch_records("staging").unwrap().len(), 2);
     }
 
@@ -326,6 +326,7 @@ mod tests {
                     id: 1,
                     name: "alice".to_string(),
                 }],
+                "test-wap-id",
             )
             .await;
         assert!(result.is_err());
@@ -342,6 +343,7 @@ mod tests {
                     id: 1,
                     name: "alice".to_string(),
                 }],
+                "test-wap-id",
             )
             .await
             .unwrap();
@@ -386,6 +388,7 @@ mod tests {
                         name: "bob".to_string(),
                     },
                 ],
+                "test-wap-id",
             )
             .await
             .unwrap();
@@ -397,6 +400,7 @@ mod tests {
                     id: 3,
                     name: "carol".to_string(),
                 }],
+                "test-wap-id",
             )
             .await
             .unwrap();
@@ -427,7 +431,7 @@ mod tests {
 
         let stream = futures::stream::iter(records);
         writer
-            .write_stream_to_branch("staging", stream)
+            .write_stream_to_branch("staging", stream, "test-wap-id")
             .await
             .unwrap();
 

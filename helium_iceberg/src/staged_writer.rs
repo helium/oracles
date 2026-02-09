@@ -21,6 +21,7 @@ where
 {
     writer: &'a mut W,
     branch_name: String,
+    wap_id: String,
     finalized: bool,
     _marker: PhantomData<T>,
 }
@@ -33,13 +34,16 @@ where
     pub(crate) async fn new(
         writer: &'a mut W,
         branch_name: impl Into<String>,
+        wap_id: impl Into<String>,
     ) -> Result<StagedWriter<'a, T, W>> {
         let branch_name = branch_name.into();
+        let wap_id = wap_id.into();
         writer.create_branch(&branch_name).await?;
-        tracing::debug!(branch_name, "staged writer created branch");
+        tracing::debug!(branch_name, wap_id, "staged writer created branch");
         Ok(Self {
             writer,
             branch_name,
+            wap_id,
             finalized: false,
             _marker: PhantomData,
         })
@@ -48,6 +52,11 @@ where
     /// Returns the name of the staging branch.
     pub fn branch_name(&self) -> &str {
         &self.branch_name
+    }
+
+    /// Returns the WAP identifier for this session.
+    pub fn wap_id(&self) -> &str {
+        &self.wap_id
     }
 
     /// Write records to the staging branch.
@@ -61,7 +70,7 @@ where
 
         let result = self
             .writer
-            .write_to_branch(&self.branch_name, records)
+            .write_to_branch(&self.branch_name, records, &self.wap_id)
             .await;
         if result.is_err() {
             self.cleanup().await;

@@ -25,13 +25,19 @@ where
     T: Serialize + Send + Sync + 'static,
 {
     async fn create_branch(&mut self, branch_name: &str) -> Result;
-    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>) -> Result;
-    async fn write_stream_to_branch<S>(&mut self, branch_name: &str, stream: S) -> Result
+    async fn write_to_branch(&mut self, branch_name: &str, records: Vec<T>, wap_id: &str)
+        -> Result;
+    async fn write_stream_to_branch<S>(
+        &mut self,
+        branch_name: &str,
+        stream: S,
+        wap_id: &str,
+    ) -> Result
     where
         S: Stream<Item = T> + Send + 'static,
     {
         let records: Vec<T> = stream.collect().await;
-        self.write_to_branch(branch_name, records).await
+        self.write_to_branch(branch_name, records, wap_id).await
     }
     async fn publish_branch(&mut self, branch_name: &str) -> Result;
     async fn delete_branch(&mut self, branch_name: &str) -> Result;
