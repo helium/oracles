@@ -10,6 +10,9 @@ pub struct Settings {
     pub warehouse: Option<String>,
     #[serde(default)]
     pub auth: AuthConfig,
+    /// Additional properties passed through to the catalog builder (e.g. S3 credentials).
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

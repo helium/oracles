@@ -190,6 +190,39 @@ services:
                 exit 1
             }
             echo "✅ Catalog created"
+
+            echo "Creating catalog role 'admin'..."
+            curl --fail-with-body -s -S -X POST "http://polaris:8181/api/management/v1/catalogs/$${CATALOG_NAME}/catalog-roles" \
+                -H "Authorization: Bearer $$TOKEN" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -d '{"catalogRole": {"name": "admin"}}' 2>&1 || {
+                echo "❌ Failed to create catalog role"
+                exit 1
+            }
+            echo "✅ Catalog role 'admin' created"
+
+            echo "Granting CATALOG_MANAGE_CONTENT to 'admin' role..."
+            curl --fail-with-body -s -S -X PUT "http://polaris:8181/api/management/v1/catalogs/$${CATALOG_NAME}/catalog-roles/admin/grants" \
+                -H "Authorization: Bearer $$TOKEN" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -d '{"grant": {"type": "catalog", "privilege": "CATALOG_MANAGE_CONTENT"}}' 2>&1 || {
+                echo "❌ Failed to grant CATALOG_MANAGE_CONTENT"
+                exit 1
+            }
+            echo "✅ CATALOG_MANAGE_CONTENT granted"
+
+            echo "Assigning 'admin' catalog role to principal role 'service_admin'..."
+            curl --fail-with-body -s -S -X PUT "http://polaris:8181/api/management/v1/principal-roles/service_admin/catalog-roles/$${CATALOG_NAME}" \
+                -H "Authorization: Bearer $$TOKEN" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -d '{"catalogRole": {"name": "admin"}}' 2>&1 || {
+                echo "❌ Failed to assign catalog role to principal role service_admin"
+                exit 1
+            }
+            echo "✅ Catalog role assigned to principal role 'service_admin'"
         fi
 
   trino:

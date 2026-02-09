@@ -257,6 +257,7 @@ impl Catalog {
             config.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
         }
         config.extend(settings.auth.props());
+        config.extend(settings.properties.clone());
 
         let catalog = RestCatalogBuilder::default()
             .load(&settings.catalog_name, config)
