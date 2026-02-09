@@ -564,6 +564,66 @@ impl Gateway {
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
     }
+
+    // TODO Remove after migration
+    pub async fn get_by_addresses_with_null_hash<'a>(
+        db: impl PgExecutor<'a>,
+        addresses: Vec<&PublicKeyBinary>,
+    ) -> anyhow::Result<Vec<Self>> {
+        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+
+        let rows = sqlx::query_as::<_, Self>(
+            r#"
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                last_changed_at,
+                COALESCE(hash, '') as hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts,
+                owner,
+                owner_changed_at
+            FROM gateways
+            WHERE address = ANY($1)
+              AND hash IS NULL
+            ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .bind(addr_array)
+        .fetch_all(db)
+        .await?;
+
+        Ok(rows)
+    }
+
+    // TODO Remove after migration
+    pub async fn update_latest_hash(
+        pool: &PgPool,
+        address: &PublicKeyBinary,
+        hash: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE gateways
+            SET hash = $2
+            WHERE address = $1
+              AND inserted_at = (
+                SELECT MAX(inserted_at) FROM gateways WHERE address = $1
+              )
+            "#,
+        )
+        .bind(address.as_ref())
+        .bind(hash)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
 }
 
 impl FromRow<'_, PgRow> for Gateway {
