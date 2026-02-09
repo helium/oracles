@@ -69,24 +69,11 @@ pub async fn backfill_hashes(
     let count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*) FROM (
-            SELECT DISTINCT ON (address)
-                address,
-                gateway_type,
-                created_at,
-                last_changed_at,
-                COALESCE(hash, '') as hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
+            SELECT DISTINCT ON (address) hash
             FROM gateways
             ORDER BY address, inserted_at DESC
-        ) AS distinct_gateways
-        WHERE hash = ''
+        ) AS latest_gateways
+        WHERE hash IS NULL
         "#,
     )
     .fetch_one(pool)
