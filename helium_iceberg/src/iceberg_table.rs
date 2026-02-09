@@ -16,46 +16,16 @@ use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::partitioning::PartitioningWriter;
 use serde::Serialize;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct IcebergTable {
+pub struct IcebergTable<T> {
     pub(crate) catalog: Catalog,
     pub(crate) table: Table,
+    pub(crate) _phantom: PhantomData<T>,
 }
 
-pub struct IcebergTableBuilder {
-    catalog: Catalog,
-    namespace: String,
-    table_name: String,
-}
-
-impl IcebergTableBuilder {
-    pub fn new(
-        catalog: Catalog,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> Self {
-        Self {
-            catalog,
-            namespace: namespace.into(),
-            table_name: table_name.into(),
-        }
-    }
-
-    pub async fn build(self) -> Result<IcebergTable> {
-        IcebergTable::from_catalog(self.catalog, self.namespace, self.table_name).await
-    }
-}
-
-impl IcebergTable {
-    pub fn builder(
-        catalog: Catalog,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> IcebergTableBuilder {
-        IcebergTableBuilder::new(catalog, namespace, table_name)
-    }
-
+impl<T> IcebergTable<T> {
     /// Create an `IcebergTable` from an existing catalog connection.
     pub async fn from_catalog(
         catalog: Catalog,
@@ -63,10 +33,17 @@ impl IcebergTable {
         table_name: impl Into<String>,
     ) -> Result<Self> {
         let table = catalog.load_table(namespace, table_name).await?;
-        Ok(Self { catalog, table })
+        Ok(Self {
+            catalog,
+            table,
+            _phantom: PhantomData,
+        })
     }
 
-    fn records_to_batch<T: Serialize>(&self, records: &[T]) -> Result<RecordBatch> {
+    fn records_to_batch(&self, records: &[T]) -> Result<RecordBatch>
+    where
+        T: Serialize,
+    {
         let iceberg_schema = self.table.metadata().current_schema();
         let arrow_schema = schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
 
@@ -101,7 +78,7 @@ impl IcebergTable {
     /// This creates a branch and returns a session that supports multiple
     /// writes followed by `publish()`. The `wap_id` is used as both the
     /// branch name and the snapshot summary identifier.
-    pub async fn staged_writer<T>(
+    pub async fn staged_writer(
         &mut self,
         wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::StagedWriter<'_, T, Self>>
@@ -120,7 +97,7 @@ impl IcebergTable {
     /// - **Stale branch** (crash between create & commit): deletes branch, creates fresh
     /// - **Written but not published**: publishes the branch, returns `AlreadyComplete`
     /// - **Already published**: returns `AlreadyComplete` (no-op)
-    pub async fn idempotent_staged_writer<T>(
+    pub async fn idempotent_staged_writer(
         &mut self,
         wap_id: impl Into<String>,
     ) -> Result<crate::staged_writer::IdempotentWapOutcome<'_, T, Self>>
@@ -234,7 +211,7 @@ impl IcebergTable {
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
+impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
     async fn write(&self, records: Vec<T>) -> Result {
         if records.is_empty() {
             return Ok(());
@@ -246,7 +223,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable {
+impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergTable<T> {
     /// Create a branch from the current main snapshot.
     async fn create_branch(&mut self, branch_name: &str) -> Result {
         self.reload().await?;

@@ -7,6 +7,7 @@ use iceberg::spec::{
 };
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Defines a single field (column) in a table schema.
@@ -468,11 +469,11 @@ impl TableCreator {
 
     /// Create a new table in the given namespace.
     /// Returns an IcebergTable ready for immediate use.
-    pub async fn create_table(
+    pub async fn create_table<T>(
         &self,
         namespace: impl Into<String>,
         definition: TableDefinition,
-    ) -> Result<IcebergTable> {
+    ) -> Result<IcebergTable<T>> {
         let namespace = namespace.into();
         let namespace_ident = NamespaceIdent::new(namespace);
 
@@ -512,16 +513,17 @@ impl TableCreator {
         Ok(IcebergTable {
             catalog: self.catalog.clone(),
             table,
+            _phantom: PhantomData,
         })
     }
 
     /// Create a table if it doesn't exist, otherwise load the existing table.
     /// Returns an IcebergTable ready for immediate use.
-    pub async fn create_table_if_not_exists(
+    pub async fn create_table_if_not_exists<T>(
         &self,
         namespace: impl Into<String>,
         definition: TableDefinition,
-    ) -> Result<IcebergTable> {
+    ) -> Result<IcebergTable<T>> {
         let namespace = namespace.into();
         let table_name = definition.name.clone();
 

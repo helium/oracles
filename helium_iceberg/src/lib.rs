@@ -12,7 +12,7 @@ mod writer;
 
 pub use catalog::Catalog;
 pub use error::{Error, Result};
-pub use iceberg_table::{IcebergTable, IcebergTableBuilder};
+pub use iceberg_table::IcebergTable;
 pub use memory_writer::{MemoryBranchWriter, MemoryDataWriter};
 pub use settings::{AuthConfig, Settings};
 pub use staged_writer::{IdempotentWapOutcome, StagedPublisher, StagedWriter};
