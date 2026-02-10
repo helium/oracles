@@ -6,19 +6,25 @@ use file_store_oracles::mobile_session::{
     DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::BoxedDataWriter;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
-use mobile_packet_verifier::{banning, daemon::handle_data_transfer_session_file, dc_to_bytes};
+use mobile_packet_verifier::{
+    banning, daemon::handle_data_transfer_session_file, dc_to_bytes,
+    iceberg::data_transfer_session::TrinoDataTransferSession,
+};
 use sqlx::{types::Uuid, PgPool};
 
-use crate::common::{setup_iceberg, TestMobileConfig};
+use crate::common::TestMobileConfig;
 
 #[sqlx::test]
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    let harness = setup_iceberg().await?;
+    use mobile_packet_verifier::iceberg::data_transfer_session as dts;
+    let (_harness, writer) = crate::common::get_writer(dts::TABLE_NAME).await?;
+    // let writer = crate::common::get_memory_writer(dts::TABLE_NAME).await;
 
     let payer_key =
         PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
@@ -54,16 +60,15 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     let metrics = TestMetrics::new();
 
     // accumulate and burn
-    run_accumulate_sessions(
-        &pool,
-        reports,
-        TestMobileConfig::all_valid(),
-        Some(harness.trino()),
-    )
-    .await?;
+    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer)).await?;
     run_burner(&pool, &payer_key).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
+
+    let trino = _harness.trino();
+    let all = mobile_packet_verifier::iceberg::data_transfer_session::get_all(trino).await?;
+
+    println!("all sessions: {:?}", all.len());
 
     Ok(())
 }
@@ -72,7 +77,7 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
-    trino: Option<&trino_rust_client::Client>,
+    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
     let ts = Utc::now();
@@ -88,7 +93,7 @@ async fn run_accumulate_sessions(
         &verified_sessions,
         ts,
         futures::stream::iter(reports),
-        trino,
+        data_writer,
     )
     .await?;
 
