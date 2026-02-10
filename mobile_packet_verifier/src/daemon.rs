@@ -2,6 +2,7 @@ use crate::{
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
+    iceberg::data_transfer_session::TrinoDataTransferSession,
     pending_burns,
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
@@ -17,6 +18,7 @@ use file_store_oracles::{
     FileType,
 };
 use futures::Stream;
+use helium_iceberg::BoxedDataWriter;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
@@ -36,7 +38,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    trino_client: Option<trino_rust_client::Client>,
+    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -47,7 +49,7 @@ impl<S, MCR> Daemon<S, MCR> {
         burner: Burner<S>,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-        trino_client: Option<trino_rust_client::Client>,
+        data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
     ) -> Self {
         Self {
             pool,
@@ -57,7 +59,7 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
-            trino_client,
+            data_writer,
         }
     }
 }
@@ -100,14 +102,14 @@ where
                     let Some(file_info_stream) = file else {
                         anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
                     };
-                    self.handle_data_transfer_session_file(file_info_stream).await?;
+                    self.handle_file(file_info_stream).await?;
                 }
 
             }
         }
     }
 
-    async fn handle_data_transfer_session_file(
+    async fn handle_file(
         &self,
         file: FileInfoStream<DataTransferSessionIngestReport>,
     ) -> anyhow::Result<()> {
@@ -125,7 +127,7 @@ where
             &self.verified_data_session_report_sink,
             ts,
             reports,
-            self.trino_client.as_ref(),
+            self.data_writer.clone(),
         )
         .await?;
 
@@ -142,7 +144,7 @@ pub async fn handle_data_transfer_session_file(
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-    trino: Option<&trino_rust_client::Client>,
+    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
 ) -> anyhow::Result<()> {
     let reports = crate::accumulate::accumulate_sessions(
         mobile_config,
@@ -156,8 +158,8 @@ pub async fn handle_data_transfer_session_file(
     pending_burns::save_data_transfer_session_reqs(txn, &reports.session_reqs, curr_file_ts)
         .await?;
 
-    if let Some(trino) = trino {
-        crate::iceberg::data_transfer_session::write(trino, &reports.valid).await?;
+    if let Some(writer) = data_writer {
+        crate::iceberg::data_transfer_session::write_with(writer, reports.valid).await?;
     }
 
     Ok(())
