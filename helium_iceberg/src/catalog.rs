@@ -360,6 +360,26 @@ impl Catalog {
             })
     }
 
+    /// Create a namespace if it does not already exist.
+    pub async fn create_namespace_if_not_exists(
+        &self,
+        namespace: impl Into<String>,
+    ) -> Result<()> {
+        let namespace_ident = NamespaceIdent::new(namespace.into());
+        let exists = self
+            .inner
+            .namespace_exists(&namespace_ident)
+            .await
+            .map_err(Error::Iceberg)?;
+        if !exists {
+            self.inner
+                .create_namespace(&namespace_ident, HashMap::new())
+                .await
+                .map_err(Error::Iceberg)?;
+        }
+        Ok(())
+    }
+
     /// Send a commit table request directly to the REST catalog API.
     ///
     /// This bypasses `TableCommit` (whose builder is `pub(crate)` in iceberg 0.8)
