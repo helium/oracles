@@ -27,5 +27,7 @@ pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type
 #[cfg(feature = "test-harness")]
 pub use test_harness::{HarnessConfig, IcebergTestHarness};
 
+pub type BoxedDataWriter<T> = std::sync::Arc<dyn DataWriter<T>>;
+
 #[cfg(test)]
 tls_init::include_tls_tests!();
