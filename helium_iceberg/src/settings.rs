@@ -10,7 +10,9 @@ pub struct Settings {
     pub warehouse: Option<String>,
     #[serde(default)]
     pub auth: AuthConfig,
-    /// Additional properties passed through to the catalog builder (e.g. S3 credentials).
+    #[serde(default)]
+    pub s3: S3Config,
+    /// Additional properties passed through to the catalog builder.
     #[serde(default)]
     pub properties: HashMap<String, String>,
 }
@@ -26,6 +28,43 @@ pub struct AuthConfig {
     pub scope: Option<String>,
     pub audience: Option<String>,
     pub resource: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct S3Config {
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing)]
+    pub access_key_id: Option<String>,
+    #[serde(skip_serializing)]
+    pub secret_access_key: Option<String>,
+    pub region: Option<String>,
+    pub path_style_access: Option<bool>,
+}
+
+impl S3Config {
+    pub fn props(&self) -> HashMap<String, String> {
+        let mut props = HashMap::new();
+        if let Some(ref endpoint) = self.endpoint {
+            props.insert("s3.endpoint".to_string(), endpoint.clone());
+        }
+        if let Some(ref access_key_id) = self.access_key_id {
+            props.insert("s3.access-key-id".to_string(), access_key_id.clone());
+        }
+        if let Some(ref secret_access_key) = self.secret_access_key {
+            props.insert("s3.secret-access-key".to_string(), secret_access_key.clone());
+        }
+        if let Some(ref region) = self.region {
+            props.insert("s3.region".to_string(), region.clone());
+        }
+        if let Some(path_style_access) = self.path_style_access {
+            props.insert(
+                "s3.path-style-access".to_string(),
+                path_style_access.to_string(),
+            );
+        }
+        props
+    }
 }
 
 impl AuthConfig {
