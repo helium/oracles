@@ -52,7 +52,10 @@ impl S3Config {
             props.insert("s3.access-key-id".to_string(), access_key_id.clone());
         }
         if let Some(ref secret_access_key) = self.secret_access_key {
-            props.insert("s3.secret-access-key".to_string(), secret_access_key.clone());
+            props.insert(
+                "s3.secret-access-key".to_string(),
+                secret_access_key.clone(),
+            );
         }
         if let Some(ref region) = self.region {
             props.insert("s3.region".to_string(), region.clone());

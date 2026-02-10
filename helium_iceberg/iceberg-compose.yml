@@ -106,6 +106,7 @@ services:
       polaris.features."ALLOW_INSECURE_STORAGE_TYPES": "true"
       polaris.features."SUPPORTED_CATALOG_STORAGE_TYPES": "[\"S3\"]"
       polaris.readiness.ignore-severe-issues: "true"
+      polaris.features."DROP_WITH_PURGE_ENABLED": "true"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8182/q/health"]
       interval: 2s

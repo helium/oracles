@@ -362,10 +362,7 @@ impl Catalog {
     }
 
     /// Create a namespace if it does not already exist.
-    pub async fn create_namespace_if_not_exists(
-        &self,
-        namespace: impl Into<String>,
-    ) -> Result<()> {
+    pub async fn create_namespace_if_not_exists(&self, namespace: impl Into<String>) -> Result<()> {
         let namespace_ident = NamespaceIdent::new(namespace.into());
         let exists = self
             .inner
