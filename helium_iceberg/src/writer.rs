@@ -1,193 +1,39 @@
-use crate::catalog::Catalog;
-use crate::{Error, Result, Settings};
-use arrow_array::RecordBatch;
-use arrow_json::reader::ReaderBuilder;
+use crate::Result;
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
-use iceberg::arrow::{schema_to_arrow_schema, RecordBatchPartitionSplitter};
-use iceberg::table::Table;
-use iceberg::transaction::{ApplyTransactionAction, Transaction};
-use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
-use iceberg::writer::file_writer::location_generator::{
-    DefaultFileNameGenerator, DefaultLocationGenerator,
-};
-use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
-use iceberg::writer::file_writer::ParquetWriterBuilder;
-use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
-use iceberg::writer::partitioning::PartitioningWriter;
 use serde::Serialize;
-use std::sync::Arc;
 
 #[async_trait]
 pub trait DataWriter<T>: Send + Sync
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + Send,
 {
     async fn write(&self, records: Vec<T>) -> Result;
-
-    async fn write_stream<S>(&self, stream: S) -> Result
-    where
-        S: Stream<Item = T> + Send + 'static,
-    {
-        let records: Vec<T> = stream.collect().await;
-        self.write(records).await
-    }
 }
 
-pub struct IcebergTable {
-    pub(crate) catalog: Catalog,
-    pub(crate) table: Table,
+/// Outcome of a [`StagedWriter::stage`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteOutcome {
+    /// Records were staged successfully.
+    Written,
+    /// The WAP was already completed in a prior attempt — nothing to do.
+    AlreadyComplete,
 }
 
-pub struct IcebergTableBuilder {
-    settings: Settings,
-    namespace: String,
-    table_name: String,
-}
-
-impl IcebergTableBuilder {
-    pub fn new(
-        settings: Settings,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> Self {
-        Self {
-            settings,
-            namespace: namespace.into(),
-            table_name: table_name.into(),
-        }
-    }
-
-    pub async fn build(self) -> Result<IcebergTable> {
-        IcebergTable::connect(self.settings, self.namespace, self.table_name).await
-    }
-}
-
-impl IcebergTable {
-    pub fn builder(
-        settings: Settings,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> IcebergTableBuilder {
-        IcebergTableBuilder::new(settings, namespace, table_name)
-    }
-
-    /// Create an `IcebergTable` from an existing catalog connection.
-    pub async fn from_catalog(
-        catalog: Catalog,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> Result<Self> {
-        let table = catalog.load_table(namespace, table_name).await?;
-        Ok(Self { catalog, table })
-    }
-
-    /// Connect to an Iceberg table using the provided settings.
-    ///
-    /// This creates a new catalog connection. If you need to share a catalog
-    /// connection across multiple tables, use `Catalog::connect()` followed by
-    /// `IcebergTable::from_catalog()`.
-    pub async fn connect(
-        settings: Settings,
-        namespace: impl Into<String>,
-        table_name: impl Into<String>,
-    ) -> Result<Self> {
-        let catalog = Catalog::connect(&settings).await?;
-        Self::from_catalog(catalog, namespace, table_name).await
-    }
-
-    fn records_to_batch<T: Serialize>(&self, records: &[T]) -> Result<RecordBatch> {
-        let iceberg_schema = self.table.metadata().current_schema();
-        let arrow_schema = schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
-
-        let mut decoder = ReaderBuilder::new(Arc::new(arrow_schema))
-            .build_decoder()
-            .map_err(|e| Error::Writer(format!("decoder error: {e}")))?;
-
-        decoder
-            .serialize(records)
-            .map_err(|e| Error::Writer(format!("serialize error: {e}")))?;
-
-        decoder
-            .flush()
-            .map_err(|e| Error::Writer(format!("flush error: {e}")))?
-            .ok_or_else(|| Error::Writer("no batch produced".into()))
-    }
-
-    async fn write_and_commit(&self, batch: RecordBatch) -> Result {
-        let schema = self.table.metadata().current_schema().clone();
-        let partition_spec = self.table.metadata().default_partition_spec().clone();
-        let file_io = self.table.file_io().clone();
-
-        let location_generator =
-            DefaultLocationGenerator::new(self.table.metadata().clone()).map_err(Error::Iceberg)?;
-        let timestamp_millis = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .map_err(|e| Error::Writer(format!("failed to get system time: {e}")))?;
-        let file_name_generator = DefaultFileNameGenerator::new(
-            format!("{timestamp_millis}"),
-            None,
-            iceberg::spec::DataFileFormat::Parquet,
-        );
-
-        let parquet_writer_builder = ParquetWriterBuilder::new(Default::default(), schema.clone());
-
-        let rolling_writer_builder = RollingFileWriterBuilder::new_with_default_file_size(
-            parquet_writer_builder,
-            file_io,
-            location_generator,
-            file_name_generator,
-        );
-
-        let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder);
-
-        let splitter =
-            RecordBatchPartitionSplitter::try_new_with_computed_values(schema, partition_spec)
-                .map_err(Error::Iceberg)?;
-
-        let partitioned_batches = splitter.split(&batch).map_err(Error::Iceberg)?;
-
-        let mut fanout_writer = FanoutWriter::new(data_file_writer_builder);
-
-        for (partition_key, partition_batch) in partitioned_batches {
-            fanout_writer
-                .write(partition_key, partition_batch)
-                .await
-                .map_err(Error::Iceberg)?;
-        }
-
-        let data_files = fanout_writer.close().await.map_err(Error::Iceberg)?;
-
-        self.commit_files(data_files).await
-    }
-
-    async fn commit_files(&self, data_files: Vec<iceberg::spec::DataFile>) -> Result {
-        if data_files.is_empty() {
-            return Ok(());
-        }
-
-        let tx = Transaction::new(&self.table);
-        let action = tx.fast_append().add_data_files(data_files);
-        let tx = action.apply(tx).map_err(Error::Iceberg)?;
-
-        tx.commit(self.catalog.as_ref())
-            .await
-            .map_err(Error::Iceberg)?;
-
-        tracing::debug!("committed data files to iceberg table");
-        Ok(())
-    }
-}
-
+/// Trait for idempotent write-audit-publish (WAP) workflows.
+///
+/// Implementors handle the full WAP lifecycle: creating a branch, writing
+/// records, detecting prior completion, and publishing the branch.
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable {
-    async fn write(&self, records: Vec<T>) -> Result {
-        if records.is_empty() {
-            return Ok(());
-        }
+pub trait StagedWriter<T>: Send + Sync
+where
+    T: Serialize + Send,
+{
+    /// Idempotently stage records for a WAP session.
+    ///
+    /// Creates a branch, writes records, and returns [`WriteOutcome::Written`].
+    /// Returns [`WriteOutcome::AlreadyComplete`] if `wap_id` was previously published.
+    async fn stage(&self, wap_id: &str, records: Vec<T>) -> Result<WriteOutcome>;
 
-        let batch = self.records_to_batch(&records)?;
-        self.write_and_commit(batch).await
-    }
+    /// Publish a staged WAP branch by fast-forwarding main.
+    async fn publish(&self, wap_id: &str) -> Result;
 }

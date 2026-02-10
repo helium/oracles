@@ -18,4 +18,7 @@ pub enum Error {
 
     #[error("writer error: {0}")]
     Writer(String),
+
+    #[error("branch error: {0}")]
+    Branch(String),
 }
