@@ -1,7 +1,8 @@
-use crate::{BranchWriter, DataWriter, Error, Result};
+use crate::writer::{StagedWriter, WriteOutcome};
+use crate::{DataWriter, Error, Result};
 use async_trait::async_trait;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 /// An in-memory implementation of `DataWriter` for testing purposes.
@@ -65,16 +66,13 @@ impl<T: Clone + Serialize + Send + Sync> DataWriter<T> for MemoryDataWriter<T> {
     }
 }
 
-/// An in-memory implementation of `BranchWriter` for testing purposes.
-///
-/// This writer tracks branches as named collections of records and supports
-/// publishing branch records to a separate "published" collection. Uses
-/// `Mutex` for interior mutability since `BranchWriter` takes `&self`.
-pub struct MemoryBranchWriter<T> {
+#[cfg(test)]
+pub(crate) struct MemoryBranchWriter<T> {
     branches: Mutex<HashMap<String, Vec<T>>>,
     published: Mutex<Vec<T>>,
 }
 
+#[cfg(test)]
 impl<T: Clone> MemoryBranchWriter<T> {
     pub fn new() -> Self {
         Self {
@@ -83,7 +81,6 @@ impl<T: Clone> MemoryBranchWriter<T> {
         }
     }
 
-    /// Returns a clone of the records on a given branch.
     pub fn branch_records(&self, branch_name: &str) -> Option<Vec<T>> {
         self.branches
             .lock()
@@ -92,7 +89,6 @@ impl<T: Clone> MemoryBranchWriter<T> {
             .cloned()
     }
 
-    /// Returns true if the named branch exists.
     pub fn branch_exists(&self, branch_name: &str) -> bool {
         self.branches
             .lock()
@@ -100,7 +96,6 @@ impl<T: Clone> MemoryBranchWriter<T> {
             .contains_key(branch_name)
     }
 
-    /// Returns the names of all existing branches.
     pub fn branch_names(&self) -> Vec<String> {
         self.branches
             .lock()
@@ -110,25 +105,25 @@ impl<T: Clone> MemoryBranchWriter<T> {
             .collect()
     }
 
-    /// Returns a clone of all published records.
     pub fn published(&self) -> Vec<T> {
         self.published.lock().expect("lock poisoned").clone()
     }
 
-    /// Returns the number of published records.
     pub fn published_len(&self) -> usize {
         self.published.lock().expect("lock poisoned").len()
     }
 }
 
+#[cfg(test)]
 impl<T: Clone> Default for MemoryBranchWriter<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 #[async_trait]
-impl<T: Clone + Serialize + Send + Sync> BranchWriter<T> for MemoryBranchWriter<T> {
+impl<T: Clone + Serialize + Send + Sync> crate::writer::BranchWriter<T> for MemoryBranchWriter<T> {
     async fn create_branch(&self, branch_name: &str) -> Result {
         let mut branches = self.branches.lock().expect("lock poisoned");
         if branches.contains_key(branch_name) {
@@ -181,9 +176,97 @@ impl<T: Clone + Serialize + Send + Sync> BranchWriter<T> for MemoryBranchWriter<
     }
 }
 
+/// An in-memory implementation of [`StagedWriter`] for testing WAP workflows.
+///
+/// Tracks staged records per `wap_id`, published records, and completed
+/// wap_ids to simulate the full idempotent WAP lifecycle.
+pub struct MemoryStagedWriter<T> {
+    staged: Mutex<HashMap<String, Vec<T>>>,
+    published: Mutex<Vec<T>>,
+    completed: Mutex<HashSet<String>>,
+}
+
+impl<T: Clone> MemoryStagedWriter<T> {
+    pub fn new() -> Self {
+        Self {
+            staged: Mutex::new(HashMap::new()),
+            published: Mutex::new(Vec::new()),
+            completed: Mutex::new(HashSet::new()),
+        }
+    }
+
+    /// Returns a clone of all published records.
+    pub fn published(&self) -> Vec<T> {
+        self.published.lock().expect("lock poisoned").clone()
+    }
+
+    /// Returns the number of published records.
+    pub fn published_len(&self) -> usize {
+        self.published.lock().expect("lock poisoned").len()
+    }
+
+    /// Returns the staged records for a given wap_id, if any.
+    pub fn staged_records(&self, wap_id: &str) -> Option<Vec<T>> {
+        self.staged
+            .lock()
+            .expect("lock poisoned")
+            .get(wap_id)
+            .cloned()
+    }
+
+    /// Returns true if the given wap_id has been completed (published).
+    pub fn is_completed(&self, wap_id: &str) -> bool {
+        self.completed
+            .lock()
+            .expect("lock poisoned")
+            .contains(wap_id)
+    }
+}
+
+impl<T: Clone> Default for MemoryStagedWriter<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl<T: Clone + Serialize + Send + Sync> StagedWriter<T> for MemoryStagedWriter<T> {
+    async fn stage(&self, wap_id: &str, records: Vec<T>) -> Result<WriteOutcome> {
+        if self.is_completed(wap_id) {
+            return Ok(WriteOutcome::AlreadyComplete);
+        }
+
+        self.staged
+            .lock()
+            .expect("lock poisoned")
+            .insert(wap_id.to_string(), records);
+        Ok(WriteOutcome::Written)
+    }
+
+    async fn publish(&self, wap_id: &str) -> Result {
+        let records = self
+            .staged
+            .lock()
+            .expect("lock poisoned")
+            .remove(wap_id)
+            .ok_or_else(|| Error::Branch(format!("no staged records for wap_id '{wap_id}'")))?;
+
+        self.published
+            .lock()
+            .expect("lock poisoned")
+            .extend(records);
+        self.completed
+            .lock()
+            .expect("lock poisoned")
+            .insert(wap_id.to_string());
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::writer::BranchWriter;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -415,5 +498,71 @@ mod tests {
         let writer: MemoryBranchWriter<TestRecord> = MemoryBranchWriter::default();
         assert!(writer.branch_names().is_empty());
         assert_eq!(writer.published_len(), 0);
+    }
+
+    // MemoryStagedWriter tests
+
+    #[tokio::test]
+    async fn test_staged_writer_stage_and_publish() {
+        let writer: MemoryStagedWriter<TestRecord> = MemoryStagedWriter::new();
+
+        let records = vec![
+            TestRecord {
+                id: 1,
+                name: "alice".to_string(),
+            },
+            TestRecord {
+                id: 2,
+                name: "bob".to_string(),
+            },
+        ];
+
+        let outcome = writer.stage("wap-1", records).await.unwrap();
+        assert_eq!(outcome, WriteOutcome::Written);
+        assert_eq!(writer.staged_records("wap-1").unwrap().len(), 2);
+
+        writer.publish("wap-1").await.unwrap();
+        assert_eq!(writer.published_len(), 2);
+        assert!(writer.is_completed("wap-1"));
+        assert!(writer.staged_records("wap-1").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_staged_writer_already_complete() {
+        let writer: MemoryStagedWriter<TestRecord> = MemoryStagedWriter::new();
+
+        let records = vec![TestRecord {
+            id: 1,
+            name: "alice".to_string(),
+        }];
+
+        writer.stage("wap-1", records).await.unwrap();
+        writer.publish("wap-1").await.unwrap();
+
+        let outcome = writer
+            .stage(
+                "wap-1",
+                vec![TestRecord {
+                    id: 2,
+                    name: "bob".to_string(),
+                }],
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome, WriteOutcome::AlreadyComplete);
+        assert_eq!(writer.published_len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_staged_writer_publish_missing() {
+        let writer: MemoryStagedWriter<TestRecord> = MemoryStagedWriter::new();
+        assert!(writer.publish("nonexistent").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_staged_writer_default() {
+        let writer: MemoryStagedWriter<TestRecord> = MemoryStagedWriter::default();
+        assert_eq!(writer.published_len(), 0);
+        assert!(!writer.is_completed("wap-1"));
     }
 }
