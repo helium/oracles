@@ -1,5 +1,5 @@
 use crate::catalog::Catalog;
-use crate::writer::{BranchWriter, DataWriter, StagedWriter, WriteOutcome};
+use crate::writer::{DataWriter, StagedWriter, WriteOutcome};
 use crate::{Error, Result};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
@@ -167,15 +167,12 @@ impl<T: Serialize + Send + Sync> DataWriter<T> for IcebergTable<T> {
     }
 }
 
-#[async_trait]
-impl<T: Serialize + Send + Sync> BranchWriter<T> for IcebergTable<T> {
-    /// Create a branch from the current main snapshot.
+impl<T: Serialize + Send + Sync> IcebergTable<T> {
     async fn create_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
         crate::branch::create_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 
-    /// Write records to a named branch (not main).
     async fn write_to_branch(&self, branch_name: &str, records: Vec<T>, wap_id: &str) -> Result {
         if records.is_empty() {
             return Ok(());
@@ -196,13 +193,11 @@ impl<T: Serialize + Send + Sync> BranchWriter<T> for IcebergTable<T> {
         .await
     }
 
-    /// Fast-forward main to a branch's snapshot, then delete the branch.
     async fn publish_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
         crate::branch::publish_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 
-    /// Delete a branch.
     async fn delete_branch(&self, branch_name: &str) -> Result {
         self.reload().await?;
         crate::branch::delete_branch(&self.catalog, &*self.table.read().await, branch_name).await
@@ -240,7 +235,7 @@ impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
             }
             WapState::WrittenNotPublished => {
                 tracing::debug!(wap_id, "written but not published, publishing now");
-                BranchWriter::publish_branch(self, wap_id).await?;
+                self.publish_branch(wap_id).await?;
                 Ok(WriteOutcome::AlreadyComplete)
             }
             WapState::AlreadyPublished => {
@@ -251,7 +246,7 @@ impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
     }
 
     async fn publish(&self, wap_id: &str) -> Result {
-        BranchWriter::publish_branch(self, wap_id).await
+        self.publish_branch(wap_id).await
     }
 }
 

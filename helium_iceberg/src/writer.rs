@@ -10,17 +10,6 @@ where
     async fn write(&self, records: Vec<T>) -> Result;
 }
 
-#[async_trait]
-pub(crate) trait BranchWriter<T>: Send + Sync
-where
-    T: Serialize + Send,
-{
-    async fn create_branch(&self, branch_name: &str) -> Result;
-    async fn write_to_branch(&self, branch_name: &str, records: Vec<T>, wap_id: &str) -> Result;
-    async fn publish_branch(&self, branch_name: &str) -> Result;
-    async fn delete_branch(&self, branch_name: &str) -> Result;
-}
-
 /// Outcome of a [`StagedWriter::stage`] call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteOutcome {
