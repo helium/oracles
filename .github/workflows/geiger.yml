@@ -15,7 +15,7 @@ jobs:
       contents: read
       pull-requests: read
     env:
-      GEIGER_MANIFEST_DIR: .
+      GEIGER_MANIFEST_DIR: mobile_verifier
       CARGO_BINARY: cargo-geiger
       CARGO_BINARY_VERSION: 0.13.0
       UNSAFE_THRESHOLD: 20  # Fail if unsafe code increases by more than this
@@ -82,34 +82,94 @@ jobs:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
 
+      - name: Geiger | Detect changed packages
+        id: detect-packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          echo "Fetching main branch for comparison..."
+          git fetch origin main --depth=100
+          
+          echo "Detecting changed workspace packages..."
+          # Get list of all workspace members
+          WORKSPACE_MEMBERS=$(cargo metadata --format-version=1 --no-deps | jq -r '.workspace_members[] | split("#")[0] | split("/")[-1]')
+          
+          # Find packages with changes
+          CHANGED_PACKAGES=""
+          for pkg in $WORKSPACE_MEMBERS; do
+            # Check if package directory has changes
+            if git diff --name-only origin/main...${{ github.sha }} | grep -q "^${pkg}/"; then
+              echo "  📦 Changed: $pkg"
+              CHANGED_PACKAGES="$CHANGED_PACKAGES $pkg"
+            fi
+          done
+          
+          # If no packages changed, scan the default package
+          if [ -z "$CHANGED_PACKAGES" ]; then
+            echo "No workspace packages changed, using default: $GEIGER_MANIFEST_DIR"
+            CHANGED_PACKAGES="$GEIGER_MANIFEST_DIR"
+          fi
+          
+          echo "packages=$CHANGED_PACKAGES" >> $GITHUB_OUTPUT
+          echo ""
+          echo "Will scan packages: $CHANGED_PACKAGES"
+
       - name: Geiger | Run on main branch (baseline)
         shell: bash
         run: |
           set -euo pipefail
-          echo "Fetching main branch for baseline..."
-          git fetch origin main --depth=1
           
-          echo "Running cargo-geiger on main branch..."
+          echo "Checking out main branch..."
           git checkout origin/main
-          MANIFEST_PATH="$GITHUB_WORKSPACE/$GEIGER_MANIFEST_DIR/Cargo.toml"
-          cargo geiger --manifest-path "$MANIFEST_PATH" --locked 2>/dev/null > /tmp/baseline.txt || true
           
-          echo "Baseline from main branch:"
-          tail -1 /tmp/baseline.txt
+          echo "Running geiger on baseline packages..."
+          echo "0" > /tmp/baseline_total.txt
+          
+          for pkg in ${{ steps.detect-packages.outputs.packages }}; do
+            echo "  Scanning $pkg on main branch..."
+            MANIFEST_PATH="$GITHUB_WORKSPACE/$pkg/Cargo.toml"
+            if [ -f "$MANIFEST_PATH" ]; then
+              cargo geiger --manifest-path "$MANIFEST_PATH" --all-targets --locked 2>/dev/null > /tmp/baseline_${pkg}.txt || true
+              # Extract unsafe count (2nd column, numerator)
+              COUNT=$(grep -v '^$' /tmp/baseline_${pkg}.txt | tail -1 | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n' | tr -d ' ' || echo "0")
+              echo "$pkg: $COUNT unsafe expressions"
+              TOTAL=$(cat /tmp/baseline_total.txt)
+              echo $((TOTAL + COUNT)) > /tmp/baseline_total.txt
+            fi
+          done
+          
+          echo ""
+          echo "Total baseline unsafe: $(cat /tmp/baseline_total.txt)"
+          cat /tmp/baseline_total.txt > /tmp/baseline.txt
 
       - name: Geiger | Run on PR branch (current)
         shell: bash
         run: |
           set -euo pipefail
-          echo "Switching to PR branch..."
+          
+          echo "Checking out PR branch..."
           git checkout ${{ github.sha }}
           
-          echo "Running cargo-geiger on PR branch..."
-          MANIFEST_PATH="$GITHUB_WORKSPACE/$GEIGER_MANIFEST_DIR/Cargo.toml"
-          cargo geiger --manifest-path "$MANIFEST_PATH" --locked 2>/dev/null > /tmp/current.txt || true
+          echo "Running geiger on PR packages..."
+          echo "0" > /tmp/current_total.txt
           
-          echo "Current from PR branch:"
-          tail -1 /tmp/current.txt
+          for pkg in ${{ steps.detect-packages.outputs.packages }}; do
+            echo "  Scanning $pkg on PR branch..."
+            MANIFEST_PATH="$GITHUB_WORKSPACE/$pkg/Cargo.toml"
+            if [ -f "$MANIFEST_PATH" ]; then
+              cargo geiger --manifest-path "$MANIFEST_PATH" --all-targets --locked 2>/dev/null > /tmp/current_${pkg}.txt || true
+              # Extract unsafe count (2nd column, numerator)
+              COUNT=$(grep -v '^$' /tmp/current_${pkg}.txt | tail -1 | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n' | tr -d ' ' || echo "0")
+              echo "$pkg: $COUNT unsafe expressions"
+              TOTAL=$(cat /tmp/current_total.txt)
+              echo $((TOTAL + COUNT)) > /tmp/current_total.txt
+            fi
+          done
+          
+          echo ""
+          echo "Total current unsafe: $(cat /tmp/current_total.txt)"
+          cat /tmp/current_total.txt > /tmp/current.txt
 
       - name: Geiger | Compare unsafe counts
         shell: bash
@@ -118,21 +178,13 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Debug: Show the actual output
-          echo "=== Baseline output (last 5 lines) ==="
-          tail -5 /tmp/baseline.txt
-          echo ""
-          echo "=== Current output (last 5 lines) ==="
-          tail -5 /tmp/current.txt
-          echo ""
+          # Read aggregated totals
+          baseline_unsafe=$(cat /tmp/baseline.txt | tr -d '\n' | tr -d ' ')
+          current_unsafe=$(cat /tmp/current.txt | tr -d '\n' | tr -d ' ')
           
-          # Extract unsafe expressions count (2nd column is the key metric)
-          # Default format: "functions expressions impls traits methods"
-          # Example: "0/0  1/1  0/0  0/0  0/0"
-          # Get last non-empty line, extract 2nd column (expressions), get numerator
-          baseline_unsafe=$(grep -v '^$' /tmp/baseline.txt | tail -1 | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n' | tr -d ' ')
-          current_unsafe=$(grep -v '^$' /tmp/current.txt | tail -1 | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n' | tr -d ' ')
-          
+          echo "=== Scanned packages ==="
+          echo "Packages: ${{ steps.detect-packages.outputs.packages }}"
+          echo ""
           echo "=== Extracted values ==="
           echo "baseline_unsafe: '$baseline_unsafe'"
           echo "current_unsafe: '$current_unsafe'"
