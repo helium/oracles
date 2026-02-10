@@ -3,16 +3,17 @@ pub mod data_transfer_session {
     use chrono::DateTime;
     use chrono::FixedOffset;
     use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
+    use helium_iceberg::BoxedDataWriter;
     use serde::Deserialize;
     use serde::Serialize;
     use trino_rust_client::Trino;
 
-    const TABLE_NAME: &str = "data_transfer_sessions";
+    pub const TABLE_NAME: &str = "data_transfer_sessions";
     // NOTE(mj): putting 6 decimals helps with PartialEq when doing a roundtrip,
     // but may be overkill. Does make life a lot easier though.
     const DT_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.6f";
 
-    #[derive(Debug, Trino, Serialize, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
     pub struct TrinoDataTransferSession {
         report_received_timestamp: DateTime<FixedOffset>,
         // -- request
@@ -56,6 +57,14 @@ pub mod data_transfer_session {
             .with_location(format!("s3://iceberg/{schema_name}/data_transfer_sessions"))
             .build()
             .expect("valid data transfer session table")
+    }
+
+    pub async fn write_with(
+        data_writer: BoxedDataWriter<TrinoDataTransferSession>,
+        valid_reports: Vec<TrinoDataTransferSession>,
+    ) -> anyhow::Result<()> {
+        data_writer.write(valid_reports).await?;
+        Ok(())
     }
 
     pub async fn write(
