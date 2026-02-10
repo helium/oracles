@@ -227,7 +227,10 @@ async fn handle_transaction_success(
     pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
+    // TODO(mj): write out each session to trino
+    // staged_writer(wap_id: signature)
     for session in sessions {
+        // TODO(mj): maybe change to use write_all
         valid_sessions
             .write(ValidDataTransferSession::from(session), &[])
             .await?;
