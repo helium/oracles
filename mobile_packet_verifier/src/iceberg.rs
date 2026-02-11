@@ -137,9 +137,13 @@ pub mod data_transfer_session {
                 catalog_uri: config.iceberg_rest_url.clone(),
                 catalog_name: config.catalog_name.clone(),
                 warehouse: None,
-                auth_token: None,
-                s3_access_key: Some(config.s3_access_key.clone()),
-                s3_secret_key: Some(config.s3_secret_key.clone()),
+                auth: Default::default(),
+                s3: S3Config {
+                    access_key_id: Some(config.s3_access_key.clone()),
+                    secret_access_key: Some(config.s3_secret_key.clone()),
+                    ..Default::default()
+                },
+                properties: Default::default(),
             };
             let catalog = Catalog::connect(&settings).await?;
 

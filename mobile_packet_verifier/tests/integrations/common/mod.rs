@@ -29,7 +29,7 @@ pub async fn get_writer(
 }
 
 pub async fn get_memory_writer(_table_name: &str) -> BoxedDataWriter<TrinoDataTransferSession> {
-    std::sync::Arc::new(helium_iceberg::MemoryDataWriter::new())
+    todo!("MemoryDataWriter was removed; use get_writer with IcebergTestHarness instead")
 }
 
 enum ValidKeys {
