@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 extern crate tls_init;
 
 use helium_lib::{

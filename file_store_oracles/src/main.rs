@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 mod cli;
 
 use clap::Parser;

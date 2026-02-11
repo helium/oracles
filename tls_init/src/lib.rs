@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 //! ### TLS
 //! Updates to `rustls` now support multiple CryptoProvider backends. Namely
 //! `aws-lc-rs` (default) and `ring` (legacy).

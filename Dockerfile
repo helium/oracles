@@ -11,10 +11,10 @@ FROM base AS builder
 WORKDIR /app
 
 COPY . .
-RUN cargo fetch
+RUN cargo fetch --locked
 
 ARG PACKAGE
-RUN AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p ${PACKAGE}
+RUN AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p ${PACKAGE} --locked
 
 
 # RUNNER

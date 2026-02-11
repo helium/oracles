@@ -244,6 +244,7 @@ impl AwsLocal {
     /// # Safety
     /// It is marked with unsafe to make the calling code extra clear that this
     /// should not be left in use.
+    #[allow(unsafe_code)]
     pub unsafe fn drop_without_bucket_delete(mut self) {
         self.gaurd_drop = false;
     }

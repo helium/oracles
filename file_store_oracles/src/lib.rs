@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 // Infrastructure
 pub mod file_type;
 pub mod traits;

@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use anyhow::Result;
 use clap::Parser;
 use ingest::{server_chain, server_mobile, Mode, Settings};
