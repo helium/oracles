@@ -33,7 +33,7 @@ use iceberg::{Catalog as IcebergCatalog, NamespaceIdent};
 use trino_rust_client::ClientBuilder;
 use uuid::Uuid;
 
-use crate::settings::Settings;
+use crate::settings::{S3Config, Settings};
 use crate::{Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
 
 /// Default Trino server host.
@@ -79,9 +79,13 @@ impl IcebergTestHarness {
             catalog_uri: config.iceberg_rest_url.clone(),
             catalog_name: config.catalog_name.clone(),
             warehouse: None,
-            auth_token: None,
-            s3_access_key: Some(config.s3_access_key.clone()),
-            s3_secret_key: Some(config.s3_secret_key.clone()),
+            auth: Default::default(),
+            s3: S3Config {
+                access_key_id: Some(config.s3_access_key.clone()),
+                secret_access_key: Some(config.s3_secret_key.clone()),
+                ..Default::default()
+            },
+            properties: Default::default(),
         };
         let iceberg_catalog = Catalog::connect(&iceberg_settings).await?;
 
@@ -110,7 +114,7 @@ impl IcebergTestHarness {
         })
     }
 
-    pub async fn get_table_writer(&self, table_name: &str) -> std::sync::Arc<IcebergTable> {
+    pub async fn get_table_writer<T>(&self, table_name: &str) -> std::sync::Arc<IcebergTable<T>> {
         let table =
             IcebergTable::from_catalog(self.iceberg_catalog.clone(), self.namespace(), table_name)
                 .await;
@@ -139,7 +143,7 @@ impl IcebergTestHarness {
     pub async fn create_table(&self, definition: TableDefinition) -> Result<()> {
         let creator = TableCreator::new(self.iceberg_catalog.clone());
         creator
-            .create_table_if_not_exists(&self.namespace, definition)
+            .create_table_if_not_exists::<()>(&self.namespace, definition)
             .await?;
         Ok(())
     }
