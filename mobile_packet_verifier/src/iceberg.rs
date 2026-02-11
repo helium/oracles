@@ -132,29 +132,15 @@ pub mod data_transfer_session {
         async fn writing_with_data_writer() -> anyhow::Result<()> {
             use helium_iceberg::*;
 
-            let config = HarnessConfig::default();
-            let settings = Settings {
-                catalog_uri: config.iceberg_rest_url.clone(),
-                catalog_name: config.catalog_name.clone(),
-                warehouse: None,
-                auth: Default::default(),
-                s3: S3Config {
-                    access_key_id: Some(config.s3_access_key.clone()),
-                    secret_access_key: Some(config.s3_secret_key.clone()),
-                    ..Default::default()
-                },
-                properties: Default::default(),
-            };
-            let catalog = Catalog::connect(&settings).await?;
+            let harness = IcebergTestHarness::new().await?;
+            let namespace = harness.namespace();
+            harness.create_table(table_definition(namespace)).await?;
 
-            let namespace = "test_b9d581eaa7804d15a96cb95b5a081cf5";
-            let table_name = "data_transfer_sessions";
+            let catalog = harness.iceberg_catalog().clone();
+            let exists = catalog.table_exists(namespace, TABLE_NAME).await?;
+            assert!(exists);
 
-            let exists = catalog.table_exists(namespace, table_name).await?;
-
-            println!("table exists :: {exists}");
-
-            let table = IcebergTable::from_catalog(catalog, namespace, table_name).await?;
+            let table = IcebergTable::from_catalog(catalog, namespace, TABLE_NAME).await?;
 
             let dts = (0..500)
                 .map(mk_dt)

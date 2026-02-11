@@ -24,7 +24,7 @@ pub async fn get_writer(
     BoxedDataWriter<TrinoDataTransferSession>,
 )> {
     let harness = setup_iceberg().await?;
-    let writer = harness.get_table_writer(table_name).await;
+    let writer = harness.get_table_writer(table_name).await?;
     Ok((harness, writer))
 }
 
