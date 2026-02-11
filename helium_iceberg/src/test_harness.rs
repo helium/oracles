@@ -33,7 +33,7 @@ use iceberg::{Catalog as IcebergCatalog, NamespaceIdent};
 use trino_rust_client::ClientBuilder;
 use uuid::Uuid;
 
-use crate::settings::{S3Config, Settings};
+use crate::settings::{AuthConfig, S3Config, Settings};
 use crate::{Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
 
 /// Default Trino server host.
@@ -46,7 +46,7 @@ const DEFAULT_TRINO_PORT: u16 = 8080;
 const DEFAULT_CATALOG_NAME: &str = "iceberg";
 
 /// Default Iceberg REST catalog URL (from host, for test harness).
-const DEFAULT_ICEBERG_REST_URL: &str = "http://localhost:9001/iceberg";
+const DEFAULT_ICEBERG_REST_URL: &str = "http://localhost:8181/api/catalog";
 
 /// Test harness providing isolated Iceberg schema environments.
 ///
@@ -78,12 +78,18 @@ impl IcebergTestHarness {
         let iceberg_settings = Settings {
             catalog_uri: config.iceberg_rest_url.clone(),
             catalog_name: config.catalog_name.clone(),
-            warehouse: None,
-            auth: Default::default(),
+            warehouse: Some(config.catalog_name.clone()),
+            auth: AuthConfig {
+                credential: Some(config.oauth2_credential.clone()),
+                scope: Some(config.oauth2_scope.clone()),
+                ..Default::default()
+            },
             s3: S3Config {
+                endpoint: Some(config.s3_endpoint.clone()),
                 access_key_id: Some(config.s3_access_key.clone()),
                 secret_access_key: Some(config.s3_secret_key.clone()),
-                ..Default::default()
+                region: Some("us-east-1".to_string()),
+                path_style_access: Some(true),
             },
             properties: Default::default(),
         };
@@ -158,6 +164,12 @@ pub struct HarnessConfig {
     pub trino_user: String,
     /// Iceberg REST URL from host (for test harness to connect).
     pub iceberg_rest_url: String,
+    /// OAuth2 credential (client_id:client_secret) for Polaris.
+    pub oauth2_credential: String,
+    /// OAuth2 scope for Polaris.
+    pub oauth2_scope: String,
+    /// S3/MinIO endpoint URL from host.
+    pub s3_endpoint: String,
     /// S3 access key for MinIO/S3 writes from the host.
     pub s3_access_key: String,
     /// S3 secret key for MinIO/S3 writes from the host.
@@ -172,6 +184,9 @@ impl Default for HarnessConfig {
             trino_port: DEFAULT_TRINO_PORT,
             trino_user: "test".to_string(),
             iceberg_rest_url: DEFAULT_ICEBERG_REST_URL.to_string(),
+            oauth2_credential: "root:s3cr3t".to_string(),
+            oauth2_scope: "PRINCIPAL_ROLE:ALL".to_string(),
+            s3_endpoint: "http://localhost:9000".to_string(),
             s3_access_key: "admin".to_string(),
             s3_secret_key: "password".to_string(),
         }
