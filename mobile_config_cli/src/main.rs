@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use clap::Parser;
 use mobile_config_cli::{
     cmds::{self, admin, authorization, carrier, entity, env, gateway, Cli, Commands},

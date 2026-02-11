@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use clap::Parser;
 use mobile_config::cli::Cli;
 
