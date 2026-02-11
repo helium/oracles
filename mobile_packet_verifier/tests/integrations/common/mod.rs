@@ -8,11 +8,8 @@ use mobile_packet_verifier::{
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new().await?;
-    println!("created harness: {}", harness.namespace());
     harness
-        .create_table(iceberg::data_transfer_session::table_definition(
-            harness.namespace(),
-        ))
+        .create_table(iceberg::data_transfer_session::table_definition())
         .await?;
     Ok(harness)
 }

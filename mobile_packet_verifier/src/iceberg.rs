@@ -28,7 +28,7 @@ pub mod data_transfer_session {
         timestamp: DateTime<FixedOffset>,
     }
 
-    pub fn table_definition(schema_name: &str) -> helium_iceberg::TableDefinition {
+    pub fn table_definition() -> helium_iceberg::TableDefinition {
         use helium_iceberg::*;
 
         TableDefinition::builder(TABLE_NAME)
@@ -50,8 +50,6 @@ pub mod data_transfer_session {
                 "report_received_timestamp",
                 "report_received_timestamp_day",
             ))
-            // TODO(mj): maybe don't need location
-            .with_location(format!("s3://iceberg/{schema_name}/data_transfer_sessions"))
             .build()
             .expect("valid data transfer session table")
     }
@@ -133,14 +131,16 @@ pub mod data_transfer_session {
             use helium_iceberg::*;
 
             let harness = IcebergTestHarness::new().await?;
-            let namespace = harness.namespace();
-            harness.create_table(table_definition(namespace)).await?;
+            harness.create_table(table_definition()).await?;
 
             let catalog = harness.iceberg_catalog().clone();
-            let exists = catalog.table_exists(namespace, TABLE_NAME).await?;
+            let exists = catalog
+                .table_exists(harness.namespace(), TABLE_NAME)
+                .await?;
             assert!(exists);
 
-            let table = IcebergTable::from_catalog(catalog, namespace, TABLE_NAME).await?;
+            let table =
+                IcebergTable::from_catalog(catalog, harness.namespace(), TABLE_NAME).await?;
 
             let dts = (0..500)
                 .map(mk_dt)
@@ -148,8 +148,7 @@ pub mod data_transfer_session {
                 .collect::<Vec<_>>();
 
             use helium_iceberg::DataWriter;
-            let res = table.write(dts).await?;
-            println!("!!! {res:?}");
+            table.write(dts).await?;
 
             Ok(())
         }
