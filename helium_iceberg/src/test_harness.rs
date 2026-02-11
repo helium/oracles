@@ -30,11 +30,13 @@
 use std::collections::HashMap;
 
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent};
+use serde::Serialize;
 use trino_rust_client::ClientBuilder;
 use uuid::Uuid;
 
 use crate::settings::{AuthConfig, S3Config, Settings};
-use crate::{Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
+use crate::writer::IntoBoxedDataWriter;
+use crate::{BoxedDataWriter, Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
 
 /// Default Trino server host.
 const DEFAULT_TRINO_HOST: &str = "localhost";
@@ -120,11 +122,16 @@ impl IcebergTestHarness {
         })
     }
 
-    pub async fn get_table_writer<T>(&self, table_name: &str) -> std::sync::Arc<IcebergTable<T>> {
-        let table =
-            IcebergTable::from_catalog(self.iceberg_catalog.clone(), self.namespace(), table_name)
-                .await;
-        std::sync::Arc::new(table.expect("creating iceberg table"))
+    pub async fn get_table_writer<T>(
+        &self,
+        table_name: impl Into<String>,
+    ) -> Result<BoxedDataWriter<T>>
+    where
+        T: Serialize + Sync + Send + 'static,
+    {
+        IcebergTable::from_catalog(self.iceberg_catalog.clone(), self.namespace(), table_name)
+            .await
+            .map(|writer| writer.boxed())
     }
 
     /// Get the Trino client for executing queries.
