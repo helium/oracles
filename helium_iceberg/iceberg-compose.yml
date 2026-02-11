@@ -170,11 +170,11 @@ services:
                 "type": "INTERNAL",
                 "readOnly": false,
                 "properties": {
-                    "default-base-location": "s3://iceberg"
+                    "default-base-location": "s3://iceberg/main"
                 },
                 "storageConfigInfo": {
                     "storageType": "S3",
-                    "allowedLocations": ["s3://iceberg"],
+                    "allowedLocations": ["s3://iceberg/main"],
                     "endpoint": "http://localhost:9000",
                     "endpointInternal": "http://minio:9000",
                     "pathStyleAccess": true
