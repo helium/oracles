@@ -6,6 +6,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+default = ["test-harness"]
+test-harness = ["dep:trino-rust-client", "dep:uuid"]
+
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -21,7 +25,7 @@ iceberg-catalog-rest = "0.8"
 # HTTP client for direct catalog API calls (branch operations)
 reqwest = { version = "0.12", features = ["json"] }
 serde_json = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, optional = true }
 
 # Arrow dependencies
 arrow-array = "57"
@@ -30,6 +34,9 @@ arrow-schema = "57"
 parquet = "57"
 
 tls-init = { path = "../tls_init" }
+
+# Test harness dependencies (optional)
+trino-rust-client = { version = "0.9", optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

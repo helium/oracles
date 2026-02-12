@@ -33,13 +33,13 @@ impl FieldDefinition {
     }
 
     /// Create a required field.
-    pub fn required(name: impl Into<String>, field_type: Type) -> Self {
-        Self::new(name, field_type, true)
+    pub fn required(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
+        Self::new(name, field_type.into(), true)
     }
 
     /// Create an optional field.
-    pub fn optional(name: impl Into<String>, field_type: Type) -> Self {
-        Self::new(name, field_type, false)
+    pub fn optional(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
+        Self::new(name, field_type.into(), false)
     }
 
     /// Add documentation to this field.
@@ -486,27 +486,14 @@ impl TableCreator {
         let partition_spec = definition.build_partition_spec(&schema)?;
         let sort_order = definition.build_sort_order(&schema)?;
 
-        let table_creation = definition
-            .location
-            .map(|loc| {
-                TableCreation::builder()
-                    .name(definition.name.clone())
-                    .location(loc)
-                    .schema(schema.clone())
-                    .partition_spec(partition_spec.clone())
-                    .sort_order(sort_order.clone())
-                    .properties(definition.properties.clone())
-                    .build()
-            })
-            .unwrap_or_else(|| {
-                TableCreation::builder()
-                    .name(definition.name)
-                    .schema(schema)
-                    .partition_spec(partition_spec)
-                    .sort_order(sort_order)
-                    .properties(definition.properties)
-                    .build()
-            });
+        let table_creation = TableCreation::builder()
+            .name(definition.name.clone())
+            .location_opt(definition.location.clone())
+            .schema(schema.clone())
+            .partition_spec(partition_spec.clone())
+            .sort_order(sort_order.clone())
+            .properties(definition.properties.clone())
+            .build();
 
         let table = self
             .catalog

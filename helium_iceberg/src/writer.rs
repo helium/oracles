@@ -2,6 +2,8 @@ use crate::Result;
 use async_trait::async_trait;
 use serde::Serialize;
 
+pub type BoxedDataWriter<T> = std::sync::Arc<dyn DataWriter<T>>;
+
 #[async_trait]
 pub trait DataWriter<T>: Send + Sync
 where
@@ -36,4 +38,18 @@ where
 
     /// Publish a staged WAP branch by fast-forwarding main.
     async fn publish(&self, wap_id: &str) -> Result;
+}
+
+pub trait IntoBoxedDataWriter<T> {
+    fn boxed(self) -> BoxedDataWriter<T>;
+}
+
+impl<Msg, T> IntoBoxedDataWriter<Msg> for T
+where
+    T: DataWriter<Msg> + 'static,
+    Msg: Serialize + Send,
+{
+    fn boxed(self) -> BoxedDataWriter<Msg> {
+        std::sync::Arc::new(self)
+    }
 }
