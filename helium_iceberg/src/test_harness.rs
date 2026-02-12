@@ -109,6 +109,16 @@ impl IcebergTestHarness {
         Self::with_config(HarnessConfig::default()).await
     }
 
+    pub async fn new_with_tables(
+        tables: impl IntoIterator<Item = TableDefinition>,
+    ) -> Result<Self> {
+        let harness = Self::new().await?;
+        for table in tables {
+            harness.create_table(table).await?;
+        }
+        Ok(harness)
+    }
+
     /// Create a new test harness with custom configuration.
     pub async fn with_config(config: HarnessConfig) -> Result<Self> {
         let catalog_name = format!("test_{}", Uuid::new_v4().as_simple());
@@ -479,88 +489,115 @@ impl From<TestHarnessError> for Error {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Context;
-    use chrono::{DateTime, FixedOffset};
 
     use super::{IcebergTestHarness, TableDefinition};
     use crate::{FieldDefinition, PartitionDefinition, PrimitiveType};
 
+    use chrono::{DateTime, FixedOffset, Utc};
+    use serde::{Deserialize, Serialize};
+    use trino_rust_client::Trino;
+
+    #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+    struct Person {
+        name: String,
+        age: u32,
+        inserted: DateTime<FixedOffset>,
+    }
+
+    fn person_table_def() -> anyhow::Result<TableDefinition> {
+        let def = TableDefinition::builder("people")
+            .with_fields([
+                FieldDefinition::required("name", PrimitiveType::String),
+                FieldDefinition::required("age", PrimitiveType::Int),
+                FieldDefinition::required("inserted", PrimitiveType::Timestamptz),
+            ])
+            .with_partition(PartitionDefinition::day("inserted", "inserted_day"))
+            .build()?;
+
+        Ok(def)
+    }
+
     #[tokio::test]
+    #[ignore = "need polaris/trino/minio running in env"]
     async fn make_test_harness_catalog_per_test() -> anyhow::Result<()> {
-        let _harness = IcebergTestHarness::new()
-            .await
-            .context("creating harness")?;
+        let harness_1 = IcebergTestHarness::new().await?;
+        let harness_2 = IcebergTestHarness::new().await?;
+
+        assert_ne!(harness_1.catalog_name(), harness_2.catalog_name());
+
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_harness_basic() -> anyhow::Result<()> {
-        let harness = IcebergTestHarness::new().await?;
+    #[ignore = "need polaris/trino/minio running in env"]
+    async fn test_query_table() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
-        // Create a simple table
-        harness
-            .create_table(
-                TableDefinition::builder("people")
-                    .with_fields([
-                        FieldDefinition::required("name", PrimitiveType::String),
-                        FieldDefinition::required("age", PrimitiveType::Int),
-                    ])
-                    .build()?,
-            )
-            .await?;
-
-        // Query via Trino - no need to qualify table name
-        let _result = harness
+        let _res = harness
             .trino()
             .execute("SELECT * FROM people".to_string())
-            .await;
+            .await?;
 
         Ok(())
     }
 
     #[tokio::test]
+    #[ignore = "need polaris/trino/minio running in env"]
+    async fn test_missing_table_query_fails() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
+
+        let res = harness
+            .trino()
+            .execute("SELECT * FROM bad_table".to_string())
+            .await;
+
+        assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "need polaris/trino/minio running in env"]
+    async fn test_missing_field_query_fails() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
+
+        let res = harness
+            .trino()
+            .execute("SELECT no_field FROM people".to_string())
+            .await;
+
+        assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "need polaris/trino/minio running in env"]
     async fn test_write_and_query() -> anyhow::Result<()> {
-        let harness = IcebergTestHarness::new().await?;
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
-        harness
-            .create_table(
-                TableDefinition::builder("events")
-                    .with_fields([
-                        FieldDefinition::required("id", PrimitiveType::String),
-                        FieldDefinition::required("timestamp", PrimitiveType::Timestamptz),
-                    ])
-                    .with_partition(PartitionDefinition::day("timestamp", "day"))
-                    .build()?,
-            )
-            .await?;
-
-        use trino_rust_client::Trino;
-        #[derive(Debug, Clone, Trino, serde::Serialize, serde::Deserialize, PartialEq)]
-        struct TestEvent {
-            id: String,
-            timestamp: DateTime<FixedOffset>,
-        }
-
-        let events = vec![
-            TestEvent {
-                id: "event-1".to_string(),
-                timestamp: chrono::Utc::now().into(),
+        let people = vec![
+            Person {
+                name: "Alice".to_string(),
+                age: 42,
+                inserted: Utc::now().into(),
             },
-            TestEvent {
-                id: "event-2".to_string(),
-                timestamp: chrono::Utc::now().into(),
+            Person {
+                name: "Bob".to_string(),
+                age: 42,
+                inserted: Utc::now().into(),
             },
         ];
 
-        let writer = harness.get_table_writer("events").await?;
-        writer.write(events.clone()).await?;
+        let writer = harness.get_table_writer("people").await?;
+        writer.write(people.clone()).await?;
 
-        let queried_events = harness
+        let queried_people = harness
             .trino()
-            .get_all::<TestEvent>("SELECT * FROM events".to_string())
+            .get_all::<Person>("SELECT * FROM people".to_string())
             .await?
             .into_vec();
-        assert_eq!(queried_events, events);
+        assert_eq!(queried_people, people);
 
         Ok(())
     }
