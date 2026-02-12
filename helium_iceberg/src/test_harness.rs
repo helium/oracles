@@ -28,9 +28,7 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
-
-use iceberg::{Catalog as IcebergCatalog, NamespaceIdent};
+use futures::TryFutureExt;
 use serde::Serialize;
 use trino_rust_client::ClientBuilder;
 use uuid::Uuid;
@@ -63,202 +61,28 @@ const DEFAULT_DOCKER_S3_ENDPOINT: &str = "http://minio:9000";
 /// Default namespace within each catalog.
 const DEFAULT_NAMESPACE: &str = "default";
 
-/// OAuth2 token response.
-#[derive(serde::Deserialize)]
-struct TokenResponse {
-    access_token: String,
-}
+#[derive(Debug, thiserror::Error)]
+enum TestHarnessError {
+    #[error("{description} request failed: {source:?}")]
+    PolarisRequest {
+        description: &'static str,
+        source: reqwest::Error,
+    },
 
-/// Fetch an OAuth2 bearer token from the Polaris token endpoint.
-async fn fetch_polaris_token(
-    client: &reqwest::Client,
-    token_url: &str,
-    credential: &str,
-    scope: &str,
-) -> Result<String> {
-    let (client_id, client_secret) = credential.split_once(':').unwrap_or((credential, ""));
+    #[error("{description} returned: {source:?}")]
+    PolarisResponse {
+        description: &'static str,
+        source: reqwest::Error,
+    },
 
-    let response = client
-        .post(token_url)
-        .form(&[
-            ("grant_type", "client_credentials"),
-            ("client_id", client_id),
-            ("client_secret", client_secret),
-            ("scope", scope),
-        ])
-        .send()
-        .await
-        .map_err(|e| Error::Catalog(format!("OAuth2 token request failed: {e}")))?;
+    #[error("failed to parse OAuth2 token: {0}")]
+    PolarisTokenParse(reqwest::Error),
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(Error::Catalog(format!(
-            "OAuth2 token request returned {status}: {body}"
-        )));
-    }
+    #[error("failed to create trino client: {0}")]
+    TrinoClientBuild(trino_rust_client::error::Error),
 
-    response
-        .json::<TokenResponse>()
-        .await
-        .map(|r| r.access_token)
-        .map_err(|e| Error::Catalog(format!("failed to parse OAuth2 token response: {e}")))
-}
-
-/// Create a new Polaris catalog with full admin permissions.
-///
-/// Mirrors the `polaris-setup` service from `iceberg-compose.yml`:
-/// 1. Create catalog with S3 storage config
-/// 2. Create `admin` catalog role
-/// 3. Grant `CATALOG_MANAGE_CONTENT` to admin role
-/// 4. Assign admin role to `service_admin` principal role
-async fn create_polaris_catalog(
-    client: &reqwest::Client,
-    management_url: &str,
-    token: &str,
-    catalog_name: &str,
-) -> Result<()> {
-    let auth_header = format!("Bearer {token}");
-
-    // 1. Create catalog
-    let payload = serde_json::json!({
-        "catalog": {
-            "name": catalog_name,
-            "type": "INTERNAL",
-            "readOnly": false,
-            "properties": {
-                "default-base-location": format!("s3://iceberg/{catalog_name}")
-            },
-            "storageConfigInfo": {
-                "storageType": "S3",
-                "allowedLocations": [format!("s3://iceberg/{catalog_name}")],
-                "endpoint": "http://localhost:9000",
-                "endpointInternal": "http://minio:9000",
-                "pathStyleAccess": true
-            }
-        }
-    });
-
-    let resp = client
-        .post(format!("{management_url}/catalogs"))
-        .header("Authorization", &auth_header)
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| Error::Catalog(format!("failed to create Polaris catalog: {e}")))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(Error::Catalog(format!(
-            "create catalog returned {status}: {body}"
-        )));
-    }
-
-    // 2. Create admin catalog role
-    let resp = client
-        .post(format!(
-            "{management_url}/catalogs/{catalog_name}/catalog-roles"
-        ))
-        .header("Authorization", &auth_header)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({"catalogRole": {"name": "admin"}}))
-        .send()
-        .await
-        .map_err(|e| Error::Catalog(format!("failed to create catalog role: {e}")))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(Error::Catalog(format!(
-            "create catalog role returned {status}: {body}"
-        )));
-    }
-
-    // 3. Grant CATALOG_MANAGE_CONTENT to admin role
-    let resp = client
-        .put(format!(
-            "{management_url}/catalogs/{catalog_name}/catalog-roles/admin/grants"
-        ))
-        .header("Authorization", &auth_header)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({"grant": {"type": "catalog", "privilege": "CATALOG_MANAGE_CONTENT"}}))
-        .send()
-        .await
-        .map_err(|e| Error::Catalog(format!("failed to grant catalog privilege: {e}")))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(Error::Catalog(format!(
-            "grant catalog privilege returned {status}: {body}"
-        )));
-    }
-
-    // 4. Assign admin role to service_admin principal role
-    let resp = client
-        .put(format!(
-            "{management_url}/principal-roles/service_admin/catalog-roles/{catalog_name}"
-        ))
-        .header("Authorization", &auth_header)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({"catalogRole": {"name": "admin"}}))
-        .send()
-        .await
-        .map_err(|e| Error::Catalog(format!("failed to assign catalog role: {e}")))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(Error::Catalog(format!(
-            "assign catalog role returned {status}: {body}"
-        )));
-    }
-
-    Ok(())
-}
-
-/// Register a Polaris catalog with Trino via `CREATE CATALOG` SQL.
-///
-/// Uses Docker-internal URLs since Trino runs inside Docker.
-async fn register_trino_catalog(config: &HarnessConfig, catalog_name: &str) -> Result<()> {
-    // Build a temporary Trino client with no catalog/schema set
-    let trino = ClientBuilder::new(&config.trino_user, &config.trino_host)
-        .port(config.trino_port)
-        .build()
-        .map_err(|e| Error::Catalog(format!("failed to create trino client: {e}")))?;
-
-    let sql = format!(
-        r#"CREATE CATALOG "{catalog_name}" USING iceberg WITH (
-  "iceberg.catalog.type" = 'rest',
-  "iceberg.rest-catalog.uri" = '{docker_rest_url}',
-  "iceberg.rest-catalog.security" = 'OAUTH2',
-  "iceberg.rest-catalog.oauth2.credential" = '{credential}',
-  "iceberg.rest-catalog.oauth2.scope" = '{scope}',
-  "iceberg.rest-catalog.warehouse" = '{catalog_name}',
-  "iceberg.file-format" = 'parquet',
-  "fs.native-s3.enabled" = 'true',
-  "s3.endpoint" = '{docker_s3}',
-  "s3.region" = 'us-east-1',
-  "s3.aws-access-key" = '{s3_key}',
-  "s3.aws-secret-key" = '{s3_secret}',
-  "s3.path-style-access" = 'true'
-)"#,
-        docker_rest_url = config.docker_iceberg_rest_url,
-        credential = config.oauth2_credential,
-        scope = config.oauth2_scope,
-        docker_s3 = config.docker_s3_endpoint,
-        s3_key = config.s3_access_key,
-        s3_secret = config.s3_secret_key,
-    );
-
-    trino
-        .execute(sql)
-        .await
-        .map_err(|e| Error::Catalog(format!("failed to register catalog with Trino: {e}")))?;
-
-    Ok(())
+    #[error("failed to register catalog with Trino: {0}")]
+    TrinoRegisterCatalog(trino_rust_client::error::Error),
 }
 
 /// Test harness providing isolated Iceberg catalog environments.
@@ -292,7 +116,6 @@ impl IcebergTestHarness {
 
         let http_client = reqwest::Client::new();
 
-        // Fetch OAuth2 token from Polaris
         let token = fetch_polaris_token(
             &http_client,
             &config.polaris_token_url,
@@ -301,7 +124,6 @@ impl IcebergTestHarness {
         )
         .await?;
 
-        // Create Polaris catalog via Management API
         create_polaris_catalog(
             &http_client,
             &config.polaris_management_url,
@@ -310,45 +132,12 @@ impl IcebergTestHarness {
         )
         .await?;
 
-        // Register catalog with Trino
         register_trino_catalog(&config, &catalog_name).await?;
 
-        // Connect to Iceberg catalog
-        let iceberg_settings = Settings {
-            catalog_uri: config.iceberg_rest_url.clone(),
-            catalog_name: catalog_name.clone(),
-            warehouse: Some(catalog_name.clone()),
-            auth: AuthConfig {
-                credential: Some(config.oauth2_credential.clone()),
-                scope: Some(config.oauth2_scope.clone()),
-                ..Default::default()
-            },
-            s3: S3Config {
-                endpoint: Some(config.s3_endpoint.clone()),
-                access_key_id: Some(config.s3_access_key.clone()),
-                secret_access_key: Some(config.s3_secret_key.clone()),
-                region: Some("us-east-1".to_string()),
-                path_style_access: Some(true),
-            },
-            properties: Default::default(),
-        };
-        let iceberg_catalog = Catalog::connect(&iceberg_settings).await?;
+        let iceberg_catalog =
+            connect_to_iceberg_catalog_with_namespace(&config, &catalog_name, &namespace).await?;
 
-        // Create default namespace in the new catalog
-        let ns = NamespaceIdent::new(namespace.clone());
-        iceberg_catalog
-            .as_ref()
-            .create_namespace(&ns, HashMap::new())
-            .await
-            .map_err(Error::Iceberg)?;
-
-        // Create Trino client with catalog and schema pre-configured
-        let trino = ClientBuilder::new(&config.trino_user, &config.trino_host)
-            .port(config.trino_port)
-            .catalog(&catalog_name)
-            .schema(&namespace)
-            .build()
-            .map_err(|e| Error::Catalog(format!("failed to create trino client: {e}")))?;
+        let trino = create_trino_client(&config, &catalog_name, &namespace).await?;
 
         tracing::info!(
             %catalog_name,
@@ -457,16 +246,248 @@ impl Default for HarnessConfig {
     }
 }
 
+/// Fetch an OAuth2 bearer token from the Polaris token endpoint.
+async fn fetch_polaris_token(
+    client: &reqwest::Client,
+    token_url: &str,
+    credential: &str,
+    scope: &str,
+) -> Result<String> {
+    let (client_id, client_secret) = credential.split_once(':').unwrap_or((credential, ""));
+
+    let response = client
+        .post(token_url)
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+            ("scope", scope),
+        ])
+        .send()
+        .await
+        .map_test_harness_err("OAuth 2 token")?;
+
+    /// OAuth2 token response.
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+    }
+
+    let token = response
+        .json::<TokenResponse>()
+        .map_err(TestHarnessError::PolarisTokenParse)
+        .await?;
+
+    Ok(token.access_token)
+}
+
+/// Create a new Polaris catalog with full admin permissions.
+///
+/// Mirrors the `polaris-setup` service from `iceberg-compose.yml`:
+/// 1. Create catalog with S3 storage config
+/// 2. Create `admin` catalog role
+/// 3. Grant `CATALOG_MANAGE_CONTENT` to admin role
+/// 4. Assign admin role to `service_admin` principal role
+async fn create_polaris_catalog(
+    client: &reqwest::Client,
+    management_url: &str,
+    token: &str,
+    catalog_name: &str,
+) -> Result<()> {
+    let auth_header = format!("Bearer {token}");
+
+    // 1. Create catalog
+    let payload = serde_json::json!({
+        "catalog": {
+            "name": catalog_name,
+            "type": "INTERNAL",
+            "readOnly": false,
+            "properties": {
+                "default-base-location": format!("s3://iceberg/{catalog_name}")
+            },
+            "storageConfigInfo": {
+                "storageType": "S3",
+                "allowedLocations": [format!("s3://iceberg/{catalog_name}")],
+                "endpoint": "http://localhost:9000",
+                "endpointInternal": "http://minio:9000",
+                "pathStyleAccess": true
+            }
+        }
+    });
+
+    client
+        .post(format!("{management_url}/catalogs"))
+        .header("Authorization", &auth_header)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_test_harness_err("create catalog")?;
+
+    // 2. Create admin catalog role
+    client
+        .post(format!(
+            "{management_url}/catalogs/{catalog_name}/catalog-roles"
+        ))
+        .header("Authorization", &auth_header)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({"catalogRole": {"name": "admin"}}))
+        .send()
+        .await
+        .map_test_harness_err("create catalog role")?;
+
+    // 3. Grant CATALOG_MANAGE_CONTENT to admin role
+    client
+        .put(format!(
+            "{management_url}/catalogs/{catalog_name}/catalog-roles/admin/grants"
+        ))
+        .header("Authorization", &auth_header)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({"grant": {"type": "catalog", "privilege": "CATALOG_MANAGE_CONTENT"}}))
+        .send()
+        .await.map_test_harness_err("grant catalog privilege")?;
+
+    // 4. Assign admin role to service_admin principal role
+    client
+        .put(format!(
+            "{management_url}/principal-roles/service_admin/catalog-roles/{catalog_name}"
+        ))
+        .header("Authorization", &auth_header)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({"catalogRole": {"name": "admin"}}))
+        .send()
+        .await
+        .map_test_harness_err("assign catalog role")?;
+
+    Ok(())
+}
+
+/// Register a Polaris catalog with Trino via `CREATE CATALOG` SQL.
+///
+/// Uses Docker-internal URLs since Trino runs inside Docker.
+async fn register_trino_catalog(config: &HarnessConfig, catalog_name: &str) -> Result<()> {
+    // Build a temporary Trino client with no catalog/schema set
+    let trino = ClientBuilder::new(&config.trino_user, &config.trino_host)
+        .port(config.trino_port)
+        .build()
+        .map_err(TestHarnessError::TrinoClientBuild)?;
+
+    let sql = format!(
+        r#"
+        CREATE CATALOG "{catalog_name}" USING iceberg WITH (
+            "iceberg.catalog.type" = 'rest',
+            "iceberg.rest-catalog.uri" = '{docker_rest_url}',
+            "iceberg.rest-catalog.security" = 'OAUTH2',
+            "iceberg.rest-catalog.oauth2.credential" = '{credential}',
+            "iceberg.rest-catalog.oauth2.scope" = '{scope}',
+            "iceberg.rest-catalog.warehouse" = '{catalog_name}',
+            "iceberg.file-format" = 'parquet',
+            "fs.native-s3.enabled" = 'true',
+            "s3.endpoint" = '{docker_s3}',
+            "s3.region" = 'us-east-1',
+            "s3.aws-access-key" = '{s3_key}',
+            "s3.aws-secret-key" = '{s3_secret}',
+            "s3.path-style-access" = 'true'
+        )
+        "#,
+        docker_rest_url = config.docker_iceberg_rest_url,
+        credential = config.oauth2_credential,
+        scope = config.oauth2_scope,
+        docker_s3 = config.docker_s3_endpoint,
+        s3_key = config.s3_access_key,
+        s3_secret = config.s3_secret_key,
+    );
+
+    trino
+        .execute(sql)
+        .map_err(TestHarnessError::TrinoRegisterCatalog)
+        .await?;
+
+    Ok(())
+}
+
+async fn connect_to_iceberg_catalog_with_namespace(
+    config: &HarnessConfig,
+    catalog_name: &str,
+    namespace: &str,
+) -> Result<Catalog> {
+    let iceberg_settings = Settings {
+        catalog_uri: config.iceberg_rest_url.clone(),
+        catalog_name: catalog_name.to_string(),
+        warehouse: Some(catalog_name.to_string()),
+        auth: AuthConfig {
+            credential: Some(config.oauth2_credential.clone()),
+            scope: Some(config.oauth2_scope.clone()),
+            ..Default::default()
+        },
+        s3: S3Config {
+            endpoint: Some(config.s3_endpoint.clone()),
+            access_key_id: Some(config.s3_access_key.clone()),
+            secret_access_key: Some(config.s3_secret_key.clone()),
+            region: Some("us-east-1".to_string()),
+            path_style_access: Some(true),
+        },
+        properties: Default::default(),
+    };
+
+    let catalog = Catalog::connect(&iceberg_settings).await?;
+    catalog.create_namespace_if_not_exists(namespace).await?;
+
+    Ok(catalog)
+}
+
+async fn create_trino_client(
+    config: &HarnessConfig,
+    catalog_name: &str,
+    namespace: &str,
+) -> Result<trino_rust_client::Client> {
+    ClientBuilder::new(&config.trino_user, &config.trino_host)
+        .port(config.trino_port)
+        .catalog(catalog_name)
+        .schema(namespace)
+        .build()
+        .map_err(|e| Error::Catalog(format!("failed to create trino client: {e:?}")))
+}
+
+// Helper for mapping polaris reqeuest/response errors separately.
+trait TestHarnessErrorExt {
+    fn map_test_harness_err(self, description: &'static str) -> Result<reqwest::Response>;
+}
+
+impl TestHarnessErrorExt for reqwest::Result<reqwest::Response> {
+    fn map_test_harness_err(self, description: &'static str) -> Result<reqwest::Response> {
+        let resp = self
+            .map_err(|source| TestHarnessError::PolarisRequest {
+                description,
+                source,
+            })?
+            .error_for_status()
+            .map_err(|source| TestHarnessError::PolarisResponse {
+                description,
+                source,
+            })?;
+
+        Ok(resp)
+    }
+}
+
+impl From<TestHarnessError> for Error {
+    fn from(error: TestHarnessError) -> Self {
+        Error::Catalog(format!("{error}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use chrono::{DateTime, FixedOffset};
 
-    use super::*;
+    use super::{IcebergTestHarness, TableDefinition};
     use crate::{FieldDefinition, PartitionDefinition, PrimitiveType};
 
     #[tokio::test]
     async fn make_test_harness_catalog_per_test() -> anyhow::Result<()> {
-        let harness = IcebergTestHarness::new()
+        let _harness = IcebergTestHarness::new()
             .await
             .context("creating harness")?;
         Ok(())
@@ -484,10 +505,6 @@ mod tests {
                         FieldDefinition::required("name", PrimitiveType::String),
                         FieldDefinition::required("age", PrimitiveType::Int),
                     ])
-                    .with_location(format!(
-                        "s3://iceberg/{}/default/people",
-                        harness.catalog_name()
-                    ))
                     .build()?,
             )
             .await?;
@@ -513,34 +530,37 @@ mod tests {
                         FieldDefinition::required("timestamp", PrimitiveType::Timestamptz),
                     ])
                     .with_partition(PartitionDefinition::day("timestamp", "day"))
-                    .with_location(format!(
-                        "s3://iceberg/{}/default/events",
-                        harness.catalog_name()
-                    ))
                     .build()?,
             )
             .await?;
 
-        // Note: Direct IcebergTable writes from host don't work because the REST catalog
-        // commit uses its own FileIO with Docker-internal URLs (minio:9000).
-        // Use Trino for inserts instead, or add "127.0.0.1 minio" to /etc/hosts.
+        use trino_rust_client::Trino;
+        #[derive(Debug, Clone, Trino, serde::Serialize, serde::Deserialize, PartialEq)]
+        struct TestEvent {
+            id: String,
+            timestamp: DateTime<FixedOffset>,
+        }
 
-        // Insert via Trino (works because Trino runs inside Docker)
-        harness
-            .trino()
-            .execute(
-                "INSERT INTO events (id, timestamp) VALUES ('event_1', CURRENT_TIMESTAMP)"
-                    .to_string(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("insert failed: {}", e))?;
+        let events = vec![
+            TestEvent {
+                id: "event-1".to_string(),
+                timestamp: chrono::Utc::now().into(),
+            },
+            TestEvent {
+                id: "event-2".to_string(),
+                timestamp: chrono::Utc::now().into(),
+            },
+        ];
 
-        // Query the data
-        harness
+        let writer = harness.get_table_writer("events").await?;
+        writer.write(events.clone()).await?;
+
+        let queried_events = harness
             .trino()
-            .execute("SELECT * FROM events".to_string())
-            .await
-            .map_err(|e| anyhow::anyhow!("query failed: {}", e))?;
+            .get_all::<TestEvent>("SELECT * FROM events".to_string())
+            .await?
+            .into_vec();
+        assert_eq!(queried_events, events);
 
         Ok(())
     }
