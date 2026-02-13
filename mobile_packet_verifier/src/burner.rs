@@ -7,9 +7,13 @@ use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::PgPool;
 use tracing::Instrument;
 
+mod proto {
+    pub use helium_proto::services::packet_verifier::ValidDataTransferSession;
+}
 use crate::{pending_burns, pending_txns};
 
 pub struct Burner<S> {
+    valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
     failed_retry_attempts: usize,
@@ -18,6 +22,7 @@ pub struct Burner<S> {
 
 impl<S> Burner<S> {
     pub fn new(
+        valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
         valid_sessions: FileSinkClient<ValidDataTransferSession>,
         solana: S,
         failed_retry_attempts: usize,
@@ -64,13 +69,14 @@ where
 
             if confirmed {
                 let sessions =
-                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
-                for session in sessions {
-                    let _write = self
-                        .valid_sessions
-                        .write(ValidDataTransferSession::from(session), &[])
-                        .await?;
-                }
+                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature)
+                        .await?
+                        .into_iter()
+                        .map(|s| {
+                            file_store_oracles::mobile_transfer::ValidDataTransferSession::from(s)
+                        })
+                        .collect::<Vec<_>>();
+                self.valid_sessions.write_all(sessions).await?;
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
@@ -212,7 +218,7 @@ async fn handle_transaction_success(
     payer: PublicKeyBinary,
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
-    valid_sessions: &FileSinkClient<ValidDataTransferSession>,
+    valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -227,13 +233,13 @@ async fn handle_transaction_success(
     pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
-    // TODO(mj): write out each session to trino
-    // staged_writer(wap_id: signature)
-    for session in sessions {
-        // TODO(mj): maybe change to use write_all
-        valid_sessions
-            .write(ValidDataTransferSession::from(session), &[])
-            .await?;
+    let sessions = sessions
+        .into_iter()
+        .map(file_store_oracles::mobile_transfer::ValidDataTransferSession::from)
+        .collect::<Vec<_>>();
+
+    valid_sessions.write_all(sessions).await?;
+
     }
 
     Ok(())
