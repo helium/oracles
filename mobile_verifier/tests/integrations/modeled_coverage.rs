@@ -1280,4 +1280,3 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
     );
     Ok(())
 }
-

@@ -558,10 +558,7 @@ pub enum RewardableEntityKey {
     Subscriber,
 }
 
-fn eligible_for_coverage_map(
-    speedtests: &[Speedtest],
-    trust_scores: &[LocationTrust],
-) -> bool {
+fn eligible_for_coverage_map(speedtests: &[Speedtest], trust_scores: &[LocationTrust]) -> bool {
     let avg_speedtest = Speedtest::avg(speedtests);
     if avg_speedtest.tier() == SpeedtestTier::Fail {
         return false;
