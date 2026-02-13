@@ -14,7 +14,10 @@ use mobile_packet_verifier::{
     banning,
     daemon::handle_data_transfer_session_file,
     dc_to_bytes,
-    iceberg::{self, data_transfer_session::TrinoDataTransferSession},
+    iceberg::{
+        burned_data_transfer::TrinoBurnedDataTransferSession,
+        data_transfer_session::TrinoDataTransferSession,
+    },
 };
 use sqlx::{types::Uuid, PgPool};
 
@@ -24,9 +27,15 @@ use crate::common::TestMobileConfig;
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    use mobile_packet_verifier::iceberg::data_transfer_session as dts;
-    let (_harness, writer) = crate::common::get_writer(dts::TABLE_NAME).await?;
-    // let writer = crate::common::get_memory_writer(dts::TABLE_NAME).await;
+    use mobile_packet_verifier::iceberg::{burned_data_transfer, data_transfer_session};
+
+    let harness = crate::common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(data_transfer_session::TABLE_NAME)
+        .await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
 
     let payer_key =
         PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
@@ -62,14 +71,20 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     let metrics = TestMetrics::new();
 
     // accumulate and burn
-    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer)).await?;
-    run_burner(&pool, &payer_key).await?;
+    run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(session_writer),
+    )
+    .await?;
+    run_burner(&pool, &payer_key, Some(burn_writer)).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
-    let trino = _harness.trino();
-    let all_sessions = iceberg::data_transfer_session::get_all(trino).await?;
-    let all_burns = iceberg::burned_data_transfer::get_all(trino).await?;
+    let trino = harness.trino();
+    let all_sessions = data_transfer_session::get_all(trino).await?;
+    let all_burns = burned_data_transfer::get_all(trino).await?;
 
     println!("all sessions: {:?}", all_sessions.len());
     println!("burned sessions: {:?}", all_burns.len());
@@ -98,7 +113,7 @@ async fn run_accumulate_sessions(
         &verified_sessions,
         ts,
         futures::stream::iter(reports),
-        data_writer,
+        data_writer.as_ref(),
     )
     .await?;
 
@@ -107,7 +122,11 @@ async fn run_accumulate_sessions(
     Ok(verified_sessions_rx)
 }
 
-async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Result<()> {
+async fn run_burner(
+    pool: &PgPool,
+    payer_key: &PublicKeyBinary,
+    data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
@@ -117,6 +136,7 @@ async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Resul
         solana_network.clone(),
         0,
         std::time::Duration::default(),
+        data_writer,
     )
     .burn(pool)
     .await?;

@@ -2,7 +2,7 @@ use anyhow::Context;
 use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::packet_verifier::ValidDataTransferSession;
+use helium_iceberg::BoxedDataWriter;
 use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::PgPool;
 use tracing::Instrument;
@@ -10,29 +10,34 @@ use tracing::Instrument;
 mod proto {
     pub use helium_proto::services::packet_verifier::ValidDataTransferSession;
 }
-use crate::{pending_burns, pending_txns};
+
+use crate::{
+    iceberg::{self, burned_data_transfer::TrinoBurnedDataTransferSession},
+    pending_burns, pending_txns,
+};
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
-    valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
+    data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
 }
 
 impl<S> Burner<S> {
     pub fn new(
         valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
-        valid_sessions: FileSinkClient<ValidDataTransferSession>,
         solana: S,
         failed_retry_attempts: usize,
         failed_check_interval: std::time::Duration,
+        data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
     ) -> Self {
         Self {
             valid_sessions,
             solana,
             failed_retry_attempts,
             failed_check_interval,
+            data_writer,
         }
     }
 }
@@ -125,6 +130,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
+                        self.data_writer.as_ref(),
                     )
                     .await?;
                 }
@@ -179,6 +185,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
+                        self.data_writer.as_ref(),
                     )
                     .await;
                     if let Err(err) = txn_success {
@@ -219,6 +226,7 @@ async fn handle_transaction_success(
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
+    data_writer: Option<&BoxedDataWriter<TrinoBurnedDataTransferSession>>,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -238,8 +246,16 @@ async fn handle_transaction_success(
         .map(file_store_oracles::mobile_transfer::ValidDataTransferSession::from)
         .collect::<Vec<_>>();
 
+    let iceberg_sessions = sessions
+        .clone()
+        .into_iter()
+        .map(TrinoBurnedDataTransferSession::from)
+        .collect::<Vec<_>>();
+
     valid_sessions.write_all(sessions).await?;
 
+    if let Some(writer) = data_writer {
+        iceberg::write(writer, iceberg_sessions).await?;
     }
 
     Ok(())
