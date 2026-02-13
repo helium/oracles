@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use file_store_oracles::mobile_session::DataTransferSessionReq;
+use file_store_oracles::{
+    mobile_session::DataTransferSessionReq, mobile_transfer::ValidDataTransferSession,
+};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
 
 use crate::bytes_to_dc;
@@ -42,19 +43,19 @@ impl DataTransferSession {
 }
 
 impl From<DataTransferSession> for ValidDataTransferSession {
-    fn from(session: DataTransferSession) -> Self {
-        let num_dcs = session.dc_to_burn();
+    fn from(value: DataTransferSession) -> Self {
+        let num_dcs = value.dc_to_burn();
 
         ValidDataTransferSession {
-            pub_key: session.pub_key.into(),
-            payer: session.payer.into(),
-            upload_bytes: session.uploaded_bytes as u64,
-            download_bytes: session.downloaded_bytes as u64,
-            rewardable_bytes: session.rewardable_bytes as u64,
+            pub_key: value.pub_key,
+            payer: value.payer,
+            upload_bytes: value.uploaded_bytes as u64,
+            download_bytes: value.downloaded_bytes as u64,
+            rewardable_bytes: value.rewardable_bytes as u64,
             num_dcs,
-            first_timestamp: session.first_timestamp.encode_timestamp_millis(),
-            last_timestamp: session.last_timestamp.encode_timestamp_millis(),
-            burn_timestamp: Utc::now().encode_timestamp_millis(),
+            first_timestamp: value.first_timestamp,
+            last_timestamp: value.last_timestamp,
+            burn_timestamp: Utc::now(),
         }
     }
 }
