@@ -16,6 +16,7 @@ use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::partitioning::PartitioningWriter;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -173,7 +174,13 @@ impl<T: Serialize + Send + Sync> IcebergTable<T> {
         crate::branch::create_branch(&self.catalog, &*self.table.read().await, branch_name).await
     }
 
-    async fn write_to_branch(&self, branch_name: &str, records: Vec<T>, wap_id: &str) -> Result {
+    async fn write_to_branch(
+        &self,
+        branch_name: &str,
+        records: Vec<T>,
+        wap_id: &str,
+        custom_properties: HashMap<String, String>,
+    ) -> Result {
         if records.is_empty() {
             return Ok(());
         }
@@ -189,6 +196,7 @@ impl<T: Serialize + Send + Sync> IcebergTable<T> {
             branch_name,
             data_files,
             wap_id,
+            custom_properties,
         )
         .await
     }
@@ -206,7 +214,12 @@ impl<T: Serialize + Send + Sync> IcebergTable<T> {
 
 #[async_trait]
 impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
-    async fn stage(&self, wap_id: &str, records: Vec<T>) -> Result<WriteOutcome> {
+    async fn stage(
+        &self,
+        wap_id: &str,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<WriteOutcome> {
         self.reload().await?;
 
         let table = self.table.read().await;
@@ -219,7 +232,8 @@ impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
                 tracing::debug!(wap_id, "WAP not started, creating fresh writer");
                 self.create_branch(wap_id).await?;
                 if !records.is_empty() {
-                    self.write_to_branch(wap_id, records, wap_id).await?;
+                    self.write_to_branch(wap_id, records, wap_id, custom_properties)
+                        .await?;
                 }
                 Ok(WriteOutcome::Written)
             }
@@ -229,7 +243,8 @@ impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
                 self.reload().await?;
                 self.create_branch(wap_id).await?;
                 if !records.is_empty() {
-                    self.write_to_branch(wap_id, records, wap_id).await?;
+                    self.write_to_branch(wap_id, records, wap_id, custom_properties)
+                        .await?;
                 }
                 Ok(WriteOutcome::Written)
             }
@@ -247,6 +262,17 @@ impl<T: Serialize + Send + Sync> StagedWriter<T> for IcebergTable<T> {
 
     async fn publish(&self, wap_id: &str) -> Result {
         self.publish_branch(wap_id).await
+    }
+
+    async fn snapshot_properties(&self) -> Result<HashMap<String, String>> {
+        self.reload().await?;
+        let table = self.table.read().await;
+        let properties = table
+            .metadata()
+            .snapshot_for_ref(iceberg::spec::MAIN_BRANCH)
+            .map(|snapshot| snapshot.summary().additional_properties.clone())
+            .unwrap_or_default();
+        Ok(properties)
     }
 }
 

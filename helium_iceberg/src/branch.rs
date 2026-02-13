@@ -1,5 +1,7 @@
 use crate::catalog::Catalog;
 use crate::{Error, Result};
+use std::collections::HashMap;
+
 use iceberg::spec::{
     DataFile, DataFileFormat, FormatVersion, ManifestFile, ManifestListWriter,
     ManifestWriterBuilder, Operation, Snapshot, SnapshotReference, SnapshotRetention,
@@ -56,6 +58,7 @@ pub(crate) async fn commit_to_branch(
     branch_name: &str,
     data_files: Vec<DataFile>,
     wap_id: &str,
+    custom_properties: HashMap<String, String>,
 ) -> Result<()> {
     validate_branch_name(branch_name)?;
 
@@ -80,6 +83,7 @@ pub(crate) async fn commit_to_branch(
     }
     let mut additional_properties = summary_collector.build();
     additional_properties.insert(WAP_ID_KEY.to_string(), wap_id.to_string());
+    additional_properties.extend(custom_properties);
     let summary = Summary {
         operation: Operation::Append,
         additional_properties,
