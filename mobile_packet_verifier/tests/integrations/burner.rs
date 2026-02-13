@@ -95,6 +95,11 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
+
     let payer_one = PublicKeyBinary::from(vec![1]);
     let payer_two = PublicKeyBinary::from(vec![2]);
 
@@ -149,7 +154,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        None,
+        Some(burn_writer),
     );
     burner.confirm_pending_txns(&pool).await?;
 
@@ -164,6 +169,9 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(payer_burn.payer, payer_two);
     assert_eq!(payer_burn.total_dcs, bytes_to_dc(2_000));
     assert_eq!(payer_burn.sessions.len(), 1);
+
+    let iceberg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert_eq!(iceberg_burns.len(), 1, "1 of 2 burns made it");
 
     Ok(())
 }
@@ -256,6 +264,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     // processing. If the txn cannot be finalized, the data sessions that were
     // going to be written need to be moved back to being considered for burn.
 
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
+
     let payer = PublicKeyBinary::from(vec![0]);
     let pubkey_one = PublicKeyBinary::from(vec![1]);
     let pubkey_two = PublicKeyBinary::from(vec![2]);
@@ -311,7 +324,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        None,
+        Some(burn_writer),
     );
 
     // Txn fails to be finalized here
@@ -330,6 +343,9 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         bytes_to_dc(6_000) + bytes_to_dc(6_000)
     );
 
+    let iceberg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert!(iceberg_burns.is_empty(), "nothing was successfully burned");
+
     Ok(())
 }
 
@@ -337,6 +353,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Trigger a burn when there are data sessions that can be burned _and_ pending txns.
     // Nothing should happen until the pending_txns are gone.
+
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
 
     let payer = PublicKeyBinary::from(vec![0]);
     let pubkey_one = PublicKeyBinary::from(vec![1]);
@@ -378,7 +399,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        None,
+        Some(burn_writer),
     );
     burner
         .burn(&pool)
@@ -391,6 +412,9 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         Err(TryRecvError::Disconnected) => panic!("file sink client was incorrectly dropped"),
         Err(TryRecvError::Empty) => (),
     }
+
+    let iceberg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert!(iceberg_burns.is_empty());
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
@@ -408,6 +432,9 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         })
         .sum::<u64>();
     assert_eq!(total_rewardable, 12_000);
+
+    let iceberg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert_eq!(iceberg_burns.len(), 2);
 
     Ok(())
 }
