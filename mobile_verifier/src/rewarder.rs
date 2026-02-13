@@ -5,8 +5,8 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     resolve_subdao_pubkey,
     reward_shares::{
-        get_scheduled_tokens_for_service_providers, CalculatedPocRewardShares, CoverageShares,
-        DataTransferAndPocAllocatedRewardBuckets, TransferRewards,
+        CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
+        TransferRewards,
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
@@ -19,12 +19,13 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
+use crate::reward_shares::{
+    get_scheduled_tokens_total, RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES,
+};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
         self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-        UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
     ServiceProvider,
@@ -271,8 +272,7 @@ where
             reward_info.epoch_emissions,
         );
 
-        // process rewards for poc and data transfer
-        let poc_dc_shares = reward_poc_and_dc(
+        let poc_dc_shares = distribute_rewards(
             &self.pool,
             &self.hex_service_client,
             self.mobile_rewards.clone(),
@@ -280,9 +280,6 @@ where
             price_info.clone(),
         )
         .await?;
-
-        // process rewards for service providers
-        reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
@@ -346,13 +343,38 @@ where
     }
 }
 
-pub async fn reward_poc_and_dc(
+pub async fn distribute_rewards(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
+    // process rewards for poc and data transfer
+    let (poc_dc_shares, poc_dc_allocated_amount, _) = reward_poc_and_dc(
+        pool,
+        hex_service_client,
+        mobile_rewards.clone(),
+        reward_info,
+        price_info.clone(),
+    )
+    .await?;
+
+    // process rewards for service providers
+    let total_rewards = get_scheduled_tokens_total(reward_info.epoch_emissions);
+    let sp_reward_amount = total_rewards - poc_dc_allocated_amount.to_u64().unwrap_or(0);
+    reward_service_providers(mobile_rewards.clone(), reward_info, sp_reward_amount).await?;
+
+    Ok(poc_dc_shares)
+}
+
+pub async fn reward_poc_and_dc(
+    pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
+) -> anyhow::Result<(CalculatedPocRewardShares, Decimal, Decimal)> {
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
@@ -371,9 +393,7 @@ pub async fn reward_poc_and_dc(
     };
     telemetry::data_transfer_rewards_scale(scale);
 
-    // reward dc before poc so that we can calculate the unallocated dc reward
-    // and carry this into the poc pool
-    let dc_unallocated_amount = reward_dc(
+    let (dc_allocated_amount, dc_unallocated_amount) = reward_dc(
         &mobile_rewards,
         reward_info,
         transfer_rewards,
@@ -382,7 +402,7 @@ pub async fn reward_poc_and_dc(
     .await?;
 
     reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
-    let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
+    let (calculated_poc_reward_shares, poc_allocated_amount, poc_unallocated_amount) = reward_poc(
         pool,
         hex_service_client,
         &mobile_rewards,
@@ -391,20 +411,11 @@ pub async fn reward_poc_and_dc(
     )
     .await?;
 
-    let poc_unallocated_amount = poc_unallocated_amount
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::Poc,
+    Ok((
+        calculated_poc_reward_shares,
+        poc_allocated_amount + dc_allocated_amount,
         poc_unallocated_amount,
-        reward_info,
-    )
-    .await?;
-
-    Ok(calculated_poc_reward_shares)
+    ))
 }
 
 pub async fn reward_poc(
@@ -413,7 +424,7 @@ pub async fn reward_poc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
-) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
+) -> anyhow::Result<(CalculatedPocRewardShares, Decimal, Decimal)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
@@ -440,34 +451,38 @@ pub async fn reward_poc(
 
     let total_poc_rewards = reward_shares.total_poc();
 
-    let (unallocated_poc_amount, calculated_poc_rewards_per_share) =
-        if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
-            coverage_shares.into_rewards(reward_shares, &reward_info.epoch_period)
-        {
-            // handle poc reward outputs
-            let mut allocated_poc_rewards = 0_u64;
-            let mut count_rewarded_radios = 0;
-            for (poc_reward_amount, mobile_reward_share_v2) in mobile_reward_shares {
-                allocated_poc_rewards += poc_reward_amount;
-                count_rewarded_radios += 1;
-                mobile_rewards
-                    .write(mobile_reward_share_v2, [])
-                    .await?
-                    // await the returned one shot to ensure that we wrote the file
-                    .await??;
-            }
-            telemetry::poc_rewarded_radios(count_rewarded_radios);
-            // calculate any unallocated poc reward
-            (
-                total_poc_rewards - Decimal::from(allocated_poc_rewards),
-                calculated_poc_rewards_per_share,
-            )
-        } else {
-            telemetry::poc_rewarded_radios(0);
-            // default unallocated poc reward to the total poc reward
-            (total_poc_rewards, CalculatedPocRewardShares::default())
-        };
-    Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
+    if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
+        coverage_shares.into_rewards(reward_shares, &reward_info.epoch_period)
+    {
+        // handle poc reward outputs
+        let mut allocated_poc_rewards = 0_u64;
+        let mut count_rewarded_radios = 0;
+        for (poc_reward_amount, mobile_reward_share_v2) in mobile_reward_shares {
+            allocated_poc_rewards += poc_reward_amount;
+            count_rewarded_radios += 1;
+            mobile_rewards
+                .write(mobile_reward_share_v2, [])
+                .await?
+                // await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
+        telemetry::poc_rewarded_radios(count_rewarded_radios);
+        // calculate any unallocated poc reward
+        Ok((
+            calculated_poc_rewards_per_share,
+            Decimal::from(allocated_poc_rewards),
+            total_poc_rewards - Decimal::from(allocated_poc_rewards),
+        ))
+    } else {
+        telemetry::poc_rewarded_radios(0);
+        // default unallocated poc reward to the total poc reward
+        let total_poc_rewards = total_poc_rewards.to_u64().unwrap_or(0);
+        Ok((
+            CalculatedPocRewardShares::default(),
+            Decimal::from(0_u64),
+            Decimal::from(total_poc_rewards),
+        ))
+    }
 }
 
 pub async fn reward_dc(
@@ -475,7 +490,7 @@ pub async fn reward_dc(
     reward_info: &EpochRewardInfo,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
-) -> anyhow::Result<Decimal> {
+) -> anyhow::Result<(Decimal, Decimal)> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
     let mut count_rewarded_gateways = 0;
@@ -494,21 +509,20 @@ pub async fn reward_dc(
     // we return the full decimal value just to ensure we allocate all to poc
     let unallocated_dc_reward_amount =
         reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
-    Ok(unallocated_dc_reward_amount)
+    Ok((
+        Decimal::from(allocated_dc_rewards),
+        unallocated_dc_reward_amount,
+    ))
 }
 
 pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
+    total_sp_reward_amount: u64,
 ) -> anyhow::Result<()> {
-    let total_sp_rewards = get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions);
-    let sp_reward_amount = total_sp_rewards
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-
-    let subscriber_reward = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
-    let network_reward = sp_reward_amount.saturating_sub(subscriber_reward);
+    let subscriber_reward =
+        std::cmp::min(total_sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
+    let network_reward = total_sp_reward_amount.saturating_sub(subscriber_reward);
 
     // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
     write_service_provider_reward(
@@ -530,29 +544,6 @@ pub async fn reward_service_providers(
     )
     .await?;
 
-    Ok(())
-}
-
-async fn write_unallocated_reward(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    unallocated_type: UnallocatedRewardType,
-    unallocated_amount: u64,
-    reward_info: &'_ EpochRewardInfo,
-) -> anyhow::Result<()> {
-    if unallocated_amount > 0 {
-        let unallocated_reward = proto::MobileRewardShare {
-            start_period: reward_info.epoch_period.start.encode_timestamp(),
-            end_period: reward_info.epoch_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
-                reward_type: unallocated_type as i32,
-                amount: unallocated_amount,
-            })),
-        };
-        mobile_rewards
-            .write(unallocated_reward, [])
-            .await?
-            .await??;
-    };
     Ok(())
 }
 

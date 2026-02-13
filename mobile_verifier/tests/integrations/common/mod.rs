@@ -1,3 +1,5 @@
+pub mod seed;
+
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
