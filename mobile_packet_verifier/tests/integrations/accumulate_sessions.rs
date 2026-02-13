@@ -521,7 +521,6 @@ async fn run_accumulate_sessions(
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
     data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
-    // data_writer: Option<&dyn DataWriter<TrinoDataTransferSession>>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
     let ts = Utc::now();
@@ -538,7 +537,7 @@ async fn run_accumulate_sessions(
         &verified_sessions,
         ts,
         futures::stream::iter(reports),
-        data_writer,
+        data_writer.as_ref(),
     )
     .await?;
 
