@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError, TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier as proto;
 use serde::Serialize;
@@ -42,5 +42,21 @@ impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
             last_timestamp: v.last_timestamp.to_timestamp_millis()?,
             burn_timestamp: v.burn_timestamp.to_timestamp_millis()?,
         })
+    }
+}
+
+impl From<ValidDataTransferSession> for proto::ValidDataTransferSession {
+    fn from(v: ValidDataTransferSession) -> Self {
+        Self {
+            pub_key: v.pub_key.into(),
+            upload_bytes: v.upload_bytes,
+            download_bytes: v.download_bytes,
+            num_dcs: v.num_dcs,
+            payer: v.payer.into(),
+            first_timestamp: v.first_timestamp.encode_timestamp_millis(),
+            last_timestamp: v.last_timestamp.encode_timestamp_millis(),
+            rewardable_bytes: v.rewardable_bytes,
+            burn_timestamp: v.burn_timestamp.encode_timestamp_millis(),
+        }
     }
 }
