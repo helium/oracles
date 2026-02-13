@@ -4,13 +4,22 @@ use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
-use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
+use mobile_packet_verifier::{
+    burner::Burner, bytes_to_dc, iceberg::burned_data_transfer, pending_burns, pending_txns,
+};
 use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
 use tokio::sync::mpsc::error::TryRecvError;
 
+use crate::common;
+
 #[sqlx::test]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
+
     let payer_insufficent = PublicKeyBinary::from(vec![1]);
     let payer_sufficient = PublicKeyBinary::from(vec![2]);
     const ORIGINAL_BALANCE: u64 = 10_000;
@@ -46,7 +55,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        None,
+        Some(burn_writer),
     );
 
     // Burn what we can
@@ -77,6 +86,9 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     // Ensure successful data transfer sessions were output
     let written_sessions = get_written_sessions(&mut valid_sessions_rx);
     assert_eq!(written_sessions.len(), 1, "1 data transfer session written");
+
+    let iceburg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert_eq!(iceburg_burns.len(), 1);
 
     Ok(())
 }
@@ -163,6 +175,11 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     // Confirming a txn should write out the sessions that were present before the txn.
     // Sessions written after the txn is pending should not be written.
 
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness
+        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .await?;
+
     let payer = PublicKeyBinary::from(vec![0]);
     let pubkey_one = PublicKeyBinary::from(vec![1]);
     let pubkey_two = PublicKeyBinary::from(vec![2]);
@@ -200,7 +217,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        None,
+        Some(burn_writer),
     );
     burner.confirm_pending_txns(&pool).await?;
 
@@ -211,6 +228,9 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         2,
         "2 data transfer sessions written"
     );
+
+    let iceberg_burns = burned_data_transfer::get_all(harness.trino()).await?;
+    assert_eq!(iceberg_burns.len(), 2);
 
     // Late added session is still waiting for burn
     let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
