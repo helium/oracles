@@ -68,9 +68,12 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
     let trino = _harness.trino();
-    let all = iceberg::data_transfer_session::get_all(trino).await?;
+    let all_sessions = iceberg::data_transfer_session::get_all(trino).await?;
+    let all_burns = iceberg::burned_data_transfer::get_all(trino).await?;
 
-    println!("all sessions: {:?}", all.len());
+    println!("all sessions: {:?}", all_sessions.len());
+    println!("burned sessions: {:?}", all_burns.len());
+    assert_eq!(all_sessions.len(), all_burns.len());
 
     Ok(())
 }
