@@ -61,8 +61,12 @@ pub mod burned_data_transfer {
     pub async fn get_all(
         trino: &trino_rust_client::Client,
     ) -> anyhow::Result<Vec<TrinoBurnedDataTransferSession>> {
-        let all = trino.get_all(format!("SELECT * from {TABLE_NAME}")).await?;
-        Ok(all.into_vec())
+        let all = match trino.get_all(format!("SELECT * from {TABLE_NAME}")).await {
+            Ok(all) => all.into_vec(),
+            Err(trino_rust_client::error::Error::EmptyData) => vec![],
+            Err(other) => return Err(other.into()),
+        };
+        Ok(all)
     }
 
     impl From<ValidDataTransferSession> for TrinoBurnedDataTransferSession {
