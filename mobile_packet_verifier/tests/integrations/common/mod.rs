@@ -7,10 +7,12 @@ use mobile_packet_verifier::{
 };
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
-    let harness = IcebergTestHarness::new().await?;
-    harness
-        .create_table(iceberg::data_transfer_session::table_definition())
-        .await?;
+    let harness = IcebergTestHarness::new_with_tables([
+        iceberg::data_transfer_session::table_definition(),
+        iceberg::burned_data_transfer::table_definition(),
+    ])
+    .await?;
+
     Ok(harness)
 }
 
