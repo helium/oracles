@@ -1,7 +1,17 @@
+use helium_iceberg::BoxedDataWriter;
+use serde::Serialize;
+
+pub async fn write<T: Serialize + Send>(
+    data_writer: &BoxedDataWriter<T>,
+    data: Vec<T>,
+) -> anyhow::Result<()> {
+    data_writer.write(data).await?;
+    Ok(())
+}
+
 pub mod burned_data_transfer {
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_transfer::ValidDataTransferSession;
-    use helium_iceberg::BoxedDataWriter;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -48,14 +58,6 @@ pub mod burned_data_transfer {
             .expect("valid burned data transfer sessions table")
     }
 
-    pub async fn write_with(
-        data_writer: BoxedDataWriter<TrinoBurnedDataTransferSession>,
-        burns: Vec<TrinoBurnedDataTransferSession>,
-    ) -> anyhow::Result<()> {
-        data_writer.write(burns).await?;
-        Ok(())
-    }
-
     pub async fn get_all(
         trino: &trino_rust_client::Client,
     ) -> anyhow::Result<Vec<TrinoBurnedDataTransferSession>> {
@@ -82,12 +84,9 @@ pub mod burned_data_transfer {
 
 pub mod data_transfer_session {
 
-    use chrono::DateTime;
-    use chrono::FixedOffset;
+    use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
-    use helium_iceberg::BoxedDataWriter;
-    use serde::Deserialize;
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
     // TODO(mj): change to sessions
@@ -135,14 +134,6 @@ pub mod data_transfer_session {
             ))
             .build()
             .expect("valid data transfer session table")
-    }
-
-    pub async fn write_with(
-        data_writer: BoxedDataWriter<TrinoDataTransferSession>,
-        valid_reports: Vec<TrinoDataTransferSession>,
-    ) -> anyhow::Result<()> {
-        data_writer.write(valid_reports).await?;
-        Ok(())
     }
 
     pub async fn get_all(

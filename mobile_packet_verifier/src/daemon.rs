@@ -2,6 +2,7 @@ use crate::{
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
+    iceberg::{self, data_transfer_session::TrinoDataTransferSession},
     iceberg::data_transfer_session::TrinoDataTransferSession,
     pending_burns,
     settings::Settings,
@@ -127,6 +128,7 @@ where
             &self.verified_data_session_report_sink,
             ts,
             reports,
+            self.data_writer.as_ref(),
             self.data_writer.clone(),
         )
         .await?;
@@ -144,6 +146,7 @@ pub async fn handle_data_transfer_session_file(
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
+    data_writer: Option<&BoxedDataWriter<TrinoDataTransferSession>>,
     data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
 ) -> anyhow::Result<()> {
     let reports = crate::accumulate::accumulate_sessions(
@@ -159,6 +162,7 @@ pub async fn handle_data_transfer_session_file(
         .await?;
 
     if let Some(writer) = data_writer {
+        iceberg::write(writer, reports.valid).await?;
         crate::iceberg::data_transfer_session::write_with(writer, reports.valid).await?;
     }
 
@@ -217,6 +221,7 @@ impl Cmd {
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
+            None, // To be filled in later
         );
 
         let (reports, reports_server) = file_source::continuous_source()
