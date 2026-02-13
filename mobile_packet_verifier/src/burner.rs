@@ -1,6 +1,7 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
+use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::BoxedDataWriter;
 use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
@@ -74,14 +75,14 @@ where
 
             if confirmed {
                 let sessions =
-                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature)
-                        .await?
-                        .into_iter()
-                        .map(|s| {
-                            file_store_oracles::mobile_transfer::ValidDataTransferSession::from(s)
-                        })
-                        .collect::<Vec<_>>();
-                self.valid_sessions.write_all(sessions).await?;
+                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
+
+                write_burned_data_transfer_sessions(
+                    sessions,
+                    &self.valid_sessions,
+                    self.data_writer.as_ref(),
+                )
+                .await?;
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
@@ -241,21 +242,30 @@ async fn handle_transaction_success(
     pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
+    write_burned_data_transfer_sessions(sessions, valid_sessions, data_writer).await?;
+
+    Ok(())
+}
+
+async fn write_burned_data_transfer_sessions(
+    sessions: Vec<pending_burns::DataTransferSession>,
+    file_sink: &FileSinkClient<proto::ValidDataTransferSession>,
+    iceberg_sink: Option<&BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+) -> anyhow::Result<()> {
     let sessions = sessions
         .into_iter()
-        .map(file_store_oracles::mobile_transfer::ValidDataTransferSession::from)
+        .map(ValidDataTransferSession::from)
         .collect::<Vec<_>>();
 
-    let iceberg_sessions = sessions
-        .clone()
-        .into_iter()
-        .map(TrinoBurnedDataTransferSession::from)
-        .collect::<Vec<_>>();
+    file_sink.write_all(sessions.clone()).await?;
 
-    valid_sessions.write_all(sessions).await?;
+    if let Some(writer) = iceberg_sink {
+        let sessions = sessions
+            .into_iter()
+            .map(TrinoBurnedDataTransferSession::from)
+            .collect::<Vec<_>>();
 
-    if let Some(writer) = data_writer {
-        iceberg::write(writer, iceberg_sessions).await?;
+        iceberg::write(writer, sessions).await?;
     }
 
     Ok(())
