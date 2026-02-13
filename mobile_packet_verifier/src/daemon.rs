@@ -3,7 +3,6 @@ use crate::{
     burner::Burner,
     event_ids::EventIdPurger,
     iceberg::{self, data_transfer_session::TrinoDataTransferSession},
-    iceberg::data_transfer_session::TrinoDataTransferSession,
     pending_burns,
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
@@ -129,7 +128,6 @@ where
             ts,
             reports,
             self.data_writer.as_ref(),
-            self.data_writer.clone(),
         )
         .await?;
 
@@ -147,7 +145,6 @@ pub async fn handle_data_transfer_session_file(
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
     data_writer: Option<&BoxedDataWriter<TrinoDataTransferSession>>,
-    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
 ) -> anyhow::Result<()> {
     let reports = crate::accumulate::accumulate_sessions(
         mobile_config,
@@ -163,7 +160,6 @@ pub async fn handle_data_transfer_session_file(
 
     if let Some(writer) = data_writer {
         iceberg::write(writer, reports.valid).await?;
-        crate::iceberg::data_transfer_session::write_with(writer, reports.valid).await?;
     }
 
     Ok(())
