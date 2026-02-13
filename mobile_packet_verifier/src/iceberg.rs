@@ -1,3 +1,85 @@
+pub mod burned_data_transfer {
+    use chrono::{DateTime, FixedOffset};
+    use file_store_oracles::mobile_transfer::ValidDataTransferSession;
+    use helium_iceberg::BoxedDataWriter;
+    use serde::{Deserialize, Serialize};
+    use trino_rust_client::Trino;
+
+    // TODO(mj): change to burned_sessions
+    pub const TABLE_NAME: &str = "burned_data_transfer_sessions";
+
+    #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+    pub struct TrinoBurnedDataTransferSession {
+        pub_key: String,
+        payer: String,
+        upload_bytes: u64,
+        download_bytes: u64,
+        rewardable_bytes: u64,
+        num_dcs: u64,
+
+        /// Timestamp of the first ingest file we found a data transfer session in
+        first_timestamp: DateTime<FixedOffset>,
+        /// Timestamp of hte last ingest file we found a data transfer session in
+        last_timestamp: DateTime<FixedOffset>,
+        /// Timestamp of when the burn transaction was confirmed
+        burn_timestamp: DateTime<FixedOffset>,
+    }
+
+    pub fn table_definition() -> helium_iceberg::TableDefinition {
+        use helium_iceberg::*;
+
+        TableDefinition::builder(TABLE_NAME)
+            .with_fields([
+                FieldDefinition::required("pub_key", PrimitiveType::String),
+                FieldDefinition::required("payer", PrimitiveType::String),
+                FieldDefinition::required("upload_bytes", PrimitiveType::Long),
+                FieldDefinition::required("download_bytes", PrimitiveType::Long),
+                FieldDefinition::required("rewardable_bytes", PrimitiveType::Long),
+                FieldDefinition::required("num_dcs", PrimitiveType::Long),
+                FieldDefinition::required("first_timestamp", PrimitiveType::Timestamptz),
+                FieldDefinition::required("last_timestamp", PrimitiveType::Timestamptz),
+                FieldDefinition::required("burn_timestamp", PrimitiveType::Timestamptz),
+            ])
+            .with_partition(PartitionDefinition::day(
+                "burn_timestamp",
+                "burn_timestamp_day",
+            ))
+            .build()
+            .expect("valid burned data transfer sessions table")
+    }
+
+    pub async fn write_with(
+        data_writer: BoxedDataWriter<TrinoBurnedDataTransferSession>,
+        burns: Vec<TrinoBurnedDataTransferSession>,
+    ) -> anyhow::Result<()> {
+        data_writer.write(burns).await?;
+        Ok(())
+    }
+
+    pub async fn get_all(
+        trino: &trino_rust_client::Client,
+    ) -> anyhow::Result<Vec<TrinoBurnedDataTransferSession>> {
+        let all = trino.get_all(format!("SELECT * from {TABLE_NAME}")).await?;
+        Ok(all.into_vec())
+    }
+
+    impl From<ValidDataTransferSession> for TrinoBurnedDataTransferSession {
+        fn from(value: ValidDataTransferSession) -> Self {
+            TrinoBurnedDataTransferSession {
+                pub_key: value.pub_key.to_string(),
+                payer: value.payer.to_string(),
+                upload_bytes: value.upload_bytes,
+                download_bytes: value.download_bytes,
+                rewardable_bytes: value.rewardable_bytes,
+                num_dcs: value.num_dcs,
+                first_timestamp: value.first_timestamp.into(),
+                last_timestamp: value.last_timestamp.into(),
+                burn_timestamp: value.burn_timestamp.into(),
+            }
+        }
+    }
+}
+
 pub mod data_transfer_session {
 
     use chrono::DateTime;
@@ -8,6 +90,7 @@ pub mod data_transfer_session {
     use serde::Serialize;
     use trino_rust_client::Trino;
 
+    // TODO(mj): change to sessions
     pub const TABLE_NAME: &str = "data_transfer_sessions";
 
     #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]

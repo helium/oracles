@@ -11,8 +11,10 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    banning, daemon::handle_data_transfer_session_file, dc_to_bytes,
-    iceberg::data_transfer_session::TrinoDataTransferSession,
+    banning,
+    daemon::handle_data_transfer_session_file,
+    dc_to_bytes,
+    iceberg::{self, data_transfer_session::TrinoDataTransferSession},
 };
 use sqlx::{types::Uuid, PgPool};
 
@@ -66,7 +68,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
     let trino = _harness.trino();
-    let all = mobile_packet_verifier::iceberg::data_transfer_session::get_all(trino).await?;
+    let all = iceberg::data_transfer_session::get_all(trino).await?;
 
     println!("all sessions: {:?}", all.len());
 
