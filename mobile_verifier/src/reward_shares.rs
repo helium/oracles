@@ -325,8 +325,6 @@ impl CoverageShares {
             let oracle_boosting_status =
                 if unique_connections::is_qualified(unique_connections, &pubkey) {
                     OracleBoostingStatus::Qualified
-                } else if banned_radios.is_sp_banned(&pubkey) {
-                    OracleBoostingStatus::Banned
                 } else {
                     OracleBoostingStatus::Eligible
                 };
@@ -334,7 +332,7 @@ impl CoverageShares {
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey.clone(), &covered_hexes);
 
-            if eligible_for_coverage_map(oracle_boosting_status, &speedtests, &trust_scores) {
+            if eligible_for_coverage_map(&speedtests, &trust_scores) {
                 coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                     indoor: is_indoor,
                     hotspot_key: pubkey.into(),
@@ -561,14 +559,9 @@ pub enum RewardableEntityKey {
 }
 
 fn eligible_for_coverage_map(
-    oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],
     trust_scores: &[LocationTrust],
 ) -> bool {
-    if oracle_boosting_status == OracleBoostingStatus::Banned {
-        return false;
-    }
-
     let avg_speedtest = Speedtest::avg(speedtests);
     if avg_speedtest.tier() == SpeedtestTier::Fail {
         return false;

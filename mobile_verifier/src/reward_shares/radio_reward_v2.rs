@@ -78,9 +78,6 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
             coverage_point_calculator::OracleBoostingStatus::Eligible => {
                 OracleBoostedHexStatus::Eligible
             }
-            coverage_point_calculator::OracleBoostingStatus::Banned => {
-                OracleBoostedHexStatus::Banned
-            }
             coverage_point_calculator::OracleBoostingStatus::Qualified => {
                 OracleBoostedHexStatus::Qualified
             }

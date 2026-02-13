@@ -101,7 +101,7 @@ impl Cmd {
                     ingest_bucket_client.clone(),
                     gateway_client.clone(),
                     valid_heartbeats,
-                    seniority_updates.clone(),
+                    seniority_updates,
                     usa_and_mexico_geofence,
                 )
                 .await?,
@@ -163,7 +163,6 @@ impl Cmd {
                     ingest_bucket_client.clone(),
                     auth_client,
                     settings,
-                    seniority_updates,
                 )
                 .await?,
             )

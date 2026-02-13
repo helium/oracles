@@ -55,7 +55,6 @@
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
-//!   - Banned: Radio is banned according to hip-131 rules and all assignment_multipliers are 0.0
 //!   - Qualified: Radio serves >25 unique connections, automatic oracle boosting multiplier of 1x
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
@@ -255,7 +254,6 @@ impl CoveragePoints {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OracleBoostingStatus {
     Eligible,
-    Banned,
     Qualified,
 }
 
