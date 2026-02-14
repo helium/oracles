@@ -124,10 +124,8 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
-    // Run rewards with no unique connections, no poc rewards, expect unallocated
-    let boosted_hexes = vec![];
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
+    // Setup boost client and price info
+    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
     // seed single unique connections report within epoch
@@ -153,10 +151,6 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(poc_rewards.len(), 1);
     assert_eq!(dc_rewards.len(), 3);
     assert_eq!(msgs.unallocated.len(), 0);
-
-    // Check that we used rewardable_bytes for calculation and not upload_bytes + download_bytes anymore
-    let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
-    assert_eq!(rewardable_total, rewardable_sum);
 
     // Check that we used rewardable_bytes for calculation and not upload_bytes + download_bytes anymore
     let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
