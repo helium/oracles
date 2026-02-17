@@ -5,7 +5,11 @@ use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionR
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
 use mobile_packet_verifier::{
-    burner::Burner, bytes_to_dc, iceberg::burned_session, pending_burns, pending_txns,
+    burner::Burner,
+    bytes_to_dc,
+    iceberg::burned_session,
+    pending_burns::{self, DataTransferSession},
+    pending_txns,
 };
 use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
@@ -433,9 +437,9 @@ fn mk_data_transfer_session(
     payer_key: &PublicKeyBinary,
     pubkey: &PublicKeyBinary,
     rewardable_bytes: u64,
-) -> DataTransferSessionReq {
+) -> DataTransferSession {
     use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
-    DataTransferSessionReq {
+    let req = DataTransferSessionReq {
         data_transfer_usage: DataTransferEvent {
             pub_key: pubkey.clone(),
             upload_bytes: rewardable_bytes / 2,
@@ -451,7 +455,9 @@ fn mk_data_transfer_session(
         signature: vec![],
         carrier_id: CarrierIdV2::Carrier9,
         sampling: false,
-    }
+    };
+
+    DataTransferSession::from_req(&req, Utc::now())
 }
 
 async fn save_data_transfer_sessions(
@@ -465,13 +471,8 @@ async fn save_data_transfer_sessions(
         .map(|(payer, pubkey, amount)| mk_data_transfer_session(payer, pubkey, *amount))
         .collect::<Vec<_>>();
 
-    pending_burns::save_data_transfer_session_reqs(&mut txn, &sessions, Utc::now()).await?;
+    pending_burns::save_data_transfer_sessions(&mut txn, &sessions).await?;
 
-    // for (payer, pubkey, amount) in sessions {
-    //     let session = mk_data_transfer_session(payer, pubkey, *amount);
-    //     pending_burns::save_data_transfer_session_reqs(&mut txn, &session, Utc::now(), trino)
-    //         .await?;
-    // }
     txn.commit().await?;
 
     Ok(())

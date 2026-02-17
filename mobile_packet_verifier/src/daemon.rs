@@ -1,4 +1,5 @@
 use crate::{
+    accumulate::{accumulate_sessions, AccumulatedSessions},
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
@@ -7,7 +8,7 @@ use crate::{
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
@@ -132,6 +133,7 @@ where
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
+
         Ok(())
     }
 }
@@ -145,20 +147,32 @@ pub async fn handle_data_transfer_session_file(
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
     data_writer: Option<&DataTransferWriter>,
 ) -> anyhow::Result<()> {
-    let reports = crate::accumulate::accumulate_sessions(
-        mobile_config,
-        banned_radios,
-        txn,
-        verified_data_session_report_sink,
-        reports,
-    )
-    .await?;
+    let sessions = accumulate_sessions(mobile_config, banned_radios, txn, reports, curr_file_ts)
+        .await
+        .context("accumulating sessions")?;
 
-    pending_burns::save_data_transfer_session_reqs(txn, &reports.session_reqs, curr_file_ts)
-        .await?;
+    let AccumulatedSessions {
+        iceberg_sessions,
+        proto_sessions,
+        db_sessions,
+    } = sessions;
+
+    pending_burns::save_data_transfer_sessions(txn, &db_sessions)
+        .await
+        .context("saving to db")?;
+
+    for session in proto_sessions {
+        let status = session.status().as_str_name();
+        verified_data_session_report_sink
+            .write(session, &[("status", status)])
+            .await
+            .context("writing to file-store")?;
+    }
 
     if let Some(writer) = data_writer {
-        iceberg::write(writer, reports.valid).await?;
+        iceberg::write(writer, iceberg_sessions)
+            .await
+            .context("writing to iceberg")?;
     }
 
     Ok(())

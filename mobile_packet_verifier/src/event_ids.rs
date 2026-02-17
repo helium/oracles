@@ -7,7 +7,7 @@ use crate::settings::Settings;
 
 pub async fn is_duplicate(
     txn: &mut Transaction<'_, Postgres>,
-    event_id: String,
+    event_id: &str,
     received_timestamp: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     sqlx::query("INSERT INTO event_ids(event_id, received_timestamp) VALUES($1, $2) ON CONFLICT (event_id) DO NOTHING")

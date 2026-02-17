@@ -77,7 +77,8 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     let all_sessions = iceberg::session::get_all(trino).await?;
     let all_burns = iceberg::burned_session::get_all(trino).await?;
 
-    assert_eq!(all_sessions.len(), all_burns.len());
+    assert_eq!(all_sessions.len(), 2000, "individual sessions");
+    assert_eq!(all_burns.len(), 1, "combined sessions");
 
     Ok(())
 }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::Context;
 use chrono::{DateTime, Utc};
 use file_store_oracles::{
     mobile_session::DataTransferSessionReq, mobile_transfer::ValidDataTransferSession,
@@ -130,84 +129,29 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
-pub async fn save_data_transfer_session_reqs(
-    txn: &mut Transaction<'_, Postgres>,
-    reqs: &[DataTransferSessionReq],
-    last_timestamp: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    let sessions = reqs
-        .iter()
-        .map(|x| DataTransferSession::from_req(x, last_timestamp))
-        .collect::<Vec<_>>();
-
-    save_data_transfer_sessions(txn, &sessions).await?;
-
-    Ok(())
-}
-
 pub async fn save_data_transfer_sessions(
     txn: &mut Transaction<'_, Postgres>,
     data_transfer_session: &[DataTransferSession],
 ) -> anyhow::Result<()> {
-    postgres_save_data_transfer_sessions(txn, data_transfer_session).await?;
-
-    Ok(())
-}
-
-pub async fn postgres_save_data_transfer_sessions(
-    txn: &mut Transaction<'_, Postgres>,
-    data_transfer_session: &[DataTransferSession],
-) -> anyhow::Result<()> {
-    // Pre-aggregate by (pub_key, payer) to avoid "ON CONFLICT DO UPDATE command
-    // cannot affect row a second time" when duplicates exist in a single batch.
-    let mut merged: HashMap<(String, String), DataTransferSession> = HashMap::new();
-    for s in data_transfer_session {
-        let key = (s.pub_key.to_string(), s.payer.to_string());
+    let mut merged = HashMap::new();
+    for session in data_transfer_session {
         merged
-            .entry(key)
-            .and_modify(|existing| {
-                existing.uploaded_bytes += s.uploaded_bytes;
-                existing.downloaded_bytes += s.downloaded_bytes;
-                existing.rewardable_bytes += s.rewardable_bytes;
-                existing.first_timestamp = existing.first_timestamp.min(s.first_timestamp);
-                existing.last_timestamp = existing.last_timestamp.max(s.last_timestamp);
-            })
-            .or_insert_with(|| s.clone());
+            .entry((&session.pub_key, &session.payer))
+            .and_modify(|existing| merge_session(existing, session))
+            .or_insert_with(|| session.clone());
     }
+    let sessions = merged.into_values().collect::<Vec<_>>();
 
-    let merged_sessions: Vec<DataTransferSession> = merged.into_values().collect();
-
-    let pub_keys = merged_sessions
-        .iter()
-        .map(|s| s.pub_key.to_string())
-        .collect::<Vec<String>>();
-    let payers = merged_sessions
-        .iter()
-        .map(|s| s.payer.to_string())
-        .collect::<Vec<String>>();
-    let uploaded = merged_sessions
-        .iter()
-        .map(|s| s.uploaded_bytes)
-        .collect::<Vec<i64>>();
-    let downloaded = merged_sessions
-        .iter()
-        .map(|s| s.downloaded_bytes)
-        .collect::<Vec<i64>>();
-    let rewardable = merged_sessions
-        .iter()
-        .map(|s| s.rewardable_bytes)
-        .collect::<Vec<i64>>();
-    let first_ts = merged_sessions
-        .iter()
-        .map(|s| s.first_timestamp)
-        .collect::<Vec<DateTime<Utc>>>();
-    let last_ts = merged_sessions
-        .iter()
-        .map(|s| s.last_timestamp)
-        .collect::<Vec<DateTime<Utc>>>();
+    let pub_keys = collect_field(&sessions, |s| s.pub_key.to_string());
+    let payers = collect_field(&sessions, |s| s.payer.to_string());
+    let uploaded = collect_field(&sessions, |s| s.uploaded_bytes);
+    let downloaded = collect_field(&sessions, |s| s.downloaded_bytes);
+    let rewardable = collect_field(&sessions, |s| s.rewardable_bytes);
+    let first_ts = collect_field(&sessions, |s| s.first_timestamp);
+    let last_ts = collect_field(&sessions, |s| s.last_timestamp);
 
     sqlx::query(
-        r#"
+            r#"
         INSERT INTO data_transfer_sessions
             (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
         SELECT
@@ -230,18 +174,30 @@ pub async fn postgres_save_data_transfer_sessions(
             first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
             last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
         "#
-    )
-    .bind(pub_keys)
-    .bind(payers)
-    .bind(uploaded)
-    .bind(downloaded)
-    .bind(rewardable)
-    .bind(first_ts)
-    .bind(last_ts)
-    .execute(&mut **txn)
-    .await.context("inserting multiple into postgres")?;
+        )
+        .bind(pub_keys)
+        .bind(payers)
+        .bind(uploaded)
+        .bind(downloaded)
+        .bind(rewardable)
+        .bind(first_ts)
+        .bind(last_ts)
+        .execute(&mut **txn)
+        .await?;
 
     Ok(())
+}
+
+fn collect_field<In, Out>(coll: &[In], field_fn: impl FnMut(&In) -> Out) -> Vec<Out> {
+    coll.iter().map(field_fn).collect()
+}
+
+fn merge_session(existing: &mut DataTransferSession, other: &DataTransferSession) {
+    existing.uploaded_bytes += other.uploaded_bytes;
+    existing.downloaded_bytes += other.downloaded_bytes;
+    existing.rewardable_bytes += other.rewardable_bytes;
+    existing.first_timestamp = existing.first_timestamp.min(other.first_timestamp);
+    existing.last_timestamp = existing.last_timestamp.max(other.last_timestamp);
 }
 
 pub async fn delete_for_payer(
