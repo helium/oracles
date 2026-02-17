@@ -3,7 +3,6 @@ use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::BoxedDataWriter;
 use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::PgPool;
 use tracing::Instrument;
@@ -13,7 +12,7 @@ mod proto {
 }
 
 use crate::{
-    iceberg::{self, burned_data_transfer::TrinoBurnedDataTransferSession},
+    iceberg::{self, burned_session::IcebergBurnedDataTransferSession, BurnedDataTransferWriter},
     pending_burns, pending_txns,
 };
 
@@ -22,7 +21,7 @@ pub struct Burner<S> {
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
-    data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+    data_writer: Option<BurnedDataTransferWriter>,
 }
 
 impl<S> Burner<S> {
@@ -31,7 +30,7 @@ impl<S> Burner<S> {
         solana: S,
         failed_retry_attempts: usize,
         failed_check_interval: std::time::Duration,
-        data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+        data_writer: Option<BurnedDataTransferWriter>,
     ) -> Self {
         Self {
             valid_sessions,
@@ -227,7 +226,7 @@ async fn handle_transaction_success(
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
-    data_writer: Option<&BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+    data_writer: Option<&BurnedDataTransferWriter>,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -250,7 +249,7 @@ async fn handle_transaction_success(
 async fn write_burned_data_transfer_sessions(
     sessions: Vec<pending_burns::DataTransferSession>,
     file_sink: &FileSinkClient<proto::ValidDataTransferSession>,
-    iceberg_sink: Option<&BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+    iceberg_sink: Option<&BurnedDataTransferWriter>,
 ) -> anyhow::Result<()> {
     let sessions = sessions
         .into_iter()
@@ -262,7 +261,7 @@ async fn write_burned_data_transfer_sessions(
     if let Some(writer) = iceberg_sink {
         let sessions = sessions
             .into_iter()
-            .map(TrinoBurnedDataTransferSession::from)
+            .map(IcebergBurnedDataTransferSession::from)
             .collect::<Vec<_>>();
 
         iceberg::write(writer, sessions).await?;

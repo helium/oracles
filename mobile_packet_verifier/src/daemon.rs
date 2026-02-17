@@ -2,7 +2,7 @@ use crate::{
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
-    iceberg::{self, data_transfer_session::TrinoDataTransferSession},
+    iceberg::{self, DataTransferWriter},
     pending_burns,
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
@@ -18,7 +18,6 @@ use file_store_oracles::{
     FileType,
 };
 use futures::Stream;
-use helium_iceberg::BoxedDataWriter;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
@@ -38,7 +37,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
+    data_writer: Option<DataTransferWriter>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -49,7 +48,7 @@ impl<S, MCR> Daemon<S, MCR> {
         burner: Burner<S>,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-        data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
+        data_writer: Option<DataTransferWriter>,
     ) -> Self {
         Self {
             pool,
@@ -144,7 +143,7 @@ pub async fn handle_data_transfer_session_file(
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-    data_writer: Option<&BoxedDataWriter<TrinoDataTransferSession>>,
+    data_writer: Option<&DataTransferWriter>,
 ) -> anyhow::Result<()> {
     let reports = crate::accumulate::accumulate_sessions(
         mobile_config,

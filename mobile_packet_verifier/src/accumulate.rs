@@ -13,14 +13,13 @@ use helium_proto::services::poc_mobile::{
 use sqlx::{Postgres, Transaction};
 
 use crate::{
-    banning::BannedRadios, bytes_to_dc, event_ids,
-    iceberg::data_transfer_session::TrinoDataTransferSession, pending_burns,
-    MobileConfigResolverExt,
+    banning::BannedRadios, bytes_to_dc, event_ids, iceberg::session::IcebergDataTransferSession,
+    pending_burns, MobileConfigResolverExt,
 };
 
 #[derive(Default)]
 pub struct AccumulateResult {
-    pub valid: Vec<TrinoDataTransferSession>,
+    pub valid: Vec<IcebergDataTransferSession>,
     pub session_reqs: Vec<DataTransferSessionReq>,
 }
 
@@ -46,7 +45,6 @@ pub async fn accumulate_sessions(
         }
 
         let report_validity = verify_report(txn, mobile_config, &banned_radios, &report).await?;
-        // go to iceberg only if it's valid, event if it's zero rewardable bytes
         write_verified_report(
             verified_data_session_report_sink,
             report_validity,
@@ -54,6 +52,7 @@ pub async fn accumulate_sessions(
         )
         .await?;
 
+        // go to iceberg only if it's valid, event if it's zero rewardable bytes
         if report_validity == ReportStatus::Valid {
             result.valid.push(report.clone().into());
         }
@@ -67,10 +66,7 @@ pub async fn accumulate_sessions(
         }
 
         metrics.add_report(&report);
-
         result.session_reqs.push(report.report);
-        // pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
-        // .await?;
     }
 
     metrics.flush();

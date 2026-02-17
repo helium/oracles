@@ -6,18 +6,11 @@ use file_store_oracles::mobile_session::{
     DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::BoxedDataWriter;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    banning,
-    daemon::handle_data_transfer_session_file,
-    dc_to_bytes,
-    iceberg::{
-        burned_data_transfer::TrinoBurnedDataTransferSession,
-        data_transfer_session::TrinoDataTransferSession,
-    },
+    banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg,
 };
 use sqlx::{types::Uuid, PgPool};
 
@@ -27,14 +20,12 @@ use crate::common::TestMobileConfig;
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    use mobile_packet_verifier::iceberg::{burned_data_transfer, data_transfer_session};
-
     let harness = crate::common::setup_iceberg().await?;
     let session_writer = harness
-        .get_table_writer(data_transfer_session::TABLE_NAME)
+        .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
     let burn_writer = harness
-        .get_table_writer(burned_data_transfer::TABLE_NAME)
+        .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
 
     let payer_key =
@@ -83,8 +74,8 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
     let trino = harness.trino();
-    let all_sessions = data_transfer_session::get_all(trino).await?;
-    let all_burns = burned_data_transfer::get_all(trino).await?;
+    let all_sessions = iceberg::session::get_all(trino).await?;
+    let all_burns = iceberg::burned_session::get_all(trino).await?;
 
     assert_eq!(all_sessions.len(), all_burns.len());
 
@@ -95,7 +86,7 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
-    data_writer: Option<BoxedDataWriter<TrinoDataTransferSession>>,
+    data_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
     let ts = Utc::now();
@@ -123,7 +114,7 @@ async fn run_accumulate_sessions(
 async fn run_burner(
     pool: &PgPool,
     payer_key: &PublicKeyBinary,
-    data_writer: Option<BoxedDataWriter<TrinoBurnedDataTransferSession>>,
+    data_writer: Option<iceberg::BurnedDataTransferWriter>,
 ) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");

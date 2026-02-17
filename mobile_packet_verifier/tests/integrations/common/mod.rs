@@ -1,34 +1,16 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::{BoxedDataWriter, IcebergTestHarness};
-use mobile_packet_verifier::{
-    iceberg::{self, data_transfer_session::TrinoDataTransferSession},
-    MobileConfigResolverExt,
-};
+use helium_iceberg::IcebergTestHarness;
+use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
-        iceberg::data_transfer_session::table_definition(),
-        iceberg::burned_data_transfer::table_definition(),
+        iceberg::session::table_definition(),
+        iceberg::burned_session::table_definition(),
     ])
     .await?;
 
     Ok(harness)
-}
-
-pub async fn get_writer(
-    table_name: &str,
-) -> anyhow::Result<(
-    IcebergTestHarness,
-    BoxedDataWriter<TrinoDataTransferSession>,
-)> {
-    let harness = setup_iceberg().await?;
-    let writer = harness.get_table_writer(table_name).await?;
-    Ok((harness, writer))
-}
-
-pub async fn get_memory_writer(_table_name: &str) -> BoxedDataWriter<TrinoDataTransferSession> {
-    todo!("MemoryDataWriter was removed; use get_writer with IcebergTestHarness instead")
 }
 
 enum ValidKeys {

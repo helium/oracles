@@ -1,6 +1,13 @@
 use helium_iceberg::BoxedDataWriter;
 use serde::Serialize;
 
+use crate::iceberg::{
+    burned_session::IcebergBurnedDataTransferSession, session::IcebergDataTransferSession,
+};
+
+pub type DataTransferWriter = BoxedDataWriter<IcebergDataTransferSession>;
+pub type BurnedDataTransferWriter = BoxedDataWriter<IcebergBurnedDataTransferSession>;
+
 pub async fn write<T: Serialize + Send>(
     data_writer: &BoxedDataWriter<T>,
     data: Vec<T>,
@@ -9,17 +16,16 @@ pub async fn write<T: Serialize + Send>(
     Ok(())
 }
 
-pub mod burned_data_transfer {
+pub mod burned_session {
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_transfer::ValidDataTransferSession;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
-    // TODO(mj): change to burned_sessions
-    pub const TABLE_NAME: &str = "burned_data_transfer_sessions";
+    pub const TABLE_NAME: &str = "burned_sessions";
 
     #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
-    pub struct TrinoBurnedDataTransferSession {
+    pub struct IcebergBurnedDataTransferSession {
         pub_key: String,
         payer: String,
         upload_bytes: u64,
@@ -60,18 +66,18 @@ pub mod burned_data_transfer {
 
     pub async fn get_all(
         trino: &trino_rust_client::Client,
-    ) -> anyhow::Result<Vec<TrinoBurnedDataTransferSession>> {
+    ) -> anyhow::Result<Vec<IcebergBurnedDataTransferSession>> {
         let all = match trino.get_all(format!("SELECT * from {TABLE_NAME}")).await {
             Ok(all) => all.into_vec(),
             Err(trino_rust_client::error::Error::EmptyData) => vec![],
-            Err(other) => return Err(other.into()),
+            Err(err) => return Err(err.into()),
         };
         Ok(all)
     }
 
-    impl From<ValidDataTransferSession> for TrinoBurnedDataTransferSession {
+    impl From<ValidDataTransferSession> for IcebergBurnedDataTransferSession {
         fn from(value: ValidDataTransferSession) -> Self {
-            TrinoBurnedDataTransferSession {
+            IcebergBurnedDataTransferSession {
                 pub_key: value.pub_key.to_string(),
                 payer: value.payer.to_string(),
                 upload_bytes: value.upload_bytes,
@@ -86,18 +92,17 @@ pub mod burned_data_transfer {
     }
 }
 
-pub mod data_transfer_session {
+pub mod session {
 
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
-    // TODO(mj): change to sessions
-    pub const TABLE_NAME: &str = "data_transfer_sessions";
+    pub const TABLE_NAME: &str = "sessions";
 
     #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
-    pub struct TrinoDataTransferSession {
+    pub struct IcebergDataTransferSession {
         report_received_timestamp: DateTime<FixedOffset>,
         // -- request
         request_pub_key: String,
@@ -142,12 +147,16 @@ pub mod data_transfer_session {
 
     pub async fn get_all(
         trino: &trino_rust_client::Client,
-    ) -> anyhow::Result<Vec<TrinoDataTransferSession>> {
-        let all = trino.get_all(format!("SELECT * from {TABLE_NAME}")).await?;
-        Ok(all.into_vec())
+    ) -> anyhow::Result<Vec<IcebergDataTransferSession>> {
+        let all = match trino.get_all(format!("SELECT * from {TABLE_NAME}")).await {
+            Ok(all) => all.into_vec(),
+            Err(trino_rust_client::error::Error::EmptyData) => vec![],
+            Err(err) => return Err(err.into()),
+        };
+        Ok(all)
     }
 
-    impl From<DataTransferSessionIngestReport> for TrinoDataTransferSession {
+    impl From<DataTransferSessionIngestReport> for IcebergDataTransferSession {
         fn from(value: DataTransferSessionIngestReport) -> Self {
             let request_pub_key = value.report.pub_key.to_string();
             let data_transfer_event_pub_key = value.report.data_transfer_usage.pub_key.to_string();
@@ -222,7 +231,7 @@ pub mod data_transfer_session {
 
             let dts = (0..500)
                 .map(mk_dt)
-                .map(TrinoDataTransferSession::from)
+                .map(IcebergDataTransferSession::from)
                 .collect::<Vec<_>>();
 
             use helium_iceberg::DataWriter;
