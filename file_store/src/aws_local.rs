@@ -166,6 +166,9 @@ pub struct AwsLocalBuilder {
     region: Option<String>,
     endpoint: Option<String>,
     bucket: Option<String>,
+    access_key_id: Option<String>,
+    // Used in both access_key_id and secret_access_key fields
+    cred: Option<String>,
 }
 
 impl AwsLocalBuilder {
@@ -195,7 +198,11 @@ impl AwsLocalBuilder {
     }
 
     pub async fn build(self) -> AwsLocal {
-        let fake_cred = self.next_fake_credential();
+        let fake_cred = self
+            .cred
+            .clone()
+            .unwrap_or_else(|| self.next_fake_credential());
+
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = BucketClient::new(
