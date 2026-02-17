@@ -187,6 +187,11 @@ impl AwsLocalBuilder {
         self
     }
 
+    pub fn cred(mut self, cred: String) -> Self {
+        self.cred = Some(cred);
+        self
+    }
+
     fn next_fake_credential(&self) -> String {
         // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
         // cache collisions. This prevents "dispatch task is gone" errors in tests
