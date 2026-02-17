@@ -187,11 +187,6 @@ impl AwsLocalBuilder {
         self
     }
 
-    pub fn cred(mut self, cred: String) -> Self {
-        self.cred = Some(cred);
-        self
-    }
-
     fn next_fake_credential(&self) -> String {
         // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
         // cache collisions. This prevents "dispatch task is gone" errors in tests
@@ -200,6 +195,13 @@ impl AwsLocalBuilder {
         static BUILT_CLIENT_COUNT: AtomicUsize = AtomicUsize::new(0);
         let count = BUILT_CLIENT_COUNT.fetch_add(1, Ordering::Relaxed);
         format!("fake-{count}")
+    }
+
+    // Since rustfs doesn't accept arbitrary credentials, use this method to set the required ones.
+    // However, it forces you to run tests in a single thread (cargo test -- --test-threads=1).
+    pub fn cred(mut self, cred: String) -> Self {
+        self.cred = Some(cred);
+        self
     }
 
     pub async fn build(self) -> AwsLocal {
@@ -261,4 +263,3 @@ impl AwsLocal {
         self.gaurd_drop = false;
     }
 }
-
