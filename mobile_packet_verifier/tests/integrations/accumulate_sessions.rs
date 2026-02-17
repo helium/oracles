@@ -180,9 +180,6 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
 
-    // let written = writer.records();
-    // assert!(!written.is_empty());
-
     Ok(())
 }
 

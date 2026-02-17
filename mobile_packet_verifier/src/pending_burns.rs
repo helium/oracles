@@ -42,18 +42,18 @@ impl DataTransferSession {
 }
 
 impl From<DataTransferSession> for ValidDataTransferSession {
-    fn from(value: DataTransferSession) -> Self {
-        let num_dcs = value.dc_to_burn();
+    fn from(session: DataTransferSession) -> Self {
+        let num_dcs = session.dc_to_burn();
 
         ValidDataTransferSession {
-            pub_key: value.pub_key,
-            payer: value.payer,
-            upload_bytes: value.uploaded_bytes as u64,
-            download_bytes: value.downloaded_bytes as u64,
-            rewardable_bytes: value.rewardable_bytes as u64,
+            pub_key: session.pub_key,
+            payer: session.payer,
+            upload_bytes: session.uploaded_bytes as u64,
+            download_bytes: session.downloaded_bytes as u64,
+            rewardable_bytes: session.rewardable_bytes as u64,
             num_dcs,
-            first_timestamp: value.first_timestamp,
-            last_timestamp: value.last_timestamp,
+            first_timestamp: session.first_timestamp,
+            last_timestamp: session.last_timestamp,
             burn_timestamp: Utc::now(),
         }
     }
@@ -87,11 +87,10 @@ pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
 }
 
 pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSession>> {
-    let results = sqlx::query_as("SELECT * FROM data_transfer_sessions")
+    sqlx::query_as("SELECT * FROM data_transfer_sessions")
         .fetch_all(conn)
-        .await?;
-
-    Ok(results)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<PendingPayerBurn>> {

@@ -56,7 +56,6 @@ pub struct Settings {
     /// Settings for Banning
     pub banning: banning::BanSettings,
 
-    // pub iceberg_settings: IcebergSettings,
     pub iceberg_settings: helium_iceberg::Settings,
 }
 
