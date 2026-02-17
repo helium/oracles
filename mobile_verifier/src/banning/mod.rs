@@ -1,23 +1,18 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, BucketClient};
+use file_store::file_upload::FileUpload;
+use file_store::BucketClient;
 use helium_crypto::PublicKeyBinary;
 use ingestor::BanIngestor;
 use mobile_config::client::AuthorizationClient;
-use sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor;
 use sqlx::{PgConnection, PgPool};
-use task_manager::{ManagedTask, TaskManager};
-
-mod proto {
-    pub use helium_proto::services::poc_mobile::SeniorityUpdate;
-}
+use task_manager::ManagedTask;
 
 use crate::Settings;
 
 pub mod db;
 pub mod ingestor;
-pub mod sp_boosted_rewards_bans;
 
 pub const BAN_CLEANUP_DAYS: i64 = 7;
 
@@ -27,63 +22,20 @@ pub async fn create_managed_task(
     bucket_client: BucketClient,
     auth_verifier: AuthorizationClient,
     settings: &Settings,
-    seniority_update_sink: FileSinkClient<proto::SeniorityUpdate>,
 ) -> anyhow::Result<impl ManagedTask> {
-    let ban_ingestor = BanIngestor::create_managed_task(
-        pool.clone(),
-        file_upload.clone(),
-        bucket_client.clone(),
-        auth_verifier.clone(),
-        settings,
-    )
-    .await?;
-
-    let sp_ban_ingestor = ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
-        pool,
-        file_upload,
-        bucket_client,
-        auth_verifier,
-        settings,
-        seniority_update_sink,
-    )
-    .await?;
-
-    Ok(TaskManager::builder()
-        .add_task(ban_ingestor)
-        .add_task(sp_ban_ingestor)
-        .build())
+    BanIngestor::create_managed_task(pool, file_upload, bucket_client, auth_verifier, settings)
+        .await
 }
 
 #[derive(Debug, Default)]
 pub struct BannedRadios {
     banned: HashSet<PublicKeyBinary>,
-    sp_banned: HashSet<PublicKeyBinary>,
 }
 
 impl BannedRadios {
     pub async fn new(pool: &PgPool, before: chrono::DateTime<Utc>) -> anyhow::Result<Self> {
         let banned = db::get_banned_radios(pool, before).await?;
-
-        use helium_proto::services::poc_mobile::service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType;
-        let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
-            pool,
-            SpBoostedRewardsBannedRadioBanType::Poc,
-            before,
-        )
-        .await?;
-
-        Ok(BannedRadios {
-            banned,
-            sp_banned: poc_banned_radios.wifi,
-        })
-    }
-
-    pub fn insert_sp_banned(&mut self, hotspot_pubkey: PublicKeyBinary) {
-        self.sp_banned.insert(hotspot_pubkey);
-    }
-
-    pub fn is_sp_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
-        self.sp_banned.contains(hotspot_pubkey)
+        Ok(BannedRadios { banned })
     }
 
     pub fn is_poc_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
@@ -108,7 +60,5 @@ impl BannedRadios {
 
 pub async fn clear_bans(conn: &mut PgConnection, before: DateTime<Utc>) -> anyhow::Result<()> {
     db::clear_bans(conn, before).await?;
-    sp_boosted_rewards_bans::clear_bans(conn, before).await?;
-
     Ok(())
 }

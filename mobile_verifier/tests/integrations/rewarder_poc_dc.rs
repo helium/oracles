@@ -27,13 +27,8 @@ use uuid::Uuid;
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{
-        service_provider_boosted_rewards_banned_radio_req_v1::KeyType,
-        service_provider_boosted_rewards_banned_radio_req_v1::{
-            SpBoostedRewardsBannedRadioBanType, SpBoostedRewardsBannedRadioReason,
-        },
         CoverageObjectValidity, HeartbeatValidity, LocationSource, SeniorityUpdateReason,
-        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel,
+        SignalLevel,
     };
 }
 
@@ -129,20 +124,13 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
-    // Run rewards with no unique connections, no poc rewards, expect unallocated
-    let boosted_hexes = vec![];
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
+    // Setup boost client and price info
+    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
     // seed single unique connections report within epoch
     let mut txn = pool.begin().await?;
     seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
-    txn.commit().await?;
-
-    // SP ban radio, unique connections should supersede banning
-    let mut txn = pool.begin().await?;
-    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
     txn.commit().await?;
 
     // run rewards for poc and dc
@@ -168,10 +156,6 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
     assert_eq!(rewardable_total, rewardable_sum);
 
-    // Check that we used rewardable_bytes for calculation and not upload_bytes + download_bytes anymore
-    let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
-    assert_eq!(rewardable_total, rewardable_sum);
-
     let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
     let total = poc_sum + dc_sum;
@@ -180,65 +164,6 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
-
-    Ok(())
-}
-
-#[sqlx::test]
-async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
-    let reward_info = reward_info_24_hours();
-
-    let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
-
-    // seed all the things
-    let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
-    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
-    txn.commit().await?;
-    update_assignments(&pool).await?;
-
-    // Run rewards with no unique connections, no poc rewards, expect unallocated
-    let boosted_hexes = vec![];
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
-    let price_info = default_price_info();
-
-    let _rewarder = rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info.clone(),
-    )
-    .await?;
-
-    let msgs = mobile_rewards.finish().await?;
-    assert_eq!(msgs.gateway_rewards.len(), 3);
-    assert_eq!(msgs.radio_reward_v2s.len(), 3);
-
-    // ==============================================================
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
-    // SP ban radio, zeroed rewards are filtered out
-    let mut txn = pool.begin().await?;
-    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
-    txn.commit().await?;
-
-    let _rewarder = rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info,
-    )
-    .await?;
-
-    let msgs = mobile_rewards.finish().await?;
-    assert_eq!(msgs.gateway_rewards.len(), 3);
-    assert_eq!(msgs.radio_reward_v2s.len(), 2);
 
     Ok(())
 }
@@ -627,33 +552,6 @@ async fn save_seniority_object(
     .bind(hb.heartbeat.hb_type)
     .execute(&mut **exec)
     .await?;
-    Ok(())
-}
-
-async fn ban_wifi_radio_for_epoch(
-    txn: &mut Transaction<'_, Postgres>,
-    pubkey: PublicKeyBinary,
-    epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<()> {
-    let until = (epoch.start + chrono::Duration::days(7)).timestamp_millis() as u64;
-    let received_timestamp = (epoch.start + chrono::Duration::hours(2)).timestamp_millis() as u64;
-
-    let ban_report = proto::ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
-        received_timestamp,
-        report: Some(proto::ServiceProviderBoostedRewardsBannedRadioReqV1 {
-            pubkey: pubkey.clone().into(),
-            reason: proto::SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation.into(),
-            until,
-            signature: vec![],
-            ban_type: proto::SpBoostedRewardsBannedRadioBanType::Poc.into(),
-            key_type: Some(proto::KeyType::HotspotKey(pubkey.into())),
-        }),
-    };
-
-    use banning::sp_boosted_rewards_bans;
-
-    let ban_report = sp_boosted_rewards_bans::BannedRadioReport::try_from(ban_report)?;
-    sp_boosted_rewards_bans::db::update_report(txn, &ban_report).await?;
     Ok(())
 }
 
