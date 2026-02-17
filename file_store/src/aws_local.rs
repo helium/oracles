@@ -166,6 +166,8 @@ pub struct AwsLocalBuilder {
     region: Option<String>,
     endpoint: Option<String>,
     bucket: Option<String>,
+    // Used in both access_key_id and secret_access_key fields
+    cred: Option<String>,
 }
 
 impl AwsLocalBuilder {
@@ -194,8 +196,19 @@ impl AwsLocalBuilder {
         format!("fake-{count}")
     }
 
+    // Since rustfs doesn't accept arbitrary credentials, use this method to set the required ones.
+    // However, it forces you to run tests in a single thread (cargo test -- --test-threads=1).
+    pub fn cred(mut self, cred: String) -> Self {
+        self.cred = Some(cred);
+        self
+    }
+
     pub async fn build(self) -> AwsLocal {
-        let fake_cred = self.next_fake_credential();
+        let fake_cred = self
+            .cred
+            .clone()
+            .unwrap_or_else(|| self.next_fake_credential());
+
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = BucketClient::new(
@@ -249,3 +262,4 @@ impl AwsLocal {
         self.gaurd_drop = false;
     }
 }
+
