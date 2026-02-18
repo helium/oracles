@@ -21,6 +21,7 @@ pub const NAMESPACE: &str = "poc";
 pub mod burned_session {
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_transfer::ValidDataTransferSession;
+    use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -44,9 +45,7 @@ pub mod burned_session {
         burn_timestamp: DateTime<FixedOffset>,
     }
 
-    pub fn table_definition() -> helium_iceberg::TableDefinition {
-        use helium_iceberg::*;
-
+    pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
                 FieldDefinition::required_string("pub_key"),
@@ -63,8 +62,8 @@ pub mod burned_session {
                 "burn_timestamp",
                 "burn_timestamp_day",
             ))
+            .with_wap_enabled(true)
             .build()
-            .expect("valid burned data transfer sessions table")
     }
 
     pub async fn get_all(
@@ -102,6 +101,7 @@ pub mod session {
 
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
+    use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -126,9 +126,7 @@ pub mod session {
         timestamp: DateTime<FixedOffset>,
     }
 
-    pub fn table_definition() -> helium_iceberg::TableDefinition {
-        use helium_iceberg::*;
-
+    pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
                 FieldDefinition::required_timestamptz("report_received_timestamp"),
@@ -148,8 +146,8 @@ pub mod session {
                 "report_received_timestamp",
                 "report_received_timestamp_day",
             ))
+            .with_wap_enabled(true)
             .build()
-            .expect("valid data transfer session table")
     }
 
     pub async fn get_all(

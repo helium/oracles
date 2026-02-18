@@ -5,8 +5,8 @@ use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
-        iceberg::session::table_definition(),
-        iceberg::burned_session::table_definition(),
+        iceberg::session::table_definition()?,
+        iceberg::burned_session::table_definition()?,
     ])
     .await?;
 
