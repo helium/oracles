@@ -534,7 +534,7 @@ impl From<TestHarnessError> for Error {
 mod tests {
 
     use super::{IcebergTestHarness, TableDefinition};
-    use crate::{FieldDefinition, PartitionDefinition, PrimitiveType};
+    use crate::{FieldDefinition, PartitionDefinition};
 
     use chrono::{DateTime, FixedOffset, Utc};
     use serde::{Deserialize, Serialize};
@@ -550,9 +550,9 @@ mod tests {
     fn person_table_def() -> anyhow::Result<TableDefinition> {
         let def = TableDefinition::builder("default", "people")
             .with_fields([
-                FieldDefinition::required("name", PrimitiveType::String),
-                FieldDefinition::required("age", PrimitiveType::Int),
-                FieldDefinition::required("inserted", PrimitiveType::Timestamptz),
+                FieldDefinition::required_string("name"),
+                FieldDefinition::required_int("age"),
+                FieldDefinition::required_timestamptz("inserted"),
             ])
             .with_partition(PartitionDefinition::day("inserted", "inserted_day"))
             .build()?;
