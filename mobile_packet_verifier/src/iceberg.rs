@@ -49,15 +49,15 @@ pub mod burned_session {
 
         TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
-                FieldDefinition::required("pub_key", PrimitiveType::String),
-                FieldDefinition::required("payer", PrimitiveType::String),
-                FieldDefinition::required("upload_bytes", PrimitiveType::Long),
-                FieldDefinition::required("download_bytes", PrimitiveType::Long),
-                FieldDefinition::required("rewardable_bytes", PrimitiveType::Long),
-                FieldDefinition::required("num_dcs", PrimitiveType::Long),
-                FieldDefinition::required("first_timestamp", PrimitiveType::Timestamptz),
-                FieldDefinition::required("last_timestamp", PrimitiveType::Timestamptz),
-                FieldDefinition::required("burn_timestamp", PrimitiveType::Timestamptz),
+                FieldDefinition::required_string("pub_key"),
+                FieldDefinition::required_string("payer"),
+                FieldDefinition::required_long("upload_bytes"),
+                FieldDefinition::required_long("download_bytes"),
+                FieldDefinition::required_long("rewardable_bytes"),
+                FieldDefinition::required_long("num_dcs"),
+                FieldDefinition::required_timestamptz("first_timestamp"),
+                FieldDefinition::required_timestamptz("last_timestamp"),
+                FieldDefinition::required_timestamptz("burn_timestamp"),
             ])
             .with_partition(PartitionDefinition::day(
                 "burn_timestamp",
@@ -131,18 +131,18 @@ pub mod session {
 
         TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
-                FieldDefinition::required("report_received_timestamp", PrimitiveType::Timestamptz),
-                FieldDefinition::required("request_pub_key", PrimitiveType::String),
-                FieldDefinition::required("rewardable_bytes", PrimitiveType::Long),
-                FieldDefinition::required("carrier_id", PrimitiveType::String),
-                FieldDefinition::required("sampling", PrimitiveType::Boolean),
-                FieldDefinition::required("data_transfer_event_pub_key", PrimitiveType::String),
-                FieldDefinition::required("upload_bytes", PrimitiveType::Long),
-                FieldDefinition::required("download_byte", PrimitiveType::Long),
-                FieldDefinition::required("radio_access_thechnology", PrimitiveType::String),
-                FieldDefinition::required("event_id", PrimitiveType::String),
-                FieldDefinition::required("payer", PrimitiveType::String),
-                FieldDefinition::required("timestamp", PrimitiveType::Timestamptz),
+                FieldDefinition::required_timestamptz("report_received_timestamp"),
+                FieldDefinition::required_string("request_pub_key"),
+                FieldDefinition::required_long("rewardable_bytes"),
+                FieldDefinition::required_string("carrier_id"),
+                FieldDefinition::required_boolean("sampling"),
+                FieldDefinition::required_string("data_transfer_event_pub_key"),
+                FieldDefinition::required_long("upload_bytes"),
+                FieldDefinition::required_long("download_byte"),
+                FieldDefinition::required_string("radio_access_thechnology"),
+                FieldDefinition::required_string("event_id"),
+                FieldDefinition::required_string("payer"),
+                FieldDefinition::required_timestamptz("timestamp"),
             ])
             .with_partition(PartitionDefinition::day(
                 "report_received_timestamp",
