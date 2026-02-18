@@ -16,12 +16,15 @@ pub async fn write<T: Serialize + Send>(
     Ok(())
 }
 
+pub const NAMESPACE: &str = "poc";
+
 pub mod burned_session {
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_transfer::ValidDataTransferSession;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
+    pub use super::NAMESPACE;
     pub const TABLE_NAME: &str = "burned_sessions";
 
     #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
@@ -44,7 +47,7 @@ pub mod burned_session {
     pub fn table_definition() -> helium_iceberg::TableDefinition {
         use helium_iceberg::*;
 
-        TableDefinition::builder(TABLE_NAME)
+        TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
                 FieldDefinition::required("pub_key", PrimitiveType::String),
                 FieldDefinition::required("payer", PrimitiveType::String),
@@ -67,7 +70,10 @@ pub mod burned_session {
     pub async fn get_all(
         trino: &trino_rust_client::Client,
     ) -> anyhow::Result<Vec<IcebergBurnedDataTransferSession>> {
-        let all = match trino.get_all(format!("SELECT * from {TABLE_NAME}")).await {
+        let all = match trino
+            .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
+            .await
+        {
             Ok(all) => all.into_vec(),
             Err(trino_rust_client::error::Error::EmptyData) => vec![],
             Err(err) => return Err(err.into()),
@@ -99,6 +105,7 @@ pub mod session {
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
+    pub use super::NAMESPACE;
     pub const TABLE_NAME: &str = "sessions";
 
     #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
@@ -122,7 +129,7 @@ pub mod session {
     pub fn table_definition() -> helium_iceberg::TableDefinition {
         use helium_iceberg::*;
 
-        TableDefinition::builder(TABLE_NAME)
+        TableDefinition::builder(NAMESPACE, TABLE_NAME)
             .with_fields([
                 FieldDefinition::required("report_received_timestamp", PrimitiveType::Timestamptz),
                 FieldDefinition::required("request_pub_key", PrimitiveType::String),
@@ -148,7 +155,10 @@ pub mod session {
     pub async fn get_all(
         trino: &trino_rust_client::Client,
     ) -> anyhow::Result<Vec<IcebergDataTransferSession>> {
-        let all = match trino.get_all(format!("SELECT * from {TABLE_NAME}")).await {
+        let all = match trino
+            .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
+            .await
+        {
             Ok(all) => all.into_vec(),
             Err(trino_rust_client::error::Error::EmptyData) => vec![],
             Err(err) => return Err(err.into()),
