@@ -56,7 +56,7 @@ pub struct Settings {
     /// Settings for Banning
     pub banning: banning::BanSettings,
 
-    pub iceberg_settings: helium_iceberg::Settings,
+    pub iceberg_settings: Option<helium_iceberg::Settings>,
 }
 
 fn default_purger_interval() -> Duration {

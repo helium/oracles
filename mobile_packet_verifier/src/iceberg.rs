@@ -1,4 +1,5 @@
-use helium_iceberg::BoxedDataWriter;
+use anyhow::Context;
+use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter, TableCreator};
 use serde::Serialize;
 
 use crate::iceberg::{
@@ -7,6 +8,26 @@ use crate::iceberg::{
 
 pub type DataTransferWriter = BoxedDataWriter<IcebergDataTransferSession>;
 pub type BurnedDataTransferWriter = BoxedDataWriter<IcebergBurnedDataTransferSession>;
+
+pub async fn get_writers(
+    settings: &helium_iceberg::Settings,
+) -> anyhow::Result<(DataTransferWriter, BurnedDataTransferWriter)> {
+    let catalog = settings.connect().await.context("connecting to catalog")?;
+
+    catalog.create_namespace_if_not_exists(NAMESPACE).await?;
+
+    let creator = TableCreator::new(catalog.clone());
+
+    let session_writer = creator
+        .create_table_if_not_exists(session::table_definition()?)
+        .await?;
+
+    let burned_session_writer = creator
+        .create_table_if_not_exists(burned_session::table_definition()?)
+        .await?;
+
+    Ok((session_writer.boxed(), burned_session_writer.boxed()))
+}
 
 pub async fn write<T: Serialize + Send>(
     data_writer: &BoxedDataWriter<T>,

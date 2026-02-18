@@ -225,12 +225,22 @@ impl Cmd {
             )
             .await?;
 
+        let (session_writer, burned_session_writer) =
+            if let Some(ref iceberg_settings) = settings.iceberg_settings {
+                tracing::info!("iceberg settings provided, connecting...");
+                let (session, burned) = iceberg::get_writers(iceberg_settings).await?;
+                (Some(session), Some(burned))
+            } else {
+                tracing::info!("no iceberg settings provided");
+                (None, None)
+            };
+
         let burner = Burner::new(
             valid_sessions,
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
-            None, // To be filled in later
+            burned_session_writer,
         );
 
         let (reports, reports_server) = file_source::continuous_source()
@@ -250,7 +260,7 @@ impl Cmd {
             burner,
             resolver,
             invalid_sessions,
-            None, // To be filled in later
+            session_writer,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
