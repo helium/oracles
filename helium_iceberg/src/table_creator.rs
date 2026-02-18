@@ -185,6 +185,7 @@ impl SortFieldDefinition {
 #[derive(Debug, Clone)]
 pub struct TableDefinition {
     name: String,
+    namespace: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
     sort_fields: Vec<SortFieldDefinition>,
@@ -194,13 +195,21 @@ pub struct TableDefinition {
 
 impl TableDefinition {
     /// Create a new table definition builder.
-    pub fn builder(name: impl Into<String>) -> TableDefinitionBuilder {
-        TableDefinitionBuilder::new(name)
+    pub fn builder(
+        namespace: impl Into<String>,
+        table_name: impl Into<String>,
+    ) -> TableDefinitionBuilder {
+        TableDefinitionBuilder::new(namespace, table_name)
     }
 
     /// Get the table name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Get the namespace.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     /// Build the Iceberg schema from field definitions.
@@ -291,6 +300,7 @@ impl TableDefinition {
 #[derive(Debug, Clone)]
 pub struct TableDefinitionBuilder {
     name: String,
+    namespace: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
     sort_fields: Vec<SortFieldDefinition>,
@@ -300,9 +310,10 @@ pub struct TableDefinitionBuilder {
 
 impl TableDefinitionBuilder {
     /// Create a new builder with the given table name.
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(namespace: impl Into<String>, table_name: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            name: table_name.into(),
+            namespace: namespace.into(),
             fields: Vec::new(),
             partitions: Vec::new(),
             sort_fields: Vec::new(),
@@ -436,6 +447,7 @@ impl TableDefinitionBuilder {
 
         Ok(TableDefinition {
             name: self.name,
+            namespace: self.namespace,
             fields: self.fields,
             partitions: self.partitions,
             sort_fields: self.sort_fields,
@@ -474,13 +486,8 @@ impl TableCreator {
 
     /// Create a new table in the given namespace.
     /// Returns an IcebergTable ready for immediate use.
-    pub async fn create_table<T>(
-        &self,
-        namespace: impl Into<String>,
-        definition: TableDefinition,
-    ) -> Result<IcebergTable<T>> {
-        let namespace = namespace.into();
-        let namespace_ident = NamespaceIdent::new(namespace);
+    pub async fn create_table<T>(&self, definition: TableDefinition) -> Result<IcebergTable<T>> {
+        let namespace_ident = NamespaceIdent::new(definition.namespace().to_string());
 
         let schema = definition.build_schema()?;
         let partition_spec = definition.build_partition_spec(&schema)?;
@@ -513,22 +520,21 @@ impl TableCreator {
     /// Returns an IcebergTable ready for immediate use.
     pub async fn create_table_if_not_exists<T>(
         &self,
-        namespace: impl Into<String>,
         definition: TableDefinition,
     ) -> Result<IcebergTable<T>> {
-        let namespace = namespace.into();
+        let namespace = definition.namespace();
         let table_name = definition.name.clone();
 
-        if self.table_exists(&namespace, &table_name).await? {
+        if self.table_exists(namespace, &table_name).await? {
             tracing::debug!(
                 namespace,
                 table_name,
                 "table already exists, loading existing table"
             );
-            IcebergTable::from_catalog(self.catalog.clone(), &namespace, &table_name).await
+            IcebergTable::from_catalog(self.catalog.clone(), namespace, &table_name).await
         } else {
             tracing::debug!(namespace, table_name, "creating new table");
-            self.create_table(namespace, definition).await
+            self.create_table(definition).await
         }
     }
 }
@@ -580,7 +586,7 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder() {
-        let definition = TableDefinition::builder("events")
+        let definition = TableDefinition::builder("default", "events")
             .with_fields([
                 FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
                 FieldDefinition::required("event_type", Type::Primitive(PrimitiveType::String)),
@@ -608,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder_no_fields_error() {
-        let result = TableDefinition::builder("empty_table").build();
+        let result = TableDefinition::builder("default", "empty_table").build();
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("at least one field"));
@@ -616,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_build_schema() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
                 FieldDefinition::optional("name", Type::Primitive(PrimitiveType::String))
@@ -643,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_build_partition_spec() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
                 FieldDefinition::required("timestamp", Type::Primitive(PrimitiveType::Timestamptz)),
@@ -666,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_partition_spec_missing_source_field() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -692,7 +698,7 @@ mod tests {
 
     #[test]
     fn test_identifier_field_ids_in_schema() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long))
                     .as_identifier(),
@@ -713,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_identifier_field_must_be_required() {
-        let result = TableDefinition::builder("test")
+        let result = TableDefinition::builder("default", "test")
             .with_field(
                 FieldDefinition::optional("id", Type::Primitive(PrimitiveType::Long))
                     .as_identifier(),
@@ -729,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_identifier_field_cannot_be_float() {
-        let result = TableDefinition::builder("test")
+        let result = TableDefinition::builder("default", "test")
             .with_field(
                 FieldDefinition::required("score", Type::Primitive(PrimitiveType::Float))
                     .as_identifier(),
@@ -745,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_identifier_field_cannot_be_double() {
-        let result = TableDefinition::builder("test")
+        let result = TableDefinition::builder("default", "test")
             .with_field(
                 FieldDefinition::required("score", Type::Primitive(PrimitiveType::Double))
                     .as_identifier(),
@@ -793,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder_with_sort_fields() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -810,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_build_sort_order() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
                 FieldDefinition::required(
@@ -847,7 +853,7 @@ mod tests {
 
     #[test]
     fn test_build_sort_order_empty() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -865,7 +871,7 @@ mod tests {
 
     #[test]
     fn test_sort_order_missing_source_field() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -884,7 +890,7 @@ mod tests {
 
     #[test]
     fn test_with_min_snapshots_to_keep() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -903,7 +909,7 @@ mod tests {
 
     #[test]
     fn test_with_max_snapshot_age() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),
@@ -922,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_with_max_ref_age() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_field(FieldDefinition::required(
                 "id",
                 Type::Primitive(PrimitiveType::Long),

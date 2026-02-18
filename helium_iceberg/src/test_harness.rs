@@ -28,8 +28,11 @@
 //! }
 //! ```
 
+use std::collections::HashMap;
+
 use futures::TryFutureExt;
 use serde::Serialize;
+use tokio::sync::Mutex;
 use trino_rust_client::ClientBuilder;
 use uuid::Uuid;
 
@@ -92,9 +95,9 @@ enum TestHarnessError {
 /// so queries can reference tables directly without qualification.
 pub struct IcebergTestHarness {
     catalog_name: String,
-    namespace: String,
     trino: trino_rust_client::Client,
     iceberg_catalog: Catalog,
+    table_namespaces: Mutex<HashMap<String, String>>,
 }
 
 impl IcebergTestHarness {
@@ -147,7 +150,7 @@ impl IcebergTestHarness {
         let iceberg_catalog =
             connect_to_iceberg_catalog_with_namespace(&config, &catalog_name, &namespace).await?;
 
-        let trino = create_trino_client(&config, &catalog_name, &namespace).await?;
+        let trino = create_trino_client(&config, &catalog_name).await?;
 
         tracing::info!(
             %catalog_name,
@@ -157,9 +160,9 @@ impl IcebergTestHarness {
 
         Ok(Self {
             catalog_name,
-            namespace,
             trino,
             iceberg_catalog,
+            table_namespaces: Mutex::new(HashMap::default()),
         })
     }
 
@@ -170,9 +173,46 @@ impl IcebergTestHarness {
     where
         T: Serialize + Sync + Send + 'static,
     {
-        IcebergTable::from_catalog(self.iceberg_catalog.clone(), self.namespace(), table_name)
+        let table_name = table_name.into();
+        let namespace = self
+            .table_namespaces
+            .lock()
+            .await
+            .get(&table_name)
+            .cloned()
+            .unwrap_or_else(|| "unknown_namespace".to_string());
+
+        self.get_table_writer_in(namespace, table_name).await
+    }
+
+    /// Get a data writer for a table in a specific namespace.
+    pub async fn get_table_writer_in<T>(
+        &self,
+        namespace: impl Into<String>,
+        table_name: impl Into<String>,
+    ) -> Result<BoxedDataWriter<T>>
+    where
+        T: Serialize + Sync + Send + 'static,
+    {
+        let namespace = namespace.into();
+        let table_name = table_name.into();
+
+        if !self.table_exists_in(&namespace, &table_name).await? {
+            return Err(Error::TableNotFound {
+                namespace,
+                table: table_name,
+            });
+        }
+
+        IcebergTable::from_catalog(self.iceberg_catalog.clone(), &namespace, table_name)
             .await
             .map(|writer| writer.boxed())
+    }
+
+    async fn table_exists_in(&self, namespace: &str, table_name: &str) -> Result<bool> {
+        self.iceberg_catalog
+            .table_exists(namespace, table_name)
+            .await
     }
 
     /// Get the Trino client for executing queries.
@@ -193,17 +233,19 @@ impl IcebergTestHarness {
         &self.catalog_name
     }
 
-    /// Get the namespace name for this test (always `default`).
-    pub fn namespace(&self) -> &str {
-        &self.namespace
-    }
-
-    /// Create a table in the test namespace using helium_iceberg.
+    /// Create a table in the test catalog using helium_iceberg.
     pub async fn create_table(&self, definition: TableDefinition) -> Result<()> {
-        let creator = TableCreator::new(self.iceberg_catalog.clone());
-        creator
-            .create_table_if_not_exists::<()>(&self.namespace, definition)
+        self.iceberg_catalog
+            .create_namespace_if_not_exists(definition.namespace())
             .await?;
+
+        self.table_namespaces.lock().await.insert(
+            definition.name().to_string(),
+            definition.namespace().to_string(),
+        );
+
+        let creator = TableCreator::new(self.iceberg_catalog.clone());
+        creator.create_table_if_not_exists::<()>(definition).await?;
         Ok(())
     }
 }
@@ -446,15 +488,16 @@ async fn connect_to_iceberg_catalog_with_namespace(
     Ok(catalog)
 }
 
+// NOTE: The namespace argument is purposefully left blank here. We've the
+// decision that TableDefinition should declare what namespace a table is in,
+// and queries to that table should contain the namespace.
 async fn create_trino_client(
     config: &HarnessConfig,
     catalog_name: &str,
-    namespace: &str,
 ) -> Result<trino_rust_client::Client> {
     ClientBuilder::new(&config.trino_user, &config.trino_host)
         .port(config.trino_port)
         .catalog(catalog_name)
-        .schema(namespace)
         .build()
         .map_err(|e| Error::Catalog(format!("failed to create trino client: {e:?}")))
 }
@@ -505,7 +548,7 @@ mod tests {
     }
 
     fn person_table_def() -> anyhow::Result<TableDefinition> {
-        let def = TableDefinition::builder("people")
+        let def = TableDefinition::builder("default", "people")
             .with_fields([
                 FieldDefinition::required("name", PrimitiveType::String),
                 FieldDefinition::required("age", PrimitiveType::Int),
