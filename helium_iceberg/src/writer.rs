@@ -36,7 +36,9 @@ where
 
     pub async fn publish(self) -> Result<()> {
         match self {
-            Self::Writer(_) => Err(crate::Error::Writer("publish called before writing".to_string())),
+            Self::Writer(_) => Err(crate::Error::Writer(
+                "publish called before writing".to_string(),
+            )),
             Self::Publisher(publisher) => publisher.publish().await,
             Self::Complete => Ok(()),
         }
