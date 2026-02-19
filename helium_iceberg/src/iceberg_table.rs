@@ -1,5 +1,5 @@
 use crate::catalog::Catalog;
-use crate::writer::{BranchPublisher, BranchWriter, DataWriter, WriteSession};
+use crate::writer::{BranchPublisher, BranchTransaction, BranchWriter, DataWriter};
 use crate::{Error, Result};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
@@ -79,7 +79,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         self.write_and_commit(batch).await
     }
 
-    async fn begin(&self, wap_id: &str) -> Result<WriteSession<T>> {
+    async fn begin(&self, wap_id: &str) -> Result<BranchTransaction<T>> {
         reload_table(&self.catalog, &self.table).await?;
 
         let table = self.table.read().await;
@@ -94,7 +94,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                Ok(WriteSession::Writer(Box::new(IcebergBranchWriter {
+                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
                     branch_name: wap_id.to_string(),
@@ -110,7 +110,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                Ok(WriteSession::Writer(Box::new(IcebergBranchWriter {
+                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
                     branch_name: wap_id.to_string(),
@@ -119,15 +119,17 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
             }
             WapState::WrittenNotPublished => {
                 tracing::debug!(wap_id, "written but not published");
-                Ok(WriteSession::Publisher(Box::new(IcebergBranchPublisher {
-                    catalog: self.catalog.clone(),
-                    table: Arc::clone(&self.table),
-                    branch_name: wap_id.to_string(),
-                })))
+                Ok(BranchTransaction::Publisher(Box::new(
+                    IcebergBranchPublisher {
+                        catalog: self.catalog.clone(),
+                        table: Arc::clone(&self.table),
+                        branch_name: wap_id.to_string(),
+                    },
+                )))
             }
             WapState::AlreadyPublished => {
                 tracing::debug!(wap_id, "already published, nothing to do");
-                Ok(WriteSession::Complete)
+                Ok(BranchTransaction::Complete)
             }
         }
     }

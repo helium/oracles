@@ -10,16 +10,16 @@ where
     T: Serialize + Send + 'static,
 {
     async fn write(&self, records: Vec<T>) -> Result;
-    async fn begin(&self, wap_id: &str) -> Result<WriteSession<T>>;
+    async fn begin(&self, wap_id: &str) -> Result<BranchTransaction<T>>;
 }
 
-pub enum WriteSession<T: Serialize + Send + 'static> {
+pub enum BranchTransaction<T: Serialize + Send + 'static> {
     Writer(Box<dyn BranchWriter<T>>),
     Publisher(Box<dyn BranchPublisher>),
     Complete,
 }
 
-impl<T> WriteSession<T>
+impl<T> BranchTransaction<T>
 where
     T: Serialize + Send + 'static,
 {
