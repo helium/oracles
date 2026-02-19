@@ -37,7 +37,7 @@ pub async fn write<T: Serialize + Send>(
     Ok(())
 }
 
-pub const NAMESPACE: &str = "poc";
+pub const NAMESPACE: &str = "data_transfer";
 
 pub mod burned_session {
     use chrono::{DateTime, FixedOffset};
