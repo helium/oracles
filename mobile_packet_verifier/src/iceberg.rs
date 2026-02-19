@@ -83,7 +83,7 @@ pub mod burned_session {
                 "burn_timestamp",
                 "burn_timestamp_day",
             ))
-            .with_wap_enabled(true)
+            .wap_enabled()
             .build()
     }
 
@@ -167,7 +167,7 @@ pub mod session {
                 "report_received_timestamp",
                 "report_received_timestamp_day",
             ))
-            .with_wap_enabled(true)
+            .wap_enabled()
             .build()
     }
 
