@@ -16,13 +16,10 @@ pub async fn get_writers(
 
     catalog.create_namespace_if_not_exists(NAMESPACE).await?;
 
-    let creator = TableCreator::new(catalog.clone());
-
-    let session_writer = creator
+    let session_writer = catalog
         .create_table_if_not_exists(session::table_definition()?)
         .await?;
-
-    let burned_session_writer = creator
+    let burned_session_writer = catalog
         .create_table_if_not_exists(burned_session::table_definition()?)
         .await?;
 
