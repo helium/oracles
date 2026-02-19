@@ -83,7 +83,8 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         reload_table(&self.catalog, &self.table).await?;
 
         let table = self.table.read().await;
-        let wap_id_found = has_wap_id(&table, wap_id);
+
+        let wap_id_found = has_wap_id(&table, wap_id)?;
         let branch_exists = table.metadata().snapshot_for_ref(wap_id).is_some();
         drop(table);
 
@@ -297,14 +298,28 @@ fn detect_wap_state(wap_id_found: bool, branch_exists: bool) -> WapState {
     }
 }
 
-fn has_wap_id(table: &Table, wap_id: &str) -> bool {
-    table.metadata().snapshots().any(|snapshot| {
+fn has_wap_id(table: &Table, wap_id: &str) -> Result<bool> {
+    let meta = table.metadata();
+
+    let wap_enabled = meta
+        .properties()
+        .get(crate::branch::WAP_ENABLED_PROPERTY)
+        .map(|x| x.as_str());
+
+    if wap_enabled != Some("true") {
+        return Err(Error::Branch(format!(
+            "WAP not enabled for table {}. Add TableDefinition.wap_enabled()",
+            table.identifier()
+        )))?;
+    }
+
+    Ok(meta.snapshots().any(|snapshot| {
         snapshot
             .summary()
             .additional_properties
             .get(crate::branch::WAP_ID_KEY)
             .is_some_and(|v| v == wap_id)
-    })
+    }))
 }
 
 #[cfg(test)]

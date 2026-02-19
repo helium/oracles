@@ -10,6 +10,7 @@ use iceberg::{TableIdent, TableRequirement, TableUpdate};
 use iceberg_catalog_rest::CommitTableRequest;
 use uuid::Uuid;
 
+pub(crate) const WAP_ENABLED_PROPERTY: &str = "write.wap.enabled";
 pub(crate) const WAP_ID_KEY: &str = "wap.id";
 
 /// Create a branch from the current main snapshot.
