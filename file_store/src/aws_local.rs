@@ -197,7 +197,8 @@ impl AwsLocalBuilder {
     }
 
     // Since rustfs doesn't accept arbitrary credentials, use this method to set the required ones.
-    // However, it forces you to run tests in a single thread (cargo test -- --test-threads=1).
+    // However, it forces you to run tests in a single thread (cargo test -- --test-threads=1) or
+    // use nextest
     pub fn cred(mut self, cred: String) -> Self {
         self.cred = Some(cred);
         self
