@@ -7,37 +7,52 @@ pub type BoxedDataWriter<T> = std::sync::Arc<dyn DataWriter<T>>;
 #[async_trait]
 pub trait DataWriter<T>: Send + Sync
 where
-    T: Serialize + Send,
+    T: Serialize + Send + 'static,
 {
     async fn write(&self, records: Vec<T>) -> Result;
+    async fn begin(&self, wap_id: &str) -> Result<WriteSession<T>>;
 }
 
-/// Outcome of a [`StagedWriter::stage`] call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WriteOutcome {
-    /// Records were staged successfully.
-    Written,
-    /// The WAP was already completed in a prior attempt — nothing to do.
-    AlreadyComplete,
+pub enum WriteSession<T: Serialize + Send + 'static> {
+    Writer(Box<dyn BranchWriter<T>>),
+    Publisher(Box<dyn BranchPublisher>),
+    Complete,
 }
 
-/// Trait for idempotent write-audit-publish (WAP) workflows.
-///
-/// Implementors handle the full WAP lifecycle: creating a branch, writing
-/// records, detecting prior completion, and publishing the branch.
-#[async_trait]
-pub trait StagedWriter<T>: Send + Sync
+impl<T> WriteSession<T>
 where
-    T: Serialize + Send,
+    T: Serialize + Send + 'static,
 {
-    /// Idempotently stage records for a WAP session.
-    ///
-    /// Creates a branch, writes records, and returns [`WriteOutcome::Written`].
-    /// Returns [`WriteOutcome::AlreadyComplete`] if `wap_id` was previously published.
-    async fn stage(&self, wap_id: &str, records: Vec<T>) -> Result<WriteOutcome>;
+    pub async fn with_writer<F, Fut>(self, f: F) -> Result<Self>
+    where
+        F: FnOnce(Box<dyn BranchWriter<T>>) -> Fut,
+        Fut: std::future::Future<Output = Result<Box<dyn BranchPublisher>>>,
+    {
+        match self {
+            Self::Writer(writer) => f(writer).await.map(Self::Publisher),
+            other => Ok(other),
+        }
+    }
 
-    /// Publish a staged WAP branch by fast-forwarding main.
-    async fn publish(&self, wap_id: &str) -> Result;
+    pub async fn publish(self) -> Result<()> {
+        match self {
+            Self::Writer(_) => Err(crate::Error::Writer(
+                "publish called before writing".to_string(),
+            )),
+            Self::Publisher(publisher) => publisher.publish().await,
+            Self::Complete => Ok(()),
+        }
+    }
+}
+
+#[async_trait]
+pub trait BranchWriter<T: Serialize + Send + 'static>: Send {
+    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>>;
+}
+
+#[async_trait]
+pub trait BranchPublisher: Send {
+    async fn publish(self: Box<Self>) -> Result;
 }
 
 pub trait IntoBoxedDataWriter<T> {
@@ -47,7 +62,7 @@ pub trait IntoBoxedDataWriter<T> {
 impl<Msg, T> IntoBoxedDataWriter<Msg> for T
 where
     T: DataWriter<Msg> + 'static,
-    Msg: Serialize + Send,
+    Msg: Serialize + Send + 'static,
 {
     fn boxed(self) -> BoxedDataWriter<Msg> {
         std::sync::Arc::new(self)

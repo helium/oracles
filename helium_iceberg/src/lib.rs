@@ -21,7 +21,9 @@ pub use table_creator::{
     FieldDefinition, PartitionDefinition, SortFieldDefinition, TableCreator, TableDefinition,
     TableDefinitionBuilder,
 };
-pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter, StagedWriter, WriteOutcome};
+pub use writer::{
+    BoxedDataWriter, BranchPublisher, BranchWriter, DataWriter, IntoBoxedDataWriter, WriteSession,
+};
 
 // Re-export iceberg types for ergonomic API usage
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
