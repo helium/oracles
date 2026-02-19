@@ -504,7 +504,7 @@ impl TableCreator {
 
         Ok(IcebergTable {
             catalog: self.catalog.clone(),
-            table: tokio::sync::RwLock::new(table),
+            table: std::sync::Arc::new(tokio::sync::RwLock::new(table)),
             _phantom: PhantomData,
         })
     }
