@@ -87,8 +87,7 @@ impl<'a> SeniorityUpdate<'a> {
     ) -> anyhow::Result<Self> {
         use proto::SeniorityUpdateReason::*;
 
-        const SENIORITY_UPDATE_SKIP_REASONS: [i32; 2] =
-            [HeartbeatNotSeen as i32, ServiceProviderBan as i32];
+        const SENIORITY_UPDATE_SKIP_REASONS: [i32; 1] = [HeartbeatNotSeen as i32];
 
         if let Some(prev_seniority) = latest_seniority {
             if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
@@ -403,25 +402,6 @@ mod tests {
         let heartbeat = ValidatedHeartbeat::generate()?;
         let seniority =
             Seniority::generate().update_reason(SeniorityUpdateReason::HeartbeatNotSeen);
-
-        let coverage_claim_time = seniority.seniority_ts - Duration::seconds(1);
-
-        let result = SeniorityUpdate::determine_update_action(
-            &heartbeat,
-            coverage_claim_time,
-            Some(seniority.clone()),
-        )?;
-
-        assert_eq!(result.action, SeniorityUpdateAction::NoAction);
-
-        Ok(())
-    }
-
-    #[test]
-    fn new_coverage_object_previous_was_service_provider_ban() -> anyhow::Result<()> {
-        let heartbeat = ValidatedHeartbeat::generate()?;
-        let seniority =
-            Seniority::generate().update_reason(SeniorityUpdateReason::ServiceProviderBan);
 
         let coverage_claim_time = seniority.seniority_ts - Duration::seconds(1);
 

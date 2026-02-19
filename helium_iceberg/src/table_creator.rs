@@ -22,24 +22,14 @@ pub struct FieldDefinition {
 
 impl FieldDefinition {
     /// Create a new field definition.
-    pub fn new(name: impl Into<String>, field_type: Type, required: bool) -> Self {
+    fn new(name: impl Into<String>, field_type: Type, column_type: ColumnType) -> Self {
         Self {
             name: name.into(),
             field_type,
-            required,
+            required: column_type.required(),
             doc: None,
-            identifier: false,
+            identifier: column_type.identifier(),
         }
-    }
-
-    /// Create a required field.
-    pub fn required(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
-        Self::new(name, field_type.into(), true)
-    }
-
-    /// Create an optional field.
-    pub fn optional(name: impl Into<String>, field_type: impl Into<Type>) -> Self {
-        Self::new(name, field_type.into(), false)
     }
 
     /// Add documentation to this field.
@@ -47,12 +37,140 @@ impl FieldDefinition {
         self.doc = Some(doc.into());
         self
     }
+}
 
-    /// Mark this field as an identifier field.
-    /// Note: Identifier fields must be required and cannot be float/double types.
-    pub fn as_identifier(mut self) -> Self {
-        self.identifier = true;
-        self
+macro_rules! impl_field_variant {
+    ( $column_type:ident;
+        $( $fn_name:ident => $field_type:ident ),+ $(,)?
+    ) => {
+        impl FieldDefinition {
+            $(
+                pub fn $fn_name(name: impl Into<String>) -> Self {
+                    Self::new(name, PrimitiveType::$field_type.into(), ColumnType::$column_type)
+                }
+            )+
+        }
+    };
+}
+
+impl_field_variant!(Required;
+    required_boolean => Boolean,
+    required_int => Int,
+    required_long => Long,
+    required_float => Float,
+    required_double => Double,
+    required_date => Date,
+    required_time => Time,
+    required_timestamp => Timestamp,
+    required_timestamptz => Timestamptz,
+    required_timestampns => TimestampNs,
+    required_timestamptzns => TimestamptzNs,
+    required_string => String,
+    required_uuid => Uuid,
+    required_binary => Binary,
+);
+
+impl_field_variant!(Optional;
+    optional_boolean => Boolean,
+    optional_int => Int,
+    optional_long => Long,
+    optional_float => Float,
+    optional_double => Double,
+    optional_date => Date,
+    optional_time => Time,
+    optional_timestamp => Timestamp,
+    optional_timestamptz => Timestamptz,
+    optional_timestampns => TimestampNs,
+    optional_timestamptzns => TimestamptzNs,
+    optional_string => String,
+    optional_uuid => Uuid,
+    optional_binary => Binary,
+);
+
+// Not all fields can be identifiers.
+// Notably: Float and Double
+impl_field_variant!(Identifier;
+    indentifier_boolean => Boolean,
+    indentifier_int => Int,
+    indentifier_long => Long,
+    indentifier_date => Date,
+    indentifier_time => Time,
+    indentifier_timestamp => Timestamp,
+    indentifier_timestamptz => Timestamptz,
+    indentifier_timestampns => TimestampNs,
+    indentifier_timestamptzns => TimestamptzNs,
+    indentifier_string => String,
+    indentifier_uuid => Uuid,
+    indentifier_binary => Binary,
+);
+
+// Extra constructors for field types that require more information
+impl FieldDefinition {
+    pub fn required_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Decimal { precision, scale }.into(),
+            ColumnType::Required,
+        )
+    }
+
+    pub fn optional_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Decimal { precision, scale }.into(),
+            ColumnType::Optional,
+        )
+    }
+
+    pub fn identifier_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Decimal { precision, scale }.into(),
+            ColumnType::Identifier,
+        )
+    }
+
+    pub fn required_fixed(name: impl Into<String>, fixed: u64) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Fixed(fixed).into(),
+            ColumnType::Required,
+        )
+    }
+
+    pub fn optional_fixed(name: impl Into<String>, fixed: u64) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Fixed(fixed).into(),
+            ColumnType::Optional,
+        )
+    }
+
+    pub fn identifier_fixed(name: impl Into<String>, fixed: u64) -> Self {
+        Self::new(
+            name,
+            PrimitiveType::Fixed(fixed).into(),
+            ColumnType::Identifier,
+        )
+    }
+}
+
+enum ColumnType {
+    Required,
+    Optional,
+    Identifier,
+}
+
+impl ColumnType {
+    fn required(&self) -> bool {
+        match self {
+            ColumnType::Required => true,
+            ColumnType::Optional => false,
+            ColumnType::Identifier => true,
+        }
+    }
+    fn identifier(&self) -> bool {
+        matches!(self, ColumnType::Identifier)
     }
 }
 
@@ -185,6 +303,7 @@ impl SortFieldDefinition {
 #[derive(Debug, Clone)]
 pub struct TableDefinition {
     name: String,
+    namespace: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
     sort_fields: Vec<SortFieldDefinition>,
@@ -194,13 +313,21 @@ pub struct TableDefinition {
 
 impl TableDefinition {
     /// Create a new table definition builder.
-    pub fn builder(name: impl Into<String>) -> TableDefinitionBuilder {
-        TableDefinitionBuilder::new(name)
+    pub fn builder(
+        namespace: impl Into<String>,
+        table_name: impl Into<String>,
+    ) -> TableDefinitionBuilder {
+        TableDefinitionBuilder::new(namespace, table_name)
     }
 
     /// Get the table name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Get the namespace.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     /// Build the Iceberg schema from field definitions.
@@ -291,6 +418,7 @@ impl TableDefinition {
 #[derive(Debug, Clone)]
 pub struct TableDefinitionBuilder {
     name: String,
+    namespace: String,
     fields: Vec<FieldDefinition>,
     partitions: Vec<PartitionDefinition>,
     sort_fields: Vec<SortFieldDefinition>,
@@ -300,9 +428,10 @@ pub struct TableDefinitionBuilder {
 
 impl TableDefinitionBuilder {
     /// Create a new builder with the given table name.
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(namespace: impl Into<String>, table_name: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            name: table_name.into(),
+            namespace: namespace.into(),
             fields: Vec::new(),
             partitions: Vec::new(),
             sort_fields: Vec::new(),
@@ -414,28 +543,9 @@ impl TableDefinitionBuilder {
             ));
         }
 
-        for field in &self.fields {
-            if field.identifier {
-                if !field.required {
-                    return Err(Error::Catalog(format!(
-                        "identifier field '{}' must be required",
-                        field.name
-                    )));
-                }
-                if matches!(
-                    field.field_type,
-                    Type::Primitive(PrimitiveType::Float) | Type::Primitive(PrimitiveType::Double)
-                ) {
-                    return Err(Error::Catalog(format!(
-                        "identifier field '{}' cannot be float or double type",
-                        field.name
-                    )));
-                }
-            }
-        }
-
         Ok(TableDefinition {
             name: self.name,
+            namespace: self.namespace,
             fields: self.fields,
             partitions: self.partitions,
             sort_fields: self.sort_fields,
@@ -474,13 +584,8 @@ impl TableCreator {
 
     /// Create a new table in the given namespace.
     /// Returns an IcebergTable ready for immediate use.
-    pub async fn create_table<T>(
-        &self,
-        namespace: impl Into<String>,
-        definition: TableDefinition,
-    ) -> Result<IcebergTable<T>> {
-        let namespace = namespace.into();
-        let namespace_ident = NamespaceIdent::new(namespace);
+    pub async fn create_table<T>(&self, definition: TableDefinition) -> Result<IcebergTable<T>> {
+        let namespace_ident = NamespaceIdent::new(definition.namespace().to_string());
 
         let schema = definition.build_schema()?;
         let partition_spec = definition.build_partition_spec(&schema)?;
@@ -513,22 +618,21 @@ impl TableCreator {
     /// Returns an IcebergTable ready for immediate use.
     pub async fn create_table_if_not_exists<T>(
         &self,
-        namespace: impl Into<String>,
         definition: TableDefinition,
     ) -> Result<IcebergTable<T>> {
-        let namespace = namespace.into();
+        let namespace = definition.namespace();
         let table_name = definition.name.clone();
 
-        if self.table_exists(&namespace, &table_name).await? {
+        if self.table_exists(namespace, &table_name).await? {
             tracing::debug!(
                 namespace,
                 table_name,
                 "table already exists, loading existing table"
             );
-            IcebergTable::from_catalog(self.catalog.clone(), &namespace, &table_name).await
+            IcebergTable::from_catalog(self.catalog.clone(), namespace, &table_name).await
         } else {
             tracing::debug!(namespace, table_name, "creating new table");
-            self.create_table(namespace, definition).await
+            self.create_table(definition).await
         }
     }
 }
@@ -539,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_field_definition_required() {
-        let field = FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long));
+        let field = FieldDefinition::required_long("id");
         assert_eq!(field.name, "id");
         assert!(field.required);
         assert!(field.doc.is_none());
@@ -547,8 +651,7 @@ mod tests {
 
     #[test]
     fn test_field_definition_optional_with_doc() {
-        let field = FieldDefinition::optional("email", Type::Primitive(PrimitiveType::String))
-            .with_doc("User email address");
+        let field = FieldDefinition::optional_string("email").with_doc("User email address");
         assert_eq!(field.name, "email");
         assert!(!field.required);
         assert_eq!(field.doc.as_deref(), Some("User email address"));
@@ -580,12 +683,12 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder() {
-        let definition = TableDefinition::builder("events")
+        let definition = TableDefinition::builder("default", "events")
             .with_fields([
-                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
-                FieldDefinition::required("event_type", Type::Primitive(PrimitiveType::String)),
-                FieldDefinition::required("timestamp", Type::Primitive(PrimitiveType::Timestamptz)),
-                FieldDefinition::optional("payload", Type::Primitive(PrimitiveType::String)),
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_string("event_type"),
+                FieldDefinition::required_timestamptz("timestamp"),
+                FieldDefinition::optional_string("payload"),
             ])
             .with_partition(PartitionDefinition::day("timestamp", "ts_day"))
             .with_property("format-version", "2")
@@ -608,7 +711,7 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder_no_fields_error() {
-        let result = TableDefinition::builder("empty_table").build();
+        let result = TableDefinition::builder("default", "empty_table").build();
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("at least one field"));
@@ -616,11 +719,10 @@ mod tests {
 
     #[test]
     fn test_build_schema() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
-                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
-                FieldDefinition::optional("name", Type::Primitive(PrimitiveType::String))
-                    .with_doc("User name"),
+                FieldDefinition::required_long("id"),
+                FieldDefinition::optional_string("name").with_doc("User name"),
             ])
             .build()
             .expect("should build");
@@ -643,11 +745,11 @@ mod tests {
 
     #[test]
     fn test_build_partition_spec() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
-                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
-                FieldDefinition::required("timestamp", Type::Primitive(PrimitiveType::Timestamptz)),
-                FieldDefinition::required("region", Type::Primitive(PrimitiveType::String)),
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_timestamptz("timestamp"),
+                FieldDefinition::required_string("region"),
             ])
             .with_partitions([
                 PartitionDefinition::day("timestamp", "ts_day"),
@@ -666,11 +768,8 @@ mod tests {
 
     #[test]
     fn test_partition_spec_missing_source_field() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_partition(PartitionDefinition::day("nonexistent", "ts_day"))
             .build()
             .expect("should build definition");
@@ -684,21 +783,19 @@ mod tests {
     }
 
     #[test]
-    fn test_field_definition_as_identifier() {
-        let field =
-            FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)).as_identifier();
+    fn test_field_definition_identifier() {
+        let field = FieldDefinition::indentifier_long("id");
         assert!(field.identifier);
+        assert!(field.required);
     }
 
     #[test]
     fn test_identifier_field_ids_in_schema() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
-                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long))
-                    .as_identifier(),
-                FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
-                FieldDefinition::required("tenant_id", Type::Primitive(PrimitiveType::Long))
-                    .as_identifier(),
+                FieldDefinition::indentifier_long("id"),
+                FieldDefinition::required_string("name"),
+                FieldDefinition::indentifier_long("tenant_id"),
             ])
             .build()
             .expect("should build");
@@ -709,54 +806,6 @@ mod tests {
         assert_eq!(identifier_ids.len(), 2);
         assert!(identifier_ids.contains(&1)); // id field
         assert!(identifier_ids.contains(&3)); // tenant_id field
-    }
-
-    #[test]
-    fn test_identifier_field_must_be_required() {
-        let result = TableDefinition::builder("test")
-            .with_field(
-                FieldDefinition::optional("id", Type::Primitive(PrimitiveType::Long))
-                    .as_identifier(),
-            )
-            .build();
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("identifier field 'id' must be required"));
-    }
-
-    #[test]
-    fn test_identifier_field_cannot_be_float() {
-        let result = TableDefinition::builder("test")
-            .with_field(
-                FieldDefinition::required("score", Type::Primitive(PrimitiveType::Float))
-                    .as_identifier(),
-            )
-            .build();
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("identifier field 'score' cannot be float or double type"));
-    }
-
-    #[test]
-    fn test_identifier_field_cannot_be_double() {
-        let result = TableDefinition::builder("test")
-            .with_field(
-                FieldDefinition::required("score", Type::Primitive(PrimitiveType::Double))
-                    .as_identifier(),
-            )
-            .build();
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("identifier field 'score' cannot be float or double type"));
     }
 
     #[test]
@@ -793,11 +842,8 @@ mod tests {
 
     #[test]
     fn test_table_definition_builder_with_sort_fields() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_sort_fields([
                 SortFieldDefinition::ascending("id"),
                 SortFieldDefinition::descending("id"),
@@ -810,14 +856,11 @@ mod tests {
 
     #[test]
     fn test_build_sort_order() {
-        let definition = TableDefinition::builder("test")
+        let definition = TableDefinition::builder("default", "test")
             .with_fields([
-                FieldDefinition::required("id", Type::Primitive(PrimitiveType::Long)),
-                FieldDefinition::required(
-                    "created_at",
-                    Type::Primitive(PrimitiveType::Timestamptz),
-                ),
-                FieldDefinition::required("name", Type::Primitive(PrimitiveType::String)),
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_timestamptz("created_at"),
+                FieldDefinition::required_string("name"),
             ])
             .with_sort_fields([
                 SortFieldDefinition::ascending("created_at"),
@@ -847,11 +890,8 @@ mod tests {
 
     #[test]
     fn test_build_sort_order_empty() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .build()
             .expect("should build");
 
@@ -865,11 +905,8 @@ mod tests {
 
     #[test]
     fn test_sort_order_missing_source_field() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_sort_field(SortFieldDefinition::ascending("nonexistent"))
             .build()
             .expect("should build definition");
@@ -884,11 +921,8 @@ mod tests {
 
     #[test]
     fn test_with_min_snapshots_to_keep() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_min_snapshots_to_keep(5)
             .build()
             .expect("should build");
@@ -903,11 +937,8 @@ mod tests {
 
     #[test]
     fn test_with_max_snapshot_age() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_max_snapshot_age(std::time::Duration::from_secs(86400))
             .build()
             .expect("should build");
@@ -922,11 +953,8 @@ mod tests {
 
     #[test]
     fn test_with_max_ref_age() {
-        let definition = TableDefinition::builder("test")
-            .with_field(FieldDefinition::required(
-                "id",
-                Type::Primitive(PrimitiveType::Long),
-            ))
+        let definition = TableDefinition::builder("default", "test")
+            .with_field(FieldDefinition::required_long("id"))
             .with_max_ref_age(std::time::Duration::from_secs(3600))
             .build()
             .expect("should build");
