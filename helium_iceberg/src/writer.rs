@@ -53,10 +53,6 @@ pub trait BranchWriter<T: Serialize + Send + 'static>: Send {
         records: Vec<T>,
         custom_properties: HashMap<String, String>,
     ) -> Result<Box<dyn BranchPublisher>>;
-
-    /// Returns the `additional_properties` from the main branch's latest snapshot summary.
-    /// Returns an empty map if no snapshot exists yet (fresh table).
-    async fn snapshot_properties(&self) -> Result<HashMap<String, String>>;
 }
 
 #[async_trait]

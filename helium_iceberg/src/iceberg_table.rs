@@ -42,6 +42,19 @@ impl<T> IcebergTable<T> {
         })
     }
 
+    /// Returns the `additional_properties` from the main branch's latest snapshot summary.
+    /// Returns an empty map if no snapshot exists yet (fresh table).
+    pub async fn snapshot_properties(&self) -> Result<HashMap<String, String>> {
+        reload_table(&self.catalog, &self.table).await?;
+        let table = self.table.read().await;
+        let properties = table
+            .metadata()
+            .snapshot_for_ref(iceberg::spec::MAIN_BRANCH)
+            .map(|snapshot| snapshot.summary().additional_properties.clone())
+            .unwrap_or_default();
+        Ok(properties)
+    }
+
     async fn write_and_commit(&self, batch: RecordBatch) -> Result {
         let data_files = write_data_files(&self.table, batch).await?;
         self.commit_files(data_files).await
@@ -141,7 +154,7 @@ struct IcebergBranchWriter<T> {
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
+impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
     async fn write(
         self: Box<Self>,
         records: Vec<T>,
@@ -169,17 +182,6 @@ impl<T: Serialize + Send + Sync + 'static> BranchWriter<T> for IcebergBranchWrit
             table: self.table,
             branch_name: self.branch_name,
         }))
-    }
-
-    async fn snapshot_properties(&self) -> Result<HashMap<String, String>> {
-        reload_table(&self.catalog, &self.table).await?;
-        let table = self.table.read().await;
-        let properties = table
-            .metadata()
-            .snapshot_for_ref(iceberg::spec::MAIN_BRANCH)
-            .map(|snapshot| snapshot.summary().additional_properties.clone())
-            .unwrap_or_default();
-        Ok(properties)
     }
 }
 
