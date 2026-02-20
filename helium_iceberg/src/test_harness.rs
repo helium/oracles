@@ -40,26 +40,23 @@ use crate::settings::{AuthConfig, S3Config, Settings};
 use crate::writer::IntoBoxedDataWriter;
 use crate::{BoxedDataWriter, Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
 
-/// Default Trino server host.
-const DEFAULT_TRINO_HOST: &str = "localhost";
-
 /// Default Trino server port.
 const DEFAULT_TRINO_PORT: u16 = 8080;
 
-/// Default Iceberg REST catalog URL (from host, for test harness).
-const DEFAULT_ICEBERG_REST_URL: &str = "http://localhost:8181/api/catalog";
+/// Default Polaris host (overridable via POLARIS_HOST env var).
+fn default_polaris_host() -> String {
+    std::env::var("POLARIS_HOST").unwrap_or_else(|_| "localhost".to_string())
+}
 
-/// Polaris Management API URL (from host).
-const DEFAULT_POLARIS_MANAGEMENT_URL: &str = "http://localhost:8181/api/management/v1";
+/// Default MinIO/S3 host (overridable via MINIO_HOST env var).
+fn default_minio_host() -> String {
+    std::env::var("MINIO_HOST").unwrap_or_else(|_| "localhost".to_string())
+}
 
-/// Polaris OAuth2 token URL (from host).
-const DEFAULT_POLARIS_TOKEN_URL: &str = "http://localhost:8181/api/catalog/v1/oauth/tokens";
-
-/// Iceberg REST URL as seen from inside Docker (Trino → Polaris).
-const DEFAULT_DOCKER_ICEBERG_REST_URL: &str = "http://polaris:8181/api/catalog";
-
-/// S3/MinIO endpoint as seen from inside Docker (Trino → MinIO).
-const DEFAULT_DOCKER_S3_ENDPOINT: &str = "http://minio:9000";
+/// Default Trino host (overridable via TRINO_HOST env var).
+fn default_trino_host() -> String {
+    std::env::var("TRINO_HOST").unwrap_or_else(|_| "localhost".to_string())
+}
 
 /// Default namespace within each catalog.
 const DEFAULT_NAMESPACE: &str = "default";
@@ -142,6 +139,7 @@ impl IcebergTestHarness {
             &config.polaris_management_url,
             &token,
             &catalog_name,
+            &config.s3_endpoint,
         )
         .await?;
 
@@ -280,18 +278,21 @@ pub struct HarnessConfig {
 
 impl Default for HarnessConfig {
     fn default() -> Self {
+        let polaris_host = default_polaris_host();
+        let minio_host = default_minio_host();
+        let trino_host = default_trino_host();
         Self {
-            trino_host: DEFAULT_TRINO_HOST.to_string(),
+            trino_host,
             trino_port: DEFAULT_TRINO_PORT,
             trino_user: "test".to_string(),
-            iceberg_rest_url: DEFAULT_ICEBERG_REST_URL.to_string(),
-            polaris_management_url: DEFAULT_POLARIS_MANAGEMENT_URL.to_string(),
-            polaris_token_url: DEFAULT_POLARIS_TOKEN_URL.to_string(),
-            docker_iceberg_rest_url: DEFAULT_DOCKER_ICEBERG_REST_URL.to_string(),
-            docker_s3_endpoint: DEFAULT_DOCKER_S3_ENDPOINT.to_string(),
+            iceberg_rest_url: format!("http://{polaris_host}:8181/api/catalog"),
+            polaris_management_url: format!("http://{polaris_host}:8181/api/management/v1"),
+            polaris_token_url: format!("http://{polaris_host}:8181/api/catalog/v1/oauth/tokens"),
+            docker_iceberg_rest_url: "http://polaris:8181/api/catalog".to_string(),
+            docker_s3_endpoint: "http://minio:9000".to_string(),
             oauth2_credential: "root:s3cr3t".to_string(),
             oauth2_scope: "PRINCIPAL_ROLE:ALL".to_string(),
-            s3_endpoint: "http://localhost:9000".to_string(),
+            s3_endpoint: format!("http://{minio_host}:9000"),
             s3_access_key: "admin".to_string(),
             s3_secret_key: "password".to_string(),
         }
@@ -345,6 +346,7 @@ async fn create_polaris_catalog(
     management_url: &str,
     token: &str,
     catalog_name: &str,
+    s3_endpoint: &str,
 ) -> Result<()> {
     let auth_header = format!("Bearer {token}");
 
@@ -355,12 +357,12 @@ async fn create_polaris_catalog(
             "type": "INTERNAL",
             "readOnly": false,
             "properties": {
-                "default-base-location": format!("s3://iceberg/{catalog_name}")
+                "default-base-location": format!("s3://iceberg-test/{catalog_name}")
             },
             "storageConfigInfo": {
                 "storageType": "S3",
-                "allowedLocations": [format!("s3://iceberg/{catalog_name}")],
-                "endpoint": "http://localhost:9000",
+                "allowedLocations": [format!("s3://iceberg-test/{catalog_name}")],
+                "endpoint": s3_endpoint,
                 "endpointInternal": "http://minio:9000",
                 "pathStyleAccess": true
             }
