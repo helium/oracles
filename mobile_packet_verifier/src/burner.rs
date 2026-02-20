@@ -12,7 +12,7 @@ mod proto {
 }
 
 use crate::{
-    iceberg::{self, burned_session::IcebergBurnedDataTransferSession, BurnedDataTransferWriter},
+    iceberg::{burned_session::IcebergBurnedDataTransferSession, BurnedDataTransferWriter},
     pending_burns, pending_txns,
 };
 
@@ -264,7 +264,10 @@ async fn write_burned_data_transfer_sessions(
             .map(IcebergBurnedDataTransferSession::from)
             .collect::<Vec<_>>();
 
-        iceberg::write(writer, sessions).await?;
+        // NOTE: Burned Sessions are not tied to a file like regular data
+        // transfer sessions. Do we want to use transaction semantics here? The
+        // associated file-store sink above is in Automatic Commit mode.
+        writer.write(sessions).await?;
     }
 
     Ok(())
