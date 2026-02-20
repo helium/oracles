@@ -1,5 +1,5 @@
 use anyhow::Context;
-use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter, TableCreator};
+use helium_iceberg::{BoxedDataWriter, BranchTransaction, IntoBoxedDataWriter};
 use serde::Serialize;
 
 use crate::iceberg::{
@@ -7,6 +7,8 @@ use crate::iceberg::{
 };
 
 pub type DataTransferWriter = BoxedDataWriter<IcebergDataTransferSession>;
+pub type DataTransferTransaction = BranchTransaction<IcebergDataTransferSession>;
+
 pub type BurnedDataTransferWriter = BoxedDataWriter<IcebergBurnedDataTransferSession>;
 
 pub async fn get_writers(
@@ -26,11 +28,26 @@ pub async fn get_writers(
     Ok((session_writer.boxed(), burned_session_writer.boxed()))
 }
 
-pub async fn write<T: Serialize + Send>(
-    data_writer: &BoxedDataWriter<T>,
-    data: Vec<T>,
+// NOTE(mj): Helpers for dealing with Optional Iceberg writes. These should go
+// away when writing to iceberg becomes standard.
+pub async fn maybe_begin<T: Serialize + Send + 'static>(
+    writer: Option<&BoxedDataWriter<T>>,
+    wap_id: &str,
+) -> anyhow::Result<Option<BranchTransaction<T>>> {
+    let Some(data_writer) = writer else {
+        return Ok(None);
+    };
+
+    let txn = data_writer.begin(wap_id).await?;
+    Ok(Some(txn))
+}
+
+pub async fn maybe_publish<T: Serialize + Send + 'static>(
+    txn: Option<BranchTransaction<T>>,
 ) -> anyhow::Result<()> {
-    data_writer.write(data).await?;
+    if let Some(txn) = txn {
+        txn.publish().await.context("publishing")?;
+    }
     Ok(())
 }
 
