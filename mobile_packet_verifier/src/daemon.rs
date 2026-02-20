@@ -117,22 +117,26 @@ where
         let ts = file.file_info.timestamp;
         let mut transaction = self.pool.begin().await?;
 
+        let mut iceberg_txn =
+            iceberg::maybe_begin(self.data_writer.as_ref(), file.file_info.as_ref()).await?;
+
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
             &mut transaction,
+            iceberg_txn.as_mut(),
             banned_radios,
             &self.mobile_config_resolver,
             &self.verified_data_session_report_sink,
             ts,
             reports,
-            self.data_writer.as_ref(),
         )
         .await?;
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
+        iceberg::maybe_publish(iceberg_txn).await?;
 
         Ok(())
     }
@@ -140,12 +144,12 @@ where
 
 pub async fn handle_data_transfer_session_file(
     txn: &mut Transaction<'_, Postgres>,
+    iceberg_txn: Option<&mut iceberg::DataTransferTransaction>,
     banned_radios: BannedRadios,
     mobile_config: &impl MobileConfigResolverExt,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-    data_writer: Option<&DataTransferWriter>,
 ) -> anyhow::Result<()> {
     let sessions = accumulate_sessions(mobile_config, banned_radios, txn, reports, curr_file_ts)
         .await
@@ -169,10 +173,8 @@ pub async fn handle_data_transfer_session_file(
             .context("writing to file-store")?;
     }
 
-    if let Some(writer) = data_writer {
-        iceberg::write(writer, iceberg_sessions)
-            .await
-            .context("writing to iceberg")?;
+    if let Some(txn) = iceberg_txn {
+        txn.write(iceberg_sessions).await?;
     }
 
     Ok(())
