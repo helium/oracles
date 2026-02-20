@@ -145,27 +145,45 @@ struct IcebergBranchWriter<T> {
 #[async_trait]
 impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
     async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
-        if !records.is_empty() {
-            reload_table(&self.catalog, &self.table).await?;
-            let table_guard = self.table.read().await;
-            let batch = records_to_batch(&table_guard, &records)?;
-            drop(table_guard);
-            let data_files = write_data_files(&self.table, batch).await?;
-            let table_guard = self.table.read().await;
-            crate::branch::commit_to_branch(
-                &self.catalog,
-                &table_guard,
-                &self.branch_name,
-                data_files,
-                &self.branch_name,
-            )
-            .await?;
+        if records.is_empty() {
+            return Ok(Box::new(EmptyIcebergBranchPublisher));
         }
+
+        reload_table(&self.catalog, &self.table).await?;
+        let table_guard = self.table.read().await;
+        let batch = records_to_batch(&table_guard, &records)?;
+        drop(table_guard);
+        let data_files = write_data_files(&self.table, batch).await?;
+        let table_guard = self.table.read().await;
+        crate::branch::commit_to_branch(
+            &self.catalog,
+            &table_guard,
+            &self.branch_name,
+            data_files,
+            &self.branch_name,
+        )
+        .await?;
+        drop(table_guard);
+
         Ok(Box::new(IcebergBranchPublisher {
             catalog: self.catalog,
             table: self.table,
             branch_name: self.branch_name,
         }))
+    }
+}
+
+/// When no records are passed to an [IcebergBranchWriter], we do not want to
+/// send off the request to create a branch for no data so it can be published.
+/// In that case, we return this struct, that allows us to complete the
+/// publish() dance without causing errors of non-existent branches in iceberg.
+struct EmptyIcebergBranchPublisher;
+
+#[async_trait]
+impl BranchPublisher for EmptyIcebergBranchPublisher {
+    async fn publish(self: Box<Self>) -> Result {
+        tracing::debug!("Publishing empty branch");
+        Ok(())
     }
 }
 
@@ -312,7 +330,7 @@ fn has_wap_id(table: &Table, wap_id: &str) -> Result<bool> {
         return Err(Error::Branch(format!(
             "WAP not enabled for table {}. Add TableDefinition.wap_enabled()",
             table.identifier()
-        )))?;
+        )));
     }
 
     Ok(meta.snapshots().any(|snapshot| {
