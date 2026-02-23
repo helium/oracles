@@ -203,6 +203,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Cache Cargo Target Directory
         # Anything above 4min run
         if: contains('["ingest", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
@@ -212,10 +213,25 @@ jobs:
           key: tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
+
+      - name: Minio init
+        run: helium_iceberg/scripts/minio-init.sh
+
+      - name: Wait for Trino
+        run: |
+          until curl -sf http://trino:8080/v1/info | grep -q '"starting":false'; do
+            echo "...waiting for Trino..."
+            sleep 2
+          done
+          echo "Trino is up"
+
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
           AWSLOCAL_ENDPOINT: "http://localstack:4566"
+          S3_QUALIFIED_HOST: minio
+          CATALOG_QUALIFIED_HOST: polaris
+          TRINO_HOST: trino
         run: cargo test -p ${{ matrix.package }} --locked
   build-mobile-images:
     if: startsWith(github.ref, 'refs/tags/')
