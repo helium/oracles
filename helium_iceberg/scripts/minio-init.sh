@@ -1,11 +1,7 @@
 #!/bin/sh
 set -e
 
-if ! command -v mc > /dev/null 2>&1; then
-  echo "mc not found, downloading..."
-  curl -f#L https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-  chmod +x /usr/local/bin/mc
-fi
+# This script assumes mc is installed in the test runner image
 
 MINIO_HOST="${MINIO_HOST:-minio}"
 MINIO_URL="http://${MINIO_HOST}:9000"
