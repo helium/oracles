@@ -25,4 +25,4 @@ jobs:
         uses: trufflesecurity/trufflehog@116e7171542d2f1dad8810f00dcfacbe0b809183 # v3.92.5
         with:
           path: ./
-          extra_args: --debug --fail-verified
+          extra_args: --debug --results verified
