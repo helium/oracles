@@ -214,7 +214,7 @@ jobs:
             tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
       - name: Run tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
           AWSLOCAL_ENDPOINT: "http://localstack:4566"
         run: cargo test -p ${{ matrix.package }} --locked
   build-mobile-images:
