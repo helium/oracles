@@ -175,12 +175,6 @@ jobs:
         env:
           MINIO_ROOT_USER: admin
           MINIO_ROOT_PASSWORD: password
-        options: >-
-          --health-cmd "wget -qO- http://localhost:9000/minio/health/live"
-          --health-interval 1s
-          --health-timeout 10s
-          --health-retries 10
-
       polaris:
         image: apache/polaris:1.3.0-incubating
         env:
