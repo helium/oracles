@@ -150,7 +150,8 @@ jobs:
     needs: [compute-base-build-tag]
     runs-on: ubuntu-latest
     container:
-      image: host.docker.internal:5001/test-builder:latest
+      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
+      # image: host.docker.internal:5001/test-builder:latest
     services:
       postgres:
         image: postgres:14.9-alpine
@@ -169,8 +170,8 @@ jobs:
         ports:
           - 4566:4566
       minio:
-        # image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-        image: host.docker.internal:5001/minio:latest
+        image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+        # image: host.docker.internal:5001/minio:latest
         env:
           MINIO_ROOT_USER: admin
           MINIO_ROOT_PASSWORD: password
@@ -194,8 +195,8 @@ jobs:
           AWS_ACCESS_KEY_ID: admin
           AWS_SECRET_ACCESS_KEY: password
       trino:
-        # image: ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
-        image: host.docker.internal:5001/trino:latest
+        image: ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
+        # image: host.docker.internal:5001/trino:latest
         env:
           AWS_ACCESS_KEY_ID: admin
           AWS_SECRET_ACCESS_KEY: password
