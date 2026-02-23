@@ -673,7 +673,7 @@ mod env_defaults {
     // ======= Helpers ====================
     fn to_u16(port: String, label: &str) -> u16 {
         port.parse::<u16>()
-            .expect(&format!("u16 parseable {label} port"))
+            .unwrap_or_else(|val| panic!("u16 parseable {label} port: {val}"))
     }
     fn env_str(var: &str, default: &str) -> String {
         std::env::var(var).unwrap_or_else(|_| default.to_string())
