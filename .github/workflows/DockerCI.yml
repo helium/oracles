@@ -206,16 +206,11 @@ jobs:
       - name: Minio init
         run: helium_iceberg/scripts/minio-init.sh
 
-      - name: Polaris setup
-        env:
-          POLARIS_HOST: polaris
-        run: helium_iceberg/scripts/polaris-setup.sh
-
       - name: Wait for Trino
         run: |
           until curl -sf http://trino:8080/v1/info | grep -q '"starting":false'; do
             echo "...waiting for Trino..."
-            sleep 5
+            sleep 2
           done
           echo "Trino is up"
 
@@ -223,8 +218,8 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
           AWSLOCAL_ENDPOINT: "http://localstack:4566"
-          POLARIS_HOST: polaris
-          MINIO_HOST: minio
+          S3_QUALIFIED_HOST: minio
+          CATALOG_QUALIFIED_HOST: polaris
           TRINO_HOST: trino
         run: cargo test -p mobile-packet-verifier --locked
 
