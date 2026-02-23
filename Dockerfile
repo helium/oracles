@@ -13,17 +13,6 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc \
     && chmod +x /usr/local/bin/mc
 
-# TEST-BUILDER
-FROM base AS test-builder
-
-WORKDIR /app
-
-COPY . .
-RUN cargo fetch --locked
-RUN AWS_LC_SYS_CMAKE_BUILDER=1 RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
-    cargo test -p mobile-packet-verifier --locked --no-run
-
-
 # BUILDER
 FROM base AS builder
 
