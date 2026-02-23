@@ -3756,6 +3756,7 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "chrono",
+ "derive_builder",
  "futures",
  "iceberg",
  "iceberg-catalog-rest",
