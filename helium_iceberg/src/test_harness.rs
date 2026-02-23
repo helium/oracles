@@ -30,6 +30,7 @@
 
 use std::collections::HashMap;
 
+use derive_builder::Builder;
 use futures::TryFutureExt;
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -39,24 +40,6 @@ use uuid::Uuid;
 use crate::settings::{AuthConfig, S3Config, Settings};
 use crate::writer::IntoBoxedDataWriter;
 use crate::{BoxedDataWriter, Catalog, Error, IcebergTable, Result, TableCreator, TableDefinition};
-
-/// Default Trino server port.
-const DEFAULT_TRINO_PORT: u16 = 8080;
-
-/// Default Polaris host (overridable via POLARIS_HOST env var).
-fn default_polaris_host() -> String {
-    std::env::var("POLARIS_HOST").unwrap_or_else(|_| "localhost".to_string())
-}
-
-/// Default MinIO/S3 host (overridable via MINIO_HOST env var).
-fn default_minio_host() -> String {
-    std::env::var("MINIO_HOST").unwrap_or_else(|_| "localhost".to_string())
-}
-
-/// Default Trino host (overridable via TRINO_HOST env var).
-fn default_trino_host() -> String {
-    std::env::var("TRINO_HOST").unwrap_or_else(|_| "localhost".to_string())
-}
 
 /// Default namespace within each catalog.
 const DEFAULT_NAMESPACE: &str = "default";
@@ -128,20 +111,13 @@ impl IcebergTestHarness {
 
         let token = fetch_polaris_token(
             &http_client,
-            &config.polaris_token_url,
-            &config.oauth2_credential,
-            &config.oauth2_scope,
+            &config.catalog_local_url(),
+            &config.catalog_oauth2_credential,
+            &config.catalog_oauth2_scope,
         )
         .await?;
 
-        create_polaris_catalog(
-            &http_client,
-            &config.polaris_management_url,
-            &token,
-            &catalog_name,
-            &config.s3_endpoint,
-        )
-        .await?;
+        create_polaris_catalog(&http_client, &config, &token, &catalog_name).await?;
 
         register_trino_catalog(&config, &catalog_name).await?;
 
@@ -249,65 +225,111 @@ impl IcebergTestHarness {
 }
 
 /// Configuration for the test harness.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned")]
 pub struct HarnessConfig {
-    pub trino_host: String,
-    pub trino_port: u16,
-    pub trino_user: String,
-    /// Iceberg REST URL from host (for test harness to connect).
-    pub iceberg_rest_url: String,
-    /// Polaris Management API URL (from host).
-    pub polaris_management_url: String,
-    /// Polaris OAuth2 token URL (from host).
-    pub polaris_token_url: String,
-    /// Iceberg REST URL as seen from Docker (for Trino config).
-    pub docker_iceberg_rest_url: String,
-    /// S3/MinIO endpoint as seen from Docker (for Trino config).
-    pub docker_s3_endpoint: String,
-    /// OAuth2 credential (client_id:client_secret) for Polaris.
-    pub oauth2_credential: String,
-    /// OAuth2 scope for Polaris.
-    pub oauth2_scope: String,
-    /// S3/MinIO endpoint URL from host.
-    pub s3_endpoint: String,
+    /// S3 host name when talking to s3 with a mounted port
+    #[builder(default = "env_defaults::s3_local()")]
+    pub s3_host_local: TestHost,
+    /// S3 host name when talking to s3 from inside another container
+    #[builder(default = "env_defaults::s3_qualified()")]
+    pub s3_host_qualified: TestHost,
     /// S3 access key for MinIO/S3 writes from the host.
+    #[builder(default = "env_defaults::s3_access_key()")]
     pub s3_access_key: String,
     /// S3 secret key for MinIO/S3 writes from the host.
+    #[builder(default = "env_defaults::s3_secret_key()")]
     pub s3_secret_key: String,
+    /// S3 region for MinIO/S3
+    #[builder(default = "env_defaults::s3_region()")]
+    pub s3_region: String,
+
+    /// Catalog host name when talking to catalog with a mounted port
+    #[builder(default = "env_defaults::catalog_local()")]
+    pub catalog_host_local: TestHost,
+    /// Catalog host name when talking to catalog from inside another conatiner
+    #[builder(default = "env_defaults::catalog_qualified()")]
+    pub catalog_host_qualified: TestHost,
+    /// OAuth2 credential (client_id:client_secret) for Polaris.
+    #[builder(default = "env_defaults::catalog_oauth2_credential()")]
+    pub catalog_oauth2_credential: String,
+    /// OAuth2 scope for Polaris.
+    #[builder(default = "env_defaults::catalog_oauth2_scope()")]
+    pub catalog_oauth2_scope: String,
+
+    /// Trino host (normally localhost)
+    #[builder(default = "env_defaults::trino_host()")]
+    pub trino_host: String,
+    /// Trino port (normally 9000)
+    #[builder(default = "env_defaults::trino_port()")]
+    pub trino_port: u16,
+    /// Trino Username
+    #[builder(default = "env_defaults::trino_user()")]
+    pub trino_user: String,
 }
 
 impl Default for HarnessConfig {
     fn default() -> Self {
-        let polaris_host = default_polaris_host();
-        let minio_host = default_minio_host();
-        let trino_host = default_trino_host();
+        use env_defaults::*;
         Self {
-            trino_host,
-            trino_port: DEFAULT_TRINO_PORT,
-            trino_user: "test".to_string(),
-            iceberg_rest_url: format!("http://{polaris_host}:8181/api/catalog"),
-            polaris_management_url: format!("http://{polaris_host}:8181/api/management/v1"),
-            polaris_token_url: format!("http://{polaris_host}:8181/api/catalog/v1/oauth/tokens"),
-            docker_iceberg_rest_url: "http://polaris:8181/api/catalog".to_string(),
-            docker_s3_endpoint: "http://minio:9000".to_string(),
-            oauth2_credential: "root:s3cr3t".to_string(),
-            oauth2_scope: "PRINCIPAL_ROLE:ALL".to_string(),
-            s3_endpoint: format!("http://{minio_host}:9000"),
-            s3_access_key: "admin".to_string(),
-            s3_secret_key: "password".to_string(),
+            s3_host_local: s3_local(),
+            s3_host_qualified: s3_qualified(),
+            s3_access_key: s3_access_key(),
+            s3_secret_key: s3_secret_key(),
+            s3_region: s3_region(),
+
+            catalog_host_local: catalog_local(),
+            catalog_host_qualified: catalog_qualified(),
+            catalog_oauth2_credential: catalog_oauth2_credential(),
+            catalog_oauth2_scope: catalog_oauth2_scope(),
+
+            trino_host: trino_host(),
+            trino_port: trino_port(),
+            trino_user: trino_user(),
         }
+    }
+}
+
+impl HarnessConfig {
+    pub fn builder() -> HarnessConfigBuilder {
+        HarnessConfigBuilder::default()
+    }
+
+    fn s3_local_url(&self) -> String {
+        self.s3_host_local.with_path("")
+    }
+
+    fn s3_qualified_url(&self) -> String {
+        self.s3_host_qualified.with_path("")
+    }
+
+    fn catalog_management_local_url(&self) -> String {
+        self.catalog_host_local.with_path("/api/management/v1")
+    }
+
+    fn catalog_local_url(&self) -> String {
+        self.catalog_host_local.with_path("/api/catalog")
+    }
+
+    fn catalog_qualified_url(&self) -> String {
+        self.catalog_host_qualified.with_path("/api/catalog")
+    }
+
+    fn trino_client_builder(&self) -> ClientBuilder {
+        ClientBuilder::new(&self.trino_user, &self.trino_host).port(self.trino_port)
     }
 }
 
 /// Fetch an OAuth2 bearer token from the Polaris token endpoint.
 async fn fetch_polaris_token(
     client: &reqwest::Client,
-    token_url: &str,
+    catalog_url: &str,
     credential: &str,
     scope: &str,
 ) -> Result<String> {
     let (client_id, client_secret) = credential.split_once(':').unwrap_or((credential, ""));
 
+    let token_url = format!("{catalog_url}/v1/oauth/tokens");
     let response = client
         .post(token_url)
         .form(&[
@@ -343,10 +365,9 @@ async fn fetch_polaris_token(
 /// 4. Assign admin role to `service_admin` principal role
 async fn create_polaris_catalog(
     client: &reqwest::Client,
-    management_url: &str,
+    config: &HarnessConfig,
     token: &str,
     catalog_name: &str,
-    s3_endpoint: &str,
 ) -> Result<()> {
     let auth_header = format!("Bearer {token}");
 
@@ -362,12 +383,14 @@ async fn create_polaris_catalog(
             "storageConfigInfo": {
                 "storageType": "S3",
                 "allowedLocations": [format!("s3://iceberg-test/{catalog_name}")],
-                "endpoint": s3_endpoint,
-                "endpointInternal": "http://minio:9000",
+                "endpoint": config.s3_local_url(),
+                "endpointInternal": config.s3_qualified_url(),
                 "pathStyleAccess": true
             }
         }
     });
+
+    let management_url = config.catalog_management_local_url();
 
     client
         .post(format!("{management_url}/catalogs"))
@@ -421,8 +444,8 @@ async fn create_polaris_catalog(
 /// Uses Docker-internal URLs since Trino runs inside Docker.
 async fn register_trino_catalog(config: &HarnessConfig, catalog_name: &str) -> Result<()> {
     // Build a temporary Trino client with no catalog/schema set
-    let trino = ClientBuilder::new(&config.trino_user, &config.trino_host)
-        .port(config.trino_port)
+    let trino = config
+        .trino_client_builder()
         .build()
         .map_err(TestHarnessError::TrinoClientBuild)?;
 
@@ -438,18 +461,19 @@ async fn register_trino_catalog(config: &HarnessConfig, catalog_name: &str) -> R
             "iceberg.file-format" = 'parquet',
             "fs.native-s3.enabled" = 'true',
             "s3.endpoint" = '{docker_s3}',
-            "s3.region" = 'us-east-1',
+            "s3.region" = '{s3_region}',
             "s3.aws-access-key" = '{s3_key}',
             "s3.aws-secret-key" = '{s3_secret}',
             "s3.path-style-access" = 'true'
         )
         "#,
-        docker_rest_url = config.docker_iceberg_rest_url,
-        credential = config.oauth2_credential,
-        scope = config.oauth2_scope,
-        docker_s3 = config.docker_s3_endpoint,
+        docker_rest_url = config.catalog_qualified_url(),
+        credential = config.catalog_oauth2_credential,
+        scope = config.catalog_oauth2_scope,
+        docker_s3 = config.s3_qualified_url(),
         s3_key = config.s3_access_key,
         s3_secret = config.s3_secret_key,
+        s3_region = config.s3_region,
     );
 
     trino
@@ -466,19 +490,19 @@ async fn connect_to_iceberg_catalog_with_namespace(
     namespace: &str,
 ) -> Result<Catalog> {
     let iceberg_settings = Settings {
-        catalog_uri: config.iceberg_rest_url.clone(),
+        catalog_uri: config.catalog_local_url(),
         catalog_name: catalog_name.to_string(),
         warehouse: Some(catalog_name.to_string()),
         auth: AuthConfig {
-            credential: Some(config.oauth2_credential.clone()),
-            scope: Some(config.oauth2_scope.clone()),
+            credential: Some(config.catalog_oauth2_credential.clone()),
+            scope: Some(config.catalog_oauth2_scope.clone()),
             ..Default::default()
         },
         s3: S3Config {
-            endpoint: Some(config.s3_endpoint.clone()),
+            endpoint: Some(config.s3_local_url()),
             access_key_id: Some(config.s3_access_key.clone()),
             secret_access_key: Some(config.s3_secret_key.clone()),
-            region: Some("us-east-1".to_string()),
+            region: Some(config.s3_region.clone()),
             path_style_access: Some(true),
         },
         properties: Default::default(),
@@ -497,8 +521,8 @@ async fn create_trino_client(
     config: &HarnessConfig,
     catalog_name: &str,
 ) -> Result<trino_rust_client::Client> {
-    ClientBuilder::new(&config.trino_user, &config.trino_host)
-        .port(config.trino_port)
+    config
+        .trino_client_builder()
         .catalog(catalog_name)
         .build()
         .map_err(|e| Error::Catalog(format!("failed to create trino client: {e:?}")))
@@ -529,6 +553,135 @@ impl TestHarnessErrorExt for reqwest::Result<reqwest::Response> {
 impl From<TestHarnessError> for Error {
     fn from(error: TestHarnessError) -> Self {
         Error::Catalog(format!("{error}"))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestHost {
+    pub host: String,
+    pub port: u16,
+}
+
+impl TestHost {
+    pub fn new(host: impl Into<String>, port: u16) -> Self {
+        Self {
+            host: host.into(),
+            port,
+        }
+    }
+
+    fn with_path(&self, path: &str) -> String {
+        format!("http://{}:{}{path}", self.host, self.port)
+    }
+}
+
+mod env_defaults {
+    use crate::test_harness::TestHost;
+
+    const S3_LOCAL_HOST_ENV: &str = "S3_LOCAL_HOST";
+    const S3_LOCAL_PORT_ENV: &str = "S3_LOCAL_PORT";
+    const S3_QUALIFIED_HOST_ENV: &str = "S3_QUALIFIED_HOST";
+    const S3_QUALIFIED_PORT_ENV: &str = "S3_QUALIFIED_PORT";
+    const S3_ACCESS_KEY_ENV: &str = "S3_ACCESS";
+    const S3_SECRET_KEY_ENV: &str = "S3_SECRET";
+    const S3_REGION_ENV: &str = "S3_REGION";
+    const S3_DEFAULT_PORT: u16 = 9000;
+
+    const CATALOG_LOCAL_HOST_ENV: &str = "CATALOG_LOCAL_HOST";
+    const CATALOG_LOCAL_PORT_ENV: &str = "CATALOG_LOCAL_PORT";
+    const CATALOG_QUALIFIED_HOST_ENV: &str = "CATALOG_QUALIFIED_HOST";
+    const CATALOG_QUALIFIED_PORT_ENV: &str = "CATALOG_QUALIFIED_PORT";
+    const CATALOG_OAUTH2_CREDENTIAL_ENV: &str = "CATALOG_OAUTH2_CREDENTIAL";
+    const CATALOG_OAUTH2_SCOPE_ENV: &str = "CATALOG_OAUTH2_SCOPE";
+    const CATALOG_DEFAULT_PORT: u16 = 8181;
+
+    const TRINO_HOST_ENV: &str = "TRINO_HOST";
+    const TRINO_PORT_ENV: &str = "TRINO_PORT";
+    const TRINO_USER_ENV: &str = "TRINO_USER";
+    const TRINO_DEFAULT_PORT: u16 = 8080;
+
+    // ======= S3 ====================
+    pub fn s3_local_host() -> String {
+        env_str(S3_LOCAL_HOST_ENV, "localhost")
+    }
+    pub fn s3_local_port() -> u16 {
+        env_port(S3_LOCAL_PORT_ENV, S3_DEFAULT_PORT)
+    }
+    pub fn s3_local() -> TestHost {
+        TestHost::new(s3_local_host(), s3_local_port())
+    }
+
+    pub fn s3_qualified_host() -> String {
+        env_str(S3_QUALIFIED_HOST_ENV, "minio")
+    }
+    pub fn s3_qualified_port() -> u16 {
+        env_port(S3_QUALIFIED_PORT_ENV, S3_DEFAULT_PORT)
+    }
+    pub fn s3_qualified() -> TestHost {
+        TestHost::new(s3_qualified_host(), s3_qualified_port())
+    }
+
+    pub fn s3_access_key() -> String {
+        env_str(S3_ACCESS_KEY_ENV, "admin")
+    }
+    pub fn s3_secret_key() -> String {
+        env_str(S3_SECRET_KEY_ENV, "password")
+    }
+    pub fn s3_region() -> String {
+        env_str(S3_REGION_ENV, "us-east-1")
+    }
+
+    // ======= Catalog ====================
+    pub fn catalog_local_host() -> String {
+        env_str(CATALOG_LOCAL_HOST_ENV, "localhost")
+    }
+    pub fn catalog_local_port() -> u16 {
+        env_port(CATALOG_LOCAL_PORT_ENV, CATALOG_DEFAULT_PORT)
+    }
+    pub fn catalog_local() -> TestHost {
+        TestHost::new(catalog_local_host(), catalog_local_port())
+    }
+
+    pub fn catalog_qualified_host() -> String {
+        env_str(CATALOG_QUALIFIED_HOST_ENV, "polaris")
+    }
+    pub fn catalog_qualified_port() -> u16 {
+        env_port(CATALOG_QUALIFIED_PORT_ENV, CATALOG_DEFAULT_PORT)
+    }
+    pub fn catalog_qualified() -> TestHost {
+        TestHost::new(catalog_qualified_host(), catalog_qualified_port())
+    }
+
+    pub fn catalog_oauth2_credential() -> String {
+        env_str(CATALOG_OAUTH2_CREDENTIAL_ENV, "root:s3cr3t")
+    }
+    pub fn catalog_oauth2_scope() -> String {
+        env_str(CATALOG_OAUTH2_SCOPE_ENV, "PRINCIPAL_ROLE:ALL")
+    }
+
+    // ======= Trino ====================
+    pub fn trino_host() -> String {
+        env_str(TRINO_HOST_ENV, "localhost")
+    }
+    pub fn trino_port() -> u16 {
+        env_port(TRINO_PORT_ENV, TRINO_DEFAULT_PORT)
+    }
+    pub fn trino_user() -> String {
+        env_str(TRINO_USER_ENV, "test")
+    }
+
+    // ======= Helpers ====================
+    fn to_u16(port: String, label: &str) -> u16 {
+        port.parse::<u16>()
+            .expect(&format!("u16 parseable {label} port"))
+    }
+    fn env_str(var: &str, default: &str) -> String {
+        std::env::var(var).unwrap_or_else(|_| default.to_string())
+    }
+    fn env_port(var: &str, default: u16) -> u16 {
+        std::env::var(var)
+            .map(|port| to_u16(port, var))
+            .unwrap_or(default)
     }
 }
 
