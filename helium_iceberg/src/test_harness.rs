@@ -716,7 +716,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "need polaris/trino/minio running in env"]
     async fn make_test_harness_catalog_per_test() -> anyhow::Result<()> {
         let harness_1 = IcebergTestHarness::new().await?;
         let harness_2 = IcebergTestHarness::new().await?;
@@ -727,26 +726,24 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "need polaris/trino/minio running in env"]
     async fn test_query_table() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
         let _res = harness
             .trino()
-            .execute("SELECT * FROM people".to_string())
+            .execute("SELECT * FROM default.people".to_string())
             .await?;
 
         Ok(())
     }
 
     #[tokio::test]
-    #[ignore = "need polaris/trino/minio running in env"]
     async fn test_missing_table_query_fails() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
         let res = harness
             .trino()
-            .execute("SELECT * FROM bad_table".to_string())
+            .execute("SELECT * FROM default.bad_table".to_string())
             .await;
 
         assert!(res.is_err());
@@ -755,13 +752,12 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "need polaris/trino/minio running in env"]
     async fn test_missing_field_query_fails() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
         let res = harness
             .trino()
-            .execute("SELECT no_field FROM people".to_string())
+            .execute("SELECT no_field FROM default.people".to_string())
             .await;
 
         assert!(res.is_err());
@@ -770,7 +766,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "need polaris/trino/minio running in env"]
     async fn test_write_and_query() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
@@ -792,7 +787,7 @@ mod tests {
 
         let queried_people = harness
             .trino()
-            .get_all::<Person>("SELECT * FROM people".to_string())
+            .get_all::<Person>("SELECT * FROM default.people".to_string())
             .await?
             .into_vec();
         assert_eq!(queried_people, people);
