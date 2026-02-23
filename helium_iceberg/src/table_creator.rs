@@ -174,6 +174,27 @@ impl ColumnType {
     }
 }
 
+/// Iceberg table property key for the Parquet compression codec.
+pub const PARQUET_COMPRESSION_CODEC: &str = "write.parquet.compression-codec";
+
+/// Supported Parquet compression codecs for Iceberg tables.
+///
+/// Maps to the Iceberg table property [`PARQUET_COMPRESSION_CODEC`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParquetCompression {
+    Uncompressed,
+    Zstd,
+}
+
+impl ParquetCompression {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Uncompressed => "uncompressed",
+            Self::Zstd => "zstd",
+        }
+    }
+}
+
 /// Defines a partition field for a table.
 #[derive(Debug, Clone)]
 pub struct PartitionDefinition {
@@ -533,6 +554,11 @@ impl TableDefinitionBuilder {
             "history.expire.max-ref-age-ms",
             duration.as_millis().to_string(),
         )
+    }
+
+    /// Set the Parquet compression codec for this table.
+    pub fn with_parquet_compression(self, codec: ParquetCompression) -> Self {
+        self.with_property(PARQUET_COMPRESSION_CODEC, codec.as_str())
     }
 
     /// Build the TableDefinition.
