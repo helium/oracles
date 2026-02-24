@@ -1,4 +1,4 @@
-use crate::{BucketClient, GzippedFramedFile};
+use crate::{without_caching, BucketClient, GzippedFramedFile};
 use chrono::{DateTime, Utc};
 use std::env;
 use uuid::Uuid;
@@ -166,6 +166,8 @@ pub struct AwsLocalBuilder {
     region: Option<String>,
     endpoint: Option<String>,
     bucket: Option<String>,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
 }
 
 impl AwsLocalBuilder {
@@ -184,6 +186,23 @@ impl AwsLocalBuilder {
         self
     }
 
+    pub fn credentials_same(mut self, cred: impl Into<String>) -> Self {
+        let cred = cred.into();
+        self.access_key_id = Some(cred.clone());
+        self.secret_access_key = Some(cred.clone());
+        self
+    }
+
+    pub fn access_key_id(mut self, key_id: impl Into<String>) -> Self {
+        self.access_key_id = Some(key_id.into());
+        self
+    }
+
+    pub fn secret_access_key(mut self, secret: impl Into<String>) -> Self {
+        self.secret_access_key = Some(secret.into());
+        self
+    }
+
     fn next_fake_credential(&self) -> String {
         // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
         // cache collisions. This prevents "dispatch task is gone" errors in tests
@@ -196,15 +215,16 @@ impl AwsLocalBuilder {
 
     pub async fn build(self) -> AwsLocal {
         let fake_cred = self.next_fake_credential();
+
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
-        let client = BucketClient::new(
+        let client = without_caching(BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
             self.region.or(Some("us-east-1".to_string())),
             Some(endpoint.clone()),
-            Some(fake_cred.clone()),
-            Some(fake_cred),
-        )
+            self.access_key_id.or(Some(fake_cred.clone())),
+            self.secret_access_key.or(Some(fake_cred)),
+        ))
         .await;
 
         AwsLocal {

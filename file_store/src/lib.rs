@@ -36,7 +36,7 @@ use futures::{
     stream::{self, BoxStream},
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
-use std::{collections::HashMap, path::Path, sync::OnceLock};
+use std::{collections::HashMap, future::Future, path::Path, sync::OnceLock};
 use tokio::sync::Mutex;
 
 pub type Client = aws_sdk_s3::Client;
@@ -45,6 +45,25 @@ pub type FileInfoStream = Stream<FileInfo>;
 pub type BytesMutStream = Stream<BytesMut>;
 
 static CLIENT_MAP: OnceLock<Mutex<HashMap<ClientKey, Client>>> = OnceLock::new();
+
+tokio::task_local! {
+    // This does not need to hold any value. The only way to put a value in this
+    // task local is with NO_CACHE.scope(val, _). If a thread triess to use the
+    // value outside of when it is set, it will err, and we can treat that as a
+    // marker to cache.
+    static NO_CACHE: ();
+}
+
+fn should_cache() -> bool {
+    NO_CACHE.try_with(|_| ()).is_err()
+}
+
+pub async fn without_caching<Fut, Ret>(f: Fut) -> Ret
+where
+    Fut: Future<Output = Ret> + Send,
+{
+    NO_CACHE.scope((), f).await
+}
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 struct ClientKey {
@@ -105,7 +124,11 @@ pub async fn new_client(
 
     tracing::debug!(params = ?key, "Creating new file-store s3 client");
     let client = Client::from_conf(s3_config.build());
-    client_map.insert(key, client.clone());
+
+    if should_cache() {
+        client_map.insert(key, client.clone());
+    }
+
     client
 }
 
