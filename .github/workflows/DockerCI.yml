@@ -276,6 +276,8 @@ jobs:
           AWS_REGION: us-west-2
           AWS_ACCESS_KEY_ID: admin
           AWS_SECRET_ACCESS_KEY: password
+        ports:
+          - 8181:8181
       trino:
         image: ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
         env:
