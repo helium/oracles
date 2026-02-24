@@ -32,8 +32,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull Cached Image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
         run: |
-          if docker pull ghcr.io/${{ github.repository }}/${{ inputs.image_name }}:${{ inputs.image_tag }}; then
+          if docker pull "$IMAGE"; then
             echo "CACHE_HIT=true" >> $GITHUB_ENV
           else
             echo "CACHE_HIT=false" >> $GITHUB_ENV
