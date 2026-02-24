@@ -238,6 +238,7 @@ async fn write_data_files(
     let schema = table_guard.metadata().current_schema().clone();
     let partition_spec = table_guard.metadata().default_partition_spec().clone();
     let file_io = table_guard.file_io().clone();
+    let writer_props = build_writer_properties(table_guard.metadata().properties());
 
     let location_generator =
         DefaultLocationGenerator::new(table_guard.metadata().clone()).map_err(Error::Iceberg)?;
@@ -252,7 +253,7 @@ async fn write_data_files(
         iceberg::spec::DataFileFormat::Parquet,
     );
 
-    let parquet_writer_builder = ParquetWriterBuilder::new(Default::default(), schema.clone());
+    let parquet_writer_builder = ParquetWriterBuilder::new(writer_props, schema.clone());
 
     let rolling_writer_builder = RollingFileWriterBuilder::new_with_default_file_size(
         parquet_writer_builder,
@@ -279,6 +280,23 @@ async fn write_data_files(
     }
 
     fanout_writer.close().await.map_err(Error::Iceberg)
+}
+
+fn build_writer_properties(
+    properties: &std::collections::HashMap<String, String>,
+) -> parquet::file::properties::WriterProperties {
+    let compression = match properties
+        .get(crate::table_creator::PARQUET_COMPRESSION_CODEC)
+        .map(|s| s.to_lowercase())
+        .as_deref()
+    {
+        Some("zstd") => parquet::basic::Compression::ZSTD(Default::default()),
+        _ => parquet::basic::Compression::UNCOMPRESSED,
+    };
+
+    parquet::file::properties::WriterProperties::builder()
+        .set_compression(compression)
+        .build()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
