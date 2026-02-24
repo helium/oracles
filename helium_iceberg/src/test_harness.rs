@@ -691,7 +691,7 @@ mod tests {
     use super::{IcebergTestHarness, TableDefinition};
     use crate::{FieldDefinition, PartitionDefinition};
 
-    use chrono::{DateTime, FixedOffset, Utc};
+    use chrono::{DateTime, Duration, DurationRound, FixedOffset, Utc};
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -700,6 +700,18 @@ mod tests {
         name: String,
         age: u32,
         inserted: DateTime<FixedOffset>,
+    }
+
+    /// Timestamps in linux are nanosecond precision, while darwin provides
+    /// microsecond precision. Roundtripping through iceberg truncates to
+    /// micrsecond. But if we try to compare trino output to in-memory input
+    /// it's easier to account for the precision mismatch when creating the
+    /// timestamp.
+    fn utc_now() -> DateTime<FixedOffset> {
+        Utc::now()
+            .duration_trunc(Duration::microseconds(1))
+            .expect("round timestamp")
+            .into()
     }
 
     fn person_table_def() -> anyhow::Result<TableDefinition> {
@@ -773,12 +785,12 @@ mod tests {
             Person {
                 name: "Alice".to_string(),
                 age: 42,
-                inserted: Utc::now().into(),
+                inserted: utc_now(),
             },
             Person {
                 name: "Bob".to_string(),
                 age: 42,
-                inserted: Utc::now().into(),
+                inserted: utc_now(),
             },
         ];
 
