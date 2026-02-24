@@ -499,7 +499,7 @@ async fn connect_to_iceberg_catalog_with_namespace(
             ..Default::default()
         },
         s3: S3Config {
-            endpoint: Some(config.s3_local_url()),
+            endpoint: Some(config.s3_qualified_url()),
             access_key_id: Some(config.s3_access_key.clone()),
             secret_access_key: Some(config.s3_secret_key.clone()),
             region: Some(config.s3_region.clone()),
