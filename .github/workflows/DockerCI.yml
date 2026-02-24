@@ -18,6 +18,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.out.outputs.tag }}
       trino_image_tag: ${{ steps.out.outputs.trino_tag }}
+      minio_image_tag: ${{ steps.out.outputs.minio_tag }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -26,6 +27,7 @@ jobs:
         run: |
           echo "tag=${{ hashFiles('Dockerfile','rust-toolchain.toml') }}" >> "$GITHUB_OUTPUT"
           echo "trino_tag=${{ hashFiles('helium_iceberg/infra/trino/**') }}" >> "$GITHUB_OUTPUT"
+          echo "minio_tag=${{ hashFiles('helium_iceberg/infra/minio/**') }}" >> "$GITHUB_OUTPUT"
   build-base:
     needs: compute-base-build-tag
     runs-on: ubuntu-latest
@@ -57,7 +59,7 @@ jobs:
           target: base
           push: true
           tags: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
-  build-trino:
+  build-service-images:
     needs: compute-base-build-tag
     runs-on: ubuntu-latest
     steps:
@@ -69,24 +71,38 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
       - name: Pull Cached Trino Image
         run: |
           if docker pull ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}; then
-            echo "CACHE_HIT=true" >> $GITHUB_ENV
+            echo "TRINO_CACHE_HIT=true" >> $GITHUB_ENV
           else
-            echo "CACHE_HIT=false" >> $GITHUB_ENV
+            echo "TRINO_CACHE_HIT=false" >> $GITHUB_ENV
           fi
-      - name: Set up Docker Buildx
-        if: env.CACHE_HIT == 'false'
-        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
       - name: Build and Push Trino Image (if not cached)
-        if: env.CACHE_HIT == 'false'
+        if: env.TRINO_CACHE_HIT == 'false'
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: helium_iceberg/infra/trino
           file: helium_iceberg/infra/trino/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
+      - name: Pull Cached Minio Image
+        run: |
+          if docker pull ghcr.io/${{ github.repository }}/minio:${{ needs.compute-base-build-tag.outputs.minio_image_tag }}; then
+            echo "MINIO_CACHE_HIT=true" >> $GITHUB_ENV
+          else
+            echo "MINIO_CACHE_HIT=false" >> $GITHUB_ENV
+          fi
+      - name: Build and Push Minio Image (if not cached)
+        if: env.MINIO_CACHE_HIT == 'false'
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: helium_iceberg/infra/minio
+          file: helium_iceberg/infra/minio/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/minio:${{ needs.compute-base-build-tag.outputs.minio_image_tag }}
 
   fmt:
     needs: [compute-base-build-tag, build-base]
@@ -146,7 +162,7 @@ jobs:
         run: echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
   my-test:
     name: michael
-    needs: [compute-base-build-tag]
+    needs: [compute-base-build-tag, build-base, build-service-images]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
@@ -169,7 +185,7 @@ jobs:
         ports:
           - 4566:4566
       minio:
-        image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+        image: ghcr.io/${{ github.repository }}/minio:${{ needs.compute-base-build-tag.outputs.minio_image_tag }}
         env:
           MINIO_ROOT_USER: admin
           MINIO_ROOT_PASSWORD: password
@@ -224,7 +240,13 @@ jobs:
         run: cargo test -p helium-iceberg --locked
 
   tests:
-    needs: [compute-base-build-tag, build-base, generate-matrix]
+    needs:
+      [
+        compute-base-build-tag,
+        build-base,
+        build-service-images,
+        generate-matrix,
+      ]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
@@ -256,7 +278,7 @@ jobs:
         ports:
           - 4566:4566
       minio:
-        image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+        image: ghcr.io/${{ github.repository }}/minio:${{ needs.compute-base-build-tag.outputs.minio_image_tag }}
         env:
           MINIO_ROOT_USER: admin
           MINIO_ROOT_PASSWORD: password
