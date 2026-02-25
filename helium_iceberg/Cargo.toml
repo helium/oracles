@@ -8,7 +8,7 @@ license.workspace = true
 
 [features]
 default = ["test-harness"]
-test-harness = ["dep:trino-rust-client", "dep:uuid"]
+test-harness = ["dep:trino-rust-client", "dep:uuid", "dep:derive_builder"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -37,6 +37,7 @@ tls-init = { path = "../tls_init" }
 
 # Test harness dependencies (optional)
 trino-rust-client = { version = "0.9", optional = true }
+derive_builder = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

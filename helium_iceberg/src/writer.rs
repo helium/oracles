@@ -10,28 +10,33 @@ where
     T: Serialize + Send + 'static,
 {
     async fn write(&self, records: Vec<T>) -> Result;
-    async fn begin(&self, wap_id: &str) -> Result<WriteSession<T>>;
+    async fn begin(&self, wap_id: &str) -> Result<BranchTransaction<T>>;
 }
 
-pub enum WriteSession<T: Serialize + Send + 'static> {
+pub enum BranchTransaction<T: Serialize + Send + 'static> {
     Writer(Box<dyn BranchWriter<T>>),
     Publisher(Box<dyn BranchPublisher>),
     Complete,
 }
 
-impl<T> WriteSession<T>
+impl<T> BranchTransaction<T>
 where
     T: Serialize + Send + 'static,
 {
-    pub async fn with_writer<F, Fut>(self, f: F) -> Result<Self>
-    where
-        F: FnOnce(Box<dyn BranchWriter<T>>) -> Fut,
-        Fut: std::future::Future<Output = Result<Box<dyn BranchPublisher>>>,
-    {
-        match self {
-            Self::Writer(writer) => f(writer).await.map(Self::Publisher),
-            other => Ok(other),
+    pub async fn write(&mut self, records: Vec<T>) -> Result<()> {
+        let prev = std::mem::replace(self, Self::Complete);
+        match prev {
+            Self::Writer(branch_writer) => {
+                let publisher = branch_writer.write(records).await?;
+                *self = Self::Publisher(publisher);
+            }
+            other => {
+                tracing::info!("called write on not writer state");
+                *self = other
+            }
         }
+
+        Ok(())
     }
 
     pub async fn publish(self) -> Result<()> {

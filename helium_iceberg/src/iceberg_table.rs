@@ -1,5 +1,5 @@
 use crate::catalog::Catalog;
-use crate::writer::{BranchPublisher, BranchWriter, DataWriter, WriteSession};
+use crate::writer::{BranchPublisher, BranchTransaction, BranchWriter, DataWriter};
 use crate::{Error, Result};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
@@ -79,11 +79,12 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         self.write_and_commit(batch).await
     }
 
-    async fn begin(&self, wap_id: &str) -> Result<WriteSession<T>> {
+    async fn begin(&self, wap_id: &str) -> Result<BranchTransaction<T>> {
         reload_table(&self.catalog, &self.table).await?;
 
         let table = self.table.read().await;
-        let wap_id_found = has_wap_id(&table, wap_id);
+
+        let wap_id_found = has_wap_id(&table, wap_id)?;
         let branch_exists = table.metadata().snapshot_for_ref(wap_id).is_some();
         drop(table);
 
@@ -93,7 +94,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                Ok(WriteSession::Writer(Box::new(IcebergBranchWriter {
+                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
                     branch_name: wap_id.to_string(),
@@ -109,7 +110,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                Ok(WriteSession::Writer(Box::new(IcebergBranchWriter {
+                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
                     branch_name: wap_id.to_string(),
@@ -118,15 +119,17 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
             }
             WapState::WrittenNotPublished => {
                 tracing::debug!(wap_id, "written but not published");
-                Ok(WriteSession::Publisher(Box::new(IcebergBranchPublisher {
-                    catalog: self.catalog.clone(),
-                    table: Arc::clone(&self.table),
-                    branch_name: wap_id.to_string(),
-                })))
+                Ok(BranchTransaction::Publisher(Box::new(
+                    IcebergBranchPublisher {
+                        catalog: self.catalog.clone(),
+                        table: Arc::clone(&self.table),
+                        branch_name: wap_id.to_string(),
+                    },
+                )))
             }
             WapState::AlreadyPublished => {
                 tracing::debug!(wap_id, "already published, nothing to do");
-                Ok(WriteSession::Complete)
+                Ok(BranchTransaction::Complete)
             }
         }
     }
@@ -142,27 +145,45 @@ struct IcebergBranchWriter<T> {
 #[async_trait]
 impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
     async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
-        if !records.is_empty() {
-            reload_table(&self.catalog, &self.table).await?;
-            let table_guard = self.table.read().await;
-            let batch = records_to_batch(&table_guard, &records)?;
-            drop(table_guard);
-            let data_files = write_data_files(&self.table, batch).await?;
-            let table_guard = self.table.read().await;
-            crate::branch::commit_to_branch(
-                &self.catalog,
-                &table_guard,
-                &self.branch_name,
-                data_files,
-                &self.branch_name,
-            )
-            .await?;
+        if records.is_empty() {
+            return Ok(Box::new(EmptyIcebergBranchPublisher));
         }
+
+        reload_table(&self.catalog, &self.table).await?;
+        let table_guard = self.table.read().await;
+        let batch = records_to_batch(&table_guard, &records)?;
+        drop(table_guard);
+        let data_files = write_data_files(&self.table, batch).await?;
+        let table_guard = self.table.read().await;
+        crate::branch::commit_to_branch(
+            &self.catalog,
+            &table_guard,
+            &self.branch_name,
+            data_files,
+            &self.branch_name,
+        )
+        .await?;
+        drop(table_guard);
+
         Ok(Box::new(IcebergBranchPublisher {
             catalog: self.catalog,
             table: self.table,
             branch_name: self.branch_name,
         }))
+    }
+}
+
+/// When no records are passed to an [IcebergBranchWriter], we do not want to
+/// send off the request to create a branch for no data so it can be published.
+/// In that case, we return this struct, that allows us to complete the
+/// publish() dance without causing errors of non-existent branches in iceberg.
+struct EmptyIcebergBranchPublisher;
+
+#[async_trait]
+impl BranchPublisher for EmptyIcebergBranchPublisher {
+    async fn publish(self: Box<Self>) -> Result {
+        tracing::debug!("Publishing empty branch");
+        Ok(())
     }
 }
 
@@ -297,14 +318,28 @@ fn detect_wap_state(wap_id_found: bool, branch_exists: bool) -> WapState {
     }
 }
 
-fn has_wap_id(table: &Table, wap_id: &str) -> bool {
-    table.metadata().snapshots().any(|snapshot| {
+fn has_wap_id(table: &Table, wap_id: &str) -> Result<bool> {
+    let meta = table.metadata();
+
+    let wap_enabled = meta
+        .properties()
+        .get(crate::branch::WAP_ENABLED_PROPERTY)
+        .map(|x| x.as_str());
+
+    if wap_enabled != Some("true") {
+        return Err(Error::Branch(format!(
+            "WAP not enabled for table {}. Add TableDefinition.wap_enabled()",
+            table.identifier()
+        )));
+    }
+
+    Ok(meta.snapshots().any(|snapshot| {
         snapshot
             .summary()
             .additional_properties
             .get(crate::branch::WAP_ID_KEY)
             .is_some_and(|v| v == wap_id)
-    })
+    }))
 }
 
 #[cfg(test)]

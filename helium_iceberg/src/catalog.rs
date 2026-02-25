@@ -1,4 +1,4 @@
-use crate::{Error, Result, Settings};
+use crate::{Error, IcebergTable, Result, Settings, TableCreator, TableDefinition};
 use iceberg::table::Table;
 use iceberg::{Catalog as IcebergCatalog, CatalogBuilder, NamespaceIdent, TableIdent};
 use iceberg_catalog_rest::{
@@ -376,6 +376,16 @@ impl Catalog {
                 .map_err(Error::Iceberg)?;
         }
         Ok(())
+    }
+
+    /// Create a table if it does not already exist.
+    pub async fn create_table_if_not_exists<T>(
+        &self,
+        table_def: TableDefinition,
+    ) -> Result<IcebergTable<T>> {
+        TableCreator::new(self.clone())
+            .create_table_if_not_exists(table_def)
+            .await
     }
 
     /// Send a commit table request directly to the REST catalog API.

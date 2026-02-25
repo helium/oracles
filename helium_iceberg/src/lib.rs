@@ -22,7 +22,8 @@ pub use table_creator::{
     TableDefinition, TableDefinitionBuilder, PARQUET_COMPRESSION_CODEC,
 };
 pub use writer::{
-    BoxedDataWriter, BranchPublisher, BranchWriter, DataWriter, IntoBoxedDataWriter, WriteSession,
+    BoxedDataWriter, BranchPublisher, BranchTransaction, BranchWriter, DataWriter,
+    IntoBoxedDataWriter,
 };
 
 // Re-export iceberg types for ergonomic API usage
