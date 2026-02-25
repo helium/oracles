@@ -193,7 +193,7 @@ jobs:
             tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
 
       - name: Minio init
-        run: helium_iceberg/scripts/minio-init.sh
+        run: helium_iceberg/infra/minio/init.sh
 
       - name: Wait for Trino
         run: |
