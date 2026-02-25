@@ -18,8 +18,8 @@ pub use error::{Error, Result};
 pub use iceberg_table::IcebergTable;
 pub use settings::{AuthConfig, S3Config, Settings};
 pub use table_creator::{
-    FieldDefinition, PartitionDefinition, SortFieldDefinition, TableCreator, TableDefinition,
-    TableDefinitionBuilder,
+    FieldDefinition, ParquetCompression, PartitionDefinition, SortFieldDefinition, TableCreator,
+    TableDefinition, TableDefinitionBuilder, PARQUET_COMPRESSION_CODEC,
 };
 pub use writer::{
     BoxedDataWriter, BranchPublisher, BranchWriter, DataWriter, IntoBoxedDataWriter, WriteSession,
