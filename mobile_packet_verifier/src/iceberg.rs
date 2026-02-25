@@ -137,6 +137,7 @@ pub mod session {
     use chrono::{DateTime, FixedOffset};
     use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
     use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
+    use helium_proto::services::poc_mobile::CarrierIdV2;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -204,17 +205,11 @@ pub mod session {
             let request_pub_key = value.report.pub_key.to_string();
             let data_transfer_event_pub_key = value.report.data_transfer_usage.pub_key.to_string();
 
-            debug_assert_eq!(
-                request_pub_key, data_transfer_event_pub_key,
-                "pub_keys should match for event"
-            );
-
             Self {
                 report_received_timestamp: value.received_timestamp.into(),
                 request_pub_key,
                 rewardable_bytes: value.report.rewardable_bytes,
-                // TODO(mj): cast to simpler string
-                carrier_id: value.report.carrier_id.as_str_name().to_string(),
+                carrier_id: carrier_id_string(value.report.carrier_id),
                 sampling: value.report.sampling,
                 data_transfer_event_pub_key,
                 upload_bytes: value.report.data_transfer_usage.upload_bytes,
@@ -230,5 +225,28 @@ pub mod session {
                 timestamp: value.report.data_transfer_usage.timestamp.into(),
             }
         }
+    }
+
+    // NOTE: trino doesn't support enums (yet), so we do our own mapping here.
+    // These strings are used to ease querying as the default str mapping for
+    // CarrierIdV2 is 'carrier_id_v2_carrier_x'. We don't have any cases where
+    // we want to map a trino result back into a proto type, so the code for
+    // going from these strings back into the enum hasn't been written yet. It
+    // might be a good candidate of functionality to upstream into helium-proto.
+    fn carrier_id_string(carrier_id: CarrierIdV2) -> String {
+        match carrier_id {
+            CarrierIdV2::Unspecified => "carrier_unspecified",
+            CarrierIdV2::Carrier0 => "carrier_0",
+            CarrierIdV2::Carrier1 => "carrier_1",
+            CarrierIdV2::Carrier2 => "carrier_2",
+            CarrierIdV2::Carrier3 => "carrier_3",
+            CarrierIdV2::Carrier4 => "carrier_4",
+            CarrierIdV2::Carrier5 => "carrier_5",
+            CarrierIdV2::Carrier6 => "carrier_6",
+            CarrierIdV2::Carrier7 => "carrier_7",
+            CarrierIdV2::Carrier8 => "carrier_8",
+            CarrierIdV2::Carrier9 => "carrier_9",
+        }
+        .to_string()
     }
 }
