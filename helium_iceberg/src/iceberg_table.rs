@@ -15,7 +15,9 @@ use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::partitioning::PartitioningWriter;
+use iceberg::spec::MAIN_BRANCH;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -39,6 +41,17 @@ impl<T> IcebergTable<T> {
             table: Arc::new(RwLock::new(table)),
             _phantom: PhantomData,
         })
+    }
+
+    /// Returns the `additional_properties` from the latest snapshot on the
+    /// main branch, or an empty map when no snapshot exists yet.
+    pub async fn snapshot_properties(&self) -> HashMap<String, String> {
+        let table = self.table.read().await;
+        table
+            .metadata()
+            .snapshot_for_ref(MAIN_BRANCH)
+            .map(|s| s.summary().additional_properties.clone())
+            .unwrap_or_default()
     }
 
     async fn write_and_commit(&self, batch: RecordBatch) -> Result {
@@ -141,7 +154,11 @@ struct IcebergBranchWriter<T> {
 
 #[async_trait]
 impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
+    async fn write(
+        self: Box<Self>,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<Box<dyn BranchPublisher>> {
         if !records.is_empty() {
             reload_table(&self.catalog, &self.table).await?;
             let table_guard = self.table.read().await;
@@ -155,6 +172,7 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
                 &self.branch_name,
                 data_files,
                 &self.branch_name,
+                custom_properties,
             )
             .await?;
         }
