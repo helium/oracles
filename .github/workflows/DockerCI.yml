@@ -208,6 +208,7 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
           AWSLOCAL_ENDPOINT: "http://localstack:4566"
           S3_QUALIFIED_HOST: minio
+          S3_LOCAL_HOST: minio
           CATALOG_QUALIFIED_HOST: polaris
           CATALOG_LOCAL_HOST: polaris
           TRINO_HOST: trino
