@@ -24,11 +24,17 @@ impl<T> BranchTransaction<T>
 where
     T: Serialize + Send + 'static,
 {
-    pub async fn write(&mut self, records: Vec<T>) -> Result<()> {
+    pub async fn write_with_properties(
+        &mut self,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<()> {
         let prev = std::mem::replace(self, Self::Complete);
         match prev {
             Self::Writer(branch_writer) => {
-                let publisher = branch_writer.write(records).await?;
+                let publisher = branch_writer
+                    .write_with_properties(records, custom_properties)
+                    .await?;
                 *self = Self::Publisher(publisher);
             }
             other => {
@@ -38,6 +44,10 @@ where
         }
 
         Ok(())
+    }
+
+    pub async fn write(&mut self, records: Vec<T>) -> Result<()> {
+        self.write_with_properties(records, HashMap::new()).await
     }
 
     pub async fn publish(self) -> Result<()> {
