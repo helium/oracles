@@ -5,6 +5,7 @@ use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
 use async_trait::async_trait;
 use iceberg::arrow::{schema_to_arrow_schema, RecordBatchPartitionSplitter};
+use iceberg::spec::MAIN_BRANCH;
 use iceberg::table::Table;
 use iceberg::transaction::{ApplyTransactionAction, Transaction as IcebergTransaction};
 use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
@@ -16,6 +17,7 @@ use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::partitioning::PartitioningWriter;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -39,6 +41,17 @@ impl<T> IcebergTable<T> {
             table: Arc::new(RwLock::new(table)),
             _phantom: PhantomData,
         })
+    }
+
+    /// Returns the `additional_properties` from the latest snapshot on the
+    /// main branch, or an empty map when no snapshot exists yet.
+    pub async fn snapshot_properties(&self) -> HashMap<String, String> {
+        let table = self.table.read().await;
+        table
+            .metadata()
+            .snapshot_for_ref(MAIN_BRANCH)
+            .map(|s| s.summary().additional_properties.clone())
+            .unwrap_or_default()
     }
 
     async fn write_and_commit(&self, batch: RecordBatch) -> Result {
@@ -144,7 +157,11 @@ struct IcebergBranchWriter<T> {
 
 #[async_trait]
 impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
+    async fn write_with_properties(
+        self: Box<Self>,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<Box<dyn BranchPublisher>> {
         if records.is_empty() {
             return Ok(Box::new(EmptyIcebergBranchPublisher));
         }
@@ -161,6 +178,7 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
             &self.branch_name,
             data_files,
             &self.branch_name,
+            custom_properties,
         )
         .await?;
         drop(table_guard);
@@ -170,6 +188,10 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
             table: self.table,
             branch_name: self.branch_name,
         }))
+    }
+
+    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
+        self.write_with_properties(records, HashMap::new()).await
     }
 }
 

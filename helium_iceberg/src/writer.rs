@@ -1,6 +1,7 @@
 use crate::Result;
 use async_trait::async_trait;
 use serde::Serialize;
+use std::collections::HashMap;
 
 pub type BoxedDataWriter<T> = std::sync::Arc<dyn DataWriter<T>>;
 
@@ -52,7 +53,15 @@ where
 
 #[async_trait]
 pub trait BranchWriter<T: Serialize + Send + 'static>: Send {
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>>;
+    async fn write_with_properties(
+        self: Box<Self>,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<Box<dyn BranchPublisher>>;
+
+    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
+        self.write_with_properties(records, HashMap::new()).await
+    }
 }
 
 #[async_trait]
