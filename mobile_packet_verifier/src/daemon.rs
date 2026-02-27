@@ -1,12 +1,15 @@
 use crate::{
-    banning::{self},
+    accumulate::{accumulate_sessions, AccumulatedSessions},
+    banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
+    iceberg::{self, DataTransferWriter},
     pending_burns,
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
 };
@@ -15,11 +18,12 @@ use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
+use futures::Stream;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
 use solana::burn::{SolanaNetwork, SolanaRpc};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{
     sync::mpsc::Receiver,
@@ -34,6 +38,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    iceberg_writer: Option<DataTransferWriter>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -44,6 +49,7 @@ impl<S, MCR> Daemon<S, MCR> {
         burner: Burner<S>,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+        iceberg_writer: Option<DataTransferWriter>,
     ) -> Self {
         Self {
             pool,
@@ -53,6 +59,7 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
+            iceberg_writer,
         }
     }
 }
@@ -95,14 +102,14 @@ where
                     let Some(file_info_stream) = file else {
                         anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
                     };
-                    self.handle_data_transfer_session_file(file_info_stream).await?;
+                    self.handle_file(file_info_stream).await?;
                 }
 
             }
         }
     }
 
-    async fn handle_data_transfer_session_file(
+    async fn handle_file(
         &self,
         file: FileInfoStream<DataTransferSessionIngestReport>,
     ) -> anyhow::Result<()> {
@@ -110,13 +117,17 @@ where
         let ts = file.file_info.timestamp;
         let mut transaction = self.pool.begin().await?;
 
+        let mut iceberg_txn =
+            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
+
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        crate::accumulate::accumulate_sessions(
-            &self.mobile_config_resolver,
-            banned_radios,
+        handle_data_transfer_session_file(
             &mut transaction,
+            iceberg_txn.as_mut(),
+            banned_radios,
+            &self.mobile_config_resolver,
             &self.verified_data_session_report_sink,
             ts,
             reports,
@@ -125,8 +136,48 @@ where
 
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
+        iceberg::maybe_publish(iceberg_txn).await?;
+
         Ok(())
     }
+}
+
+pub async fn handle_data_transfer_session_file(
+    txn: &mut Transaction<'_, Postgres>,
+    iceberg_txn: Option<&mut iceberg::DataTransferTransaction>,
+    banned_radios: BannedRadios,
+    mobile_config: &impl MobileConfigResolverExt,
+    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    curr_file_ts: DateTime<Utc>,
+    reports: impl Stream<Item = DataTransferSessionIngestReport>,
+) -> anyhow::Result<()> {
+    let sessions = accumulate_sessions(mobile_config, banned_radios, txn, reports, curr_file_ts)
+        .await
+        .context("accumulating sessions")?;
+
+    let AccumulatedSessions {
+        iceberg_sessions,
+        proto_sessions,
+        db_sessions,
+    } = sessions;
+
+    pending_burns::save_data_transfer_sessions(txn, &db_sessions)
+        .await
+        .context("saving to db")?;
+
+    for session in proto_sessions {
+        let status = session.status().as_str_name();
+        verified_data_session_report_sink
+            .write(session, &[("status", status)])
+            .await
+            .context("writing to file-store")?;
+    }
+
+    if let Some(txn) = iceberg_txn {
+        txn.write(iceberg_sessions).await?;
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, clap::Args)]
@@ -176,11 +227,22 @@ impl Cmd {
             )
             .await?;
 
+        let (session_writer, burned_session_writer) =
+            if let Some(ref iceberg_settings) = settings.iceberg_settings {
+                tracing::info!("iceberg settings provided, connecting...");
+                let (session, burned) = iceberg::get_writers(iceberg_settings).await?;
+                (Some(session), Some(burned))
+            } else {
+                tracing::info!("no iceberg settings provided");
+                (None, None)
+            };
+
         let burner = Burner::new(
             valid_sessions,
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
+            burned_session_writer,
         );
 
         let (reports, reports_server) = file_source::continuous_source()
@@ -200,6 +262,7 @@ impl Cmd {
             burner,
             resolver,
             invalid_sessions,
+            session_writer,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);

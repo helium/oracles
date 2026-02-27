@@ -206,7 +206,7 @@ impl<T> FileSinkClient<T> {
     /// Writes all messages to the file sink, return the last oneshot
     pub async fn write_all(
         &self,
-        items: impl IntoIterator<Item = T>,
+        items: impl IntoIterator<Item = impl Into<T>>,
     ) -> Result<Option<oneshot::Receiver<Result>>> {
         let mut last_oneshot = None;
         for item in items {

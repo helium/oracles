@@ -12,16 +12,21 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    accumulate::accumulate_sessions, banning, bytes_to_dc, pending_burns,
+    banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
 };
 use sqlx::PgPool;
 
-use crate::common::{TestChannelExt, TestMobileConfig};
+use crate::common::{self, TestChannelExt, TestMobileConfig};
 
 #[sqlx::test]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let mut report_rx =
-        run_accumulate_sessions(&pool, vec![], TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, vec![], TestMobileConfig::all_valid(), Some(writer)).await?;
 
     report_rx.assert_is_empty()?;
 
@@ -33,6 +38,11 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![
@@ -79,7 +89,8 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     report_rx.assert_num_msgs(2)?;
 
@@ -94,6 +105,11 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     pool: PgPool,
 ) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         report: DataTransferSessionReq {
             data_transfer_usage: DataTransferEvent {
@@ -116,7 +132,8 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     }];
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     report_rx.assert_not_empty()?;
 
@@ -128,6 +145,11 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
 
 #[sqlx::test]
 async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -150,7 +172,8 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     }];
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     report_rx.assert_not_empty()?;
 
@@ -162,6 +185,11 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -185,7 +213,8 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
     }];
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     // record not written to file or db
     report_rx.assert_is_empty()?;
@@ -198,6 +227,11 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -219,8 +253,13 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::valid_gateways(vec![])).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::valid_gateways(vec![]),
+        Some(writer),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -233,6 +272,11 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
@@ -254,9 +298,13 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::valid_routing_keys(vec![]))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::valid_routing_keys(vec![]),
+        Some(writer),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -269,6 +317,11 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -296,7 +349,8 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     ban_hotspot(&pool, key, BanType::All).await?;
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -309,6 +363,11 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -336,7 +395,8 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     ban_hotspot(&pool, key, BanType::Data).await?;
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -349,6 +409,11 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
 
 #[sqlx::test]
 async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -376,7 +441,8 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     ban_hotspot(&pool, key, BanType::Poc).await?;
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
@@ -388,6 +454,11 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
     let key = PublicKeyBinary::from(vec![1]);
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -439,7 +510,8 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     .await?;
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
+            .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
@@ -454,23 +526,33 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
+    iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
+
+    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
+
+    let ts = Utc::now();
 
     let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(10);
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    accumulate_sessions(
-        &mobile_config,
-        banned_radios,
+
+    handle_data_transfer_session_file(
         &mut txn,
+        iceberg_txn.as_mut(),
+        banned_radios,
+        &mobile_config,
         &verified_sessions,
-        Utc::now(),
+        ts,
         futures::stream::iter(reports),
     )
     .await?;
+
     txn.commit().await?;
+
+    iceberg::maybe_publish(iceberg_txn).await?;
 
     Ok(verified_sessions_rx)
 }

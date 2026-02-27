@@ -9,7 +9,9 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
-use mobile_packet_verifier::{accumulate::accumulate_sessions, banning, dc_to_bytes};
+use mobile_packet_verifier::{
+    banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg,
+};
 use sqlx::{types::Uuid, PgPool};
 
 use crate::common::TestMobileConfig;
@@ -18,6 +20,14 @@ use crate::common::TestMobileConfig;
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
+    let harness = crate::common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let burn_writer = harness
+        .get_table_writer(iceberg::burned_session::TABLE_NAME)
+        .await?;
+
     let payer_key =
         PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
 
@@ -52,10 +62,23 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     let metrics = TestMetrics::new();
 
     // accumulate and burn
-    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
-    run_burner(&pool, &payer_key).await?;
+    run_accumulate_sessions(
+        &pool,
+        reports,
+        TestMobileConfig::all_valid(),
+        Some(session_writer),
+    )
+    .await?;
+    run_burner(&pool, &payer_key, Some(burn_writer)).await?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
+
+    let trino = harness.trino();
+    let all_sessions = iceberg::session::get_all(trino).await?;
+    let all_burns = iceberg::burned_session::get_all(trino).await?;
+
+    assert_eq!(all_sessions.len(), 2000, "individual sessions");
+    assert_eq!(all_burns.len(), 1, "combined sessions");
 
     Ok(())
 }
@@ -64,28 +87,39 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
+    iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
+    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
+
+    let ts = Utc::now();
 
     let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
-    accumulate_sessions(
-        &mobile_config,
-        banned_radios,
+    handle_data_transfer_session_file(
         &mut txn,
+        iceberg_txn.as_mut(),
+        banned_radios,
+        &mobile_config,
         &verified_sessions,
-        Utc::now(),
+        ts,
         futures::stream::iter(reports),
     )
     .await?;
+
     txn.commit().await?;
+    iceberg::maybe_publish(iceberg_txn).await?;
 
     Ok(verified_sessions_rx)
 }
 
-async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Result<()> {
+async fn run_burner(
+    pool: &PgPool,
+    payer_key: &PublicKeyBinary,
+    iceberg_writer: Option<iceberg::BurnedDataTransferWriter>,
+) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
@@ -95,6 +129,7 @@ async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Resul
         solana_network.clone(),
         0,
         std::time::Duration::default(),
+        iceberg_writer,
     )
     .burn(pool)
     .await?;

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_session::{
     DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
 };
@@ -13,114 +12,159 @@ use helium_proto::services::poc_mobile::{
 use sqlx::{Postgres, Transaction};
 
 use crate::{
-    banning::BannedRadios, bytes_to_dc, event_ids, pending_burns, MobileConfigResolverExt,
+    banning::BannedRadios,
+    bytes_to_dc, event_ids,
+    iceberg::session::IcebergDataTransferSession,
+    pending_burns::{self, DataTransferSession},
+    MobileConfigResolverExt,
 };
+
+#[derive(Default)]
+pub struct AccumulatedSessions {
+    pub iceberg_sessions: Vec<IcebergDataTransferSession>,
+    pub proto_sessions: Vec<VerifiedDataTransferIngestReportV1>,
+    pub db_sessions: Vec<DataTransferSession>,
+}
 
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
     banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
-    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-) -> anyhow::Result<()> {
+    curr_file_ts: DateTime<Utc>,
+) -> anyhow::Result<AccumulatedSessions> {
     tokio::pin!(reports);
 
     let mut metrics = AccumulateMetrics::new();
 
+    let mut result = AccumulatedSessions::default();
+
     while let Some(report) = reports.next().await {
-        if report.report.data_transfer_usage.radio_access_technology
-        // Eutran means CBRS radio
-            == DataTransferRadioAccessTechnology::Eutran
-        {
+        if report.is_cbrs() {
             continue;
         }
 
-        let report_validity = verify_report(txn, mobile_config, &banned_radios, &report).await?;
-        write_verified_report(
-            verified_data_session_report_sink,
-            report_validity,
-            report.clone(),
-        )
-        .await?;
+        let report_validity = report
+            .report_status(txn, mobile_config, &banned_radios)
+            .await?;
+        result
+            .proto_sessions
+            .push(report.to_verified_proto(report_validity));
+
+        // go to iceberg only if it's valid, even if it's zero rewardable bytes
+        if report_validity == ReportStatus::Valid {
+            result.iceberg_sessions.push(report.to_iceberg_session());
+        }
 
         if report_validity != ReportStatus::Valid {
             continue;
         }
 
-        if report.report.rewardable_bytes == 0 {
+        if report.no_rewardable_bytes() {
             continue;
         }
 
         metrics.add_report(&report);
-        pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
-            .await?;
+        result
+            .db_sessions
+            .push(report.to_data_transfer_session(curr_file_ts));
     }
 
     metrics.flush();
 
-    Ok(())
+    Ok(result)
 }
 
-async fn verify_report(
-    txn: &mut Transaction<'_, Postgres>,
-    mobile_config: &impl MobileConfigResolverExt,
-    banned_radios: &BannedRadios,
-    report: &DataTransferSessionIngestReport,
-) -> anyhow::Result<ReportStatus> {
-    if is_duplicate(txn, report).await? {
-        return Ok(ReportStatus::Duplicate);
+trait DataTransferIngestReportExt {
+    fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1;
+
+    fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
+
+    fn to_iceberg_session(&self) -> IcebergDataTransferSession;
+
+    fn no_rewardable_bytes(&self) -> bool;
+
+    fn is_cbrs(&self) -> bool;
+
+    async fn report_status(
+        &self,
+        txn: &mut Transaction<'_, Postgres>,
+        mobile_config: &impl MobileConfigResolverExt,
+        banned_radios: &BannedRadios,
+    ) -> anyhow::Result<ReportStatus>;
+
+    async fn is_duplicate(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool>;
+}
+
+impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
+    fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1 {
+        VerifiedDataTransferIngestReport {
+            report: self.clone(),
+            status,
+            timestamp: Utc::now(),
+        }
+        .into()
     }
 
-    let gw_pub_key = &report.report.data_transfer_usage.pub_key;
-    let routing_pub_key = &report.report.pub_key;
-
-    if banned_radios.contains(gw_pub_key) {
-        return Ok(ReportStatus::Banned);
+    fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession {
+        DataTransferSession::from_req(&self.report, file_ts)
     }
 
-    if !mobile_config
-        .is_gateway_known(gw_pub_key, &report.received_timestamp)
+    fn to_iceberg_session(&self) -> IcebergDataTransferSession {
+        IcebergDataTransferSession::from(self.clone())
+    }
+
+    fn no_rewardable_bytes(&self) -> bool {
+        self.report.rewardable_bytes == 0
+    }
+
+    fn is_cbrs(&self) -> bool {
+        // Eutran means CBRS radio
+        matches!(
+            self.report.data_transfer_usage.radio_access_technology,
+            DataTransferRadioAccessTechnology::Eutran
+        )
+    }
+
+    async fn report_status(
+        &self,
+        txn: &mut Transaction<'_, Postgres>,
+        mobile_config: &impl MobileConfigResolverExt,
+        banned_radios: &BannedRadios,
+    ) -> anyhow::Result<ReportStatus> {
+        if self.is_duplicate(txn).await? {
+            return Ok(ReportStatus::Duplicate);
+        }
+
+        let gw_pub_key = &self.report.data_transfer_usage.pub_key;
+        let routing_pub_key = &self.report.pub_key;
+
+        if banned_radios.contains(gw_pub_key) {
+            return Ok(ReportStatus::Banned);
+        }
+
+        if !mobile_config
+            .is_gateway_known(gw_pub_key, &self.received_timestamp)
+            .await
+        {
+            return Ok(ReportStatus::InvalidGatewayKey);
+        }
+
+        if !mobile_config.is_routing_key_known(routing_pub_key).await {
+            return Ok(ReportStatus::InvalidRoutingKey);
+        }
+
+        Ok(ReportStatus::Valid)
+    }
+
+    async fn is_duplicate(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+        event_ids::is_duplicate(
+            txn,
+            &self.report.data_transfer_usage.event_id,
+            self.received_timestamp,
+        )
         .await
-    {
-        return Ok(ReportStatus::InvalidGatewayKey);
     }
-
-    if !mobile_config.is_routing_key_known(routing_pub_key).await {
-        return Ok(ReportStatus::InvalidRoutingKey);
-    }
-
-    Ok(ReportStatus::Valid)
-}
-
-async fn is_duplicate(
-    txn: &mut Transaction<'_, Postgres>,
-    report: &DataTransferSessionIngestReport,
-) -> anyhow::Result<bool> {
-    event_ids::is_duplicate(
-        txn,
-        report.report.data_transfer_usage.event_id.clone(),
-        report.received_timestamp,
-    )
-    .await
-}
-
-async fn write_verified_report(
-    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    status: ReportStatus,
-    report: DataTransferSessionIngestReport,
-) -> Result<(), file_store::Error> {
-    let proto: VerifiedDataTransferIngestReportV1 = VerifiedDataTransferIngestReport {
-        report,
-        status,
-        timestamp: Utc::now(),
-    }
-    .into();
-
-    verified_data_session_report_sink
-        .write(proto, &[("status", status.as_str_name())])
-        .await?;
-    Ok(())
 }
 
 struct AccumulateMetrics(HashMap<helium_crypto::PublicKeyBinary, u64>);

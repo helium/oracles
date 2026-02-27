@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use file_store::traits::TimestampEncode;
-use file_store_oracles::mobile_session::DataTransferSessionReq;
+use file_store_oracles::{
+    mobile_session::DataTransferSessionReq, mobile_transfer::ValidDataTransferSession,
+};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
 
 use crate::bytes_to_dc;
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(FromRow)]
+#[derive(Debug, Clone, FromRow, PartialEq)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -26,6 +26,19 @@ impl DataTransferSession {
     pub fn dc_to_burn(&self) -> u64 {
         bytes_to_dc(self.rewardable_bytes as u64)
     }
+
+    pub fn from_req(req: &DataTransferSessionReq, last_timestamp: DateTime<Utc>) -> Self {
+        DataTransferSession {
+            pub_key: req.data_transfer_usage.pub_key.clone(),
+            payer: req.data_transfer_usage.payer.clone(),
+            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
+            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
+            rewardable_bytes: req.rewardable_bytes as i64,
+            // timestamps are the same upon ingest
+            first_timestamp: last_timestamp,
+            last_timestamp,
+        }
+    }
 }
 
 impl From<DataTransferSession> for ValidDataTransferSession {
@@ -33,15 +46,15 @@ impl From<DataTransferSession> for ValidDataTransferSession {
         let num_dcs = session.dc_to_burn();
 
         ValidDataTransferSession {
-            pub_key: session.pub_key.into(),
-            payer: session.payer.into(),
+            pub_key: session.pub_key,
+            payer: session.payer,
             upload_bytes: session.uploaded_bytes as u64,
             download_bytes: session.downloaded_bytes as u64,
             rewardable_bytes: session.rewardable_bytes as u64,
             num_dcs,
-            first_timestamp: session.first_timestamp.encode_timestamp_millis(),
-            last_timestamp: session.last_timestamp.encode_timestamp_millis(),
-            burn_timestamp: Utc::now().encode_timestamp_millis(),
+            first_timestamp: session.first_timestamp,
+            last_timestamp: session.last_timestamp,
+            burn_timestamp: Utc::now(),
         }
     }
 }
@@ -115,58 +128,75 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
-pub async fn save_data_transfer_session_req(
+pub async fn save_data_transfer_sessions(
     txn: &mut Transaction<'_, Postgres>,
-    req: &DataTransferSessionReq,
-    last_timestamp: DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    save_data_transfer_session(
-        txn,
-        &DataTransferSession {
-            pub_key: req.data_transfer_usage.pub_key.clone(),
-            payer: req.data_transfer_usage.payer.clone(),
-            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
-            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
-            rewardable_bytes: req.rewardable_bytes as i64,
-            // timestamps are the same upon ingest
-            first_timestamp: last_timestamp,
-            last_timestamp,
-        },
-    )
-    .await?;
+    data_transfer_session: &[DataTransferSession],
+) -> anyhow::Result<()> {
+    let mut merged = HashMap::new();
+    for session in data_transfer_session {
+        merged
+            .entry((&session.pub_key, &session.payer))
+            .and_modify(|existing| merge_session(existing, session))
+            .or_insert_with(|| session.clone());
+    }
+    let sessions = merged.into_values().collect::<Vec<_>>();
+
+    let pub_keys = collect_field(&sessions, |s| s.pub_key.to_string());
+    let payers = collect_field(&sessions, |s| s.payer.to_string());
+    let uploaded = collect_field(&sessions, |s| s.uploaded_bytes);
+    let downloaded = collect_field(&sessions, |s| s.downloaded_bytes);
+    let rewardable = collect_field(&sessions, |s| s.rewardable_bytes);
+    let first_ts = collect_field(&sessions, |s| s.first_timestamp);
+    let last_ts = collect_field(&sessions, |s| s.last_timestamp);
+
+    sqlx::query(
+            r#"
+        INSERT INTO data_transfer_sessions
+            (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+        SELECT
+            pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp
+        FROM UNNEST(
+            $1::text[],
+            $2::text[],
+            $3::bigint[],
+            $4::bigint[],
+            $5::bigint[],
+            $6::timestamptz[],
+            $7::timestamptz[]
+        ) AS t(
+            pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp
+        )
+        ON CONFLICT (pub_key, payer) DO UPDATE SET
+            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+            first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
+            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+        "#
+        )
+        .bind(pub_keys)
+        .bind(payers)
+        .bind(uploaded)
+        .bind(downloaded)
+        .bind(rewardable)
+        .bind(first_ts)
+        .bind(last_ts)
+        .execute(&mut **txn)
+        .await?;
 
     Ok(())
 }
 
-pub async fn save_data_transfer_session(
-    txn: &mut Transaction<'_, Postgres>,
-    data_transfer_session: &DataTransferSession,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-            r#"
-            INSERT INTO data_transfer_sessions
-                (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES
-                ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
-                uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-                downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-                rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-                first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
-                last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
-            "#
-        )
-            .bind(&data_transfer_session.pub_key)
-            .bind(&data_transfer_session.payer)
-            .bind(data_transfer_session.uploaded_bytes)
-            .bind(data_transfer_session.downloaded_bytes)
-            .bind(data_transfer_session.rewardable_bytes)
-            .bind(data_transfer_session.first_timestamp)
-            .bind(data_transfer_session.last_timestamp)
-            .execute(&mut **txn)
-            .await?;
+fn collect_field<In, Out>(coll: &[In], field_fn: impl FnMut(&In) -> Out) -> Vec<Out> {
+    coll.iter().map(field_fn).collect()
+}
 
-    Ok(())
+fn merge_session(existing: &mut DataTransferSession, other: &DataTransferSession) {
+    existing.uploaded_bytes += other.uploaded_bytes;
+    existing.downloaded_bytes += other.downloaded_bytes;
+    existing.rewardable_bytes += other.rewardable_bytes;
+    existing.first_timestamp = existing.first_timestamp.min(other.first_timestamp);
+    existing.last_timestamp = existing.last_timestamp.max(other.last_timestamp);
 }
 
 pub async fn delete_for_payer(
