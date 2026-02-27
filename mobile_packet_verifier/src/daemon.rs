@@ -38,7 +38,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    data_writer: Option<DataTransferWriter>,
+    iceberg_writer: Option<DataTransferWriter>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -49,7 +49,7 @@ impl<S, MCR> Daemon<S, MCR> {
         burner: Burner<S>,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-        data_writer: Option<DataTransferWriter>,
+        iceberg_writer: Option<DataTransferWriter>,
     ) -> Self {
         Self {
             pool,
@@ -59,7 +59,7 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
-            data_writer,
+            iceberg_writer,
         }
     }
 }
@@ -118,7 +118,7 @@ where
         let mut transaction = self.pool.begin().await?;
 
         let mut iceberg_txn =
-            iceberg::maybe_begin(self.data_writer.as_ref(), file.file_info.as_ref()).await?;
+            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
 
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;

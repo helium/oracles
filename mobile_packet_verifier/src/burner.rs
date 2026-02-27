@@ -21,7 +21,7 @@ pub struct Burner<S> {
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
-    data_writer: Option<BurnedDataTransferWriter>,
+    iceberg_writer: Option<BurnedDataTransferWriter>,
 }
 
 impl<S> Burner<S> {
@@ -30,14 +30,14 @@ impl<S> Burner<S> {
         solana: S,
         failed_retry_attempts: usize,
         failed_check_interval: std::time::Duration,
-        data_writer: Option<BurnedDataTransferWriter>,
+        iceberg_writer: Option<BurnedDataTransferWriter>,
     ) -> Self {
         Self {
             valid_sessions,
             solana,
             failed_retry_attempts,
             failed_check_interval,
-            data_writer,
+            iceberg_writer,
         }
     }
 }
@@ -79,7 +79,7 @@ where
                 write_burned_data_transfer_sessions(
                     sessions,
                     &self.valid_sessions,
-                    self.data_writer.as_ref(),
+                    self.iceberg_writer.as_ref(),
                 )
                 .await?;
 
@@ -130,7 +130,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        self.data_writer.as_ref(),
+                        self.iceberg_writer.as_ref(),
                     )
                     .await?;
                 }
@@ -185,7 +185,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        self.data_writer.as_ref(),
+                        self.iceberg_writer.as_ref(),
                     )
                     .await;
                     if let Err(err) = txn_success {
@@ -226,7 +226,7 @@ async fn handle_transaction_success(
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
-    data_writer: Option<&BurnedDataTransferWriter>,
+    iceberg_writer: Option<&BurnedDataTransferWriter>,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -241,7 +241,7 @@ async fn handle_transaction_success(
     pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
-    write_burned_data_transfer_sessions(sessions, valid_sessions, data_writer).await?;
+    write_burned_data_transfer_sessions(sessions, valid_sessions, iceberg_writer).await?;
 
     Ok(())
 }

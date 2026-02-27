@@ -87,10 +87,10 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
-    data_writer: Option<iceberg::DataTransferWriter>,
+    iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
-    let mut iceberg_txn = iceberg::maybe_begin(data_writer.as_ref(), "test_wap").await?;
+    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
 
     let ts = Utc::now();
 
@@ -118,7 +118,7 @@ async fn run_accumulate_sessions(
 async fn run_burner(
     pool: &PgPool,
     payer_key: &PublicKeyBinary,
-    data_writer: Option<iceberg::BurnedDataTransferWriter>,
+    iceberg_writer: Option<iceberg::BurnedDataTransferWriter>,
 ) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
@@ -129,7 +129,7 @@ async fn run_burner(
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        data_writer,
+        iceberg_writer,
     )
     .burn(pool)
     .await?;

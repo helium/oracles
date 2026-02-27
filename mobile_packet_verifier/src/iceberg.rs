@@ -74,7 +74,7 @@ pub mod burned_session {
 
         /// Timestamp of the first ingest file we found a data transfer session in
         first_timestamp: DateTime<FixedOffset>,
-        /// Timestamp of hte last ingest file we found a data transfer session in
+        /// Timestamp of the last ingest file we found a data transfer session in
         last_timestamp: DateTime<FixedOffset>,
         /// Timestamp of when the burn transaction was confirmed
         burn_timestamp: DateTime<FixedOffset>,

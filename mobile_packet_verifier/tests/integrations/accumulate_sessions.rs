@@ -526,11 +526,11 @@ async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
     mobile_config: TestMobileConfig,
-    data_writer: Option<iceberg::DataTransferWriter>,
+    iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
 
-    let mut iceberg_txn = iceberg::maybe_begin(data_writer.as_ref(), "test_wap").await?;
+    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
 
     let ts = Utc::now();
 
