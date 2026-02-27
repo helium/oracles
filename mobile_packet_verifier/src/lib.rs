@@ -11,6 +11,7 @@ use mobile_config::{
 };
 
 pub mod accumulate;
+pub mod backfill;
 pub mod banning;
 pub mod burner;
 pub mod daemon;
