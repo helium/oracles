@@ -75,7 +75,7 @@ pub async fn accumulate_sessions(
     Ok(result)
 }
 
-trait DataTranfserIngestReportExt {
+trait DataTransferIngestReportExt {
     fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1;
 
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
@@ -96,7 +96,7 @@ trait DataTranfserIngestReportExt {
     async fn is_duplicate(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool>;
 }
 
-impl DataTranfserIngestReportExt for DataTransferSessionIngestReport {
+impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
     fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1 {
         VerifiedDataTransferIngestReport {
             report: self.clone(),

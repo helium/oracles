@@ -19,8 +19,8 @@ pub struct IcebergDataTransferSession {
     // -- request -- data transfer usage
     data_transfer_event_pub_key: String,
     upload_bytes: u64,
-    download_byte: u64,
-    radio_access_thechnology: String,
+    download_bytes: u64,
+    radio_access_technology: String,
     event_id: String,
     payer: String,
     timestamp: DateTime<FixedOffset>,
@@ -36,8 +36,8 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             FieldDefinition::required_boolean("sampling"),
             FieldDefinition::required_string("data_transfer_event_pub_key"),
             FieldDefinition::required_long("upload_bytes"),
-            FieldDefinition::required_long("download_byte"),
-            FieldDefinition::required_string("radio_access_thechnology"),
+            FieldDefinition::required_long("download_bytes"),
+            FieldDefinition::required_string("radio_access_technology"),
             FieldDefinition::required_string("event_id"),
             FieldDefinition::required_string("payer"),
             FieldDefinition::required_timestamptz("timestamp"),
@@ -77,8 +77,8 @@ impl From<DataTransferSessionIngestReport> for IcebergDataTransferSession {
             sampling: value.report.sampling,
             data_transfer_event_pub_key,
             upload_bytes: value.report.data_transfer_usage.upload_bytes,
-            download_byte: value.report.data_transfer_usage.download_bytes,
-            radio_access_thechnology: value
+            download_bytes: value.report.data_transfer_usage.download_bytes,
+            radio_access_technology: value
                 .report
                 .data_transfer_usage
                 .radio_access_technology
