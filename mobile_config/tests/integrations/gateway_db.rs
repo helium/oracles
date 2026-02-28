@@ -2,7 +2,7 @@ use crate::common;
 use chrono::{TimeZone, Utc};
 use futures::{pin_mut, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use mobile_config::gateway::db::{Gateway, GatewayType};
+use mobile_config::gateway::db::{Gateway, GatewayType, HashParams};
 use sqlx::PgPool;
 
 #[sqlx::test]
@@ -17,11 +17,10 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
         .await?
         .expect("gateway should exist");
 
-    assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
+    assert_eq!(gateway.gateway_type(), GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
-    assert_eq!(gateway.location, Some(123));
+    assert_eq!(gateway.location(), Some(123));
     assert_eq!(gateway.hash, "h0");
     Ok(())
 }
@@ -46,11 +45,10 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
         .expect("gateway should exist");
 
     // Assert most recent gateway was returned
-    assert_eq!(gateway.gateway_type, GatewayType::WifiDataOnly);
+    assert_eq!(gateway.gateway_type(), GatewayType::WifiDataOnly);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
-    assert_eq!(gateway.location, Some(123));
+    assert_eq!(gateway.location(), Some(123));
     assert_eq!(gateway.hash, "h0");
 
     Ok(())
@@ -76,9 +74,8 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
             .await?
             .expect("row should exist");
         assert_eq!(got.created_at, common::nanos_trunc(now));
-        assert!(got.inserted_at > now);
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
-        assert_eq!(got.location, Some(123));
+        assert_eq!(got.location(), Some(123));
         assert_eq!(got.hash, "h0");
     }
 
@@ -144,7 +141,7 @@ async fn stream_by_types_filters_by_min_date(pool: PgPool) -> anyhow::Result<()>
     let s = Gateway::stream_by_types(&pool, vec![GatewayType::WifiIndoor], t2, None);
     pin_mut!(s);
     let first = s.next().await.expect("row expected");
-    assert_eq!(first.gateway_type, GatewayType::WifiIndoor);
+    assert_eq!(first.gateway_type(), GatewayType::WifiIndoor);
     assert_eq!(first.address, key);
     assert!(s.next().await.is_none());
 
@@ -186,18 +183,19 @@ fn pk_binary() -> PublicKeyBinary {
 fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<Utc>) -> Gateway {
     Gateway {
         address,
-        gateway_type,
         created_at: t,
-        inserted_at: t,
         last_changed_at: t,
         hash: "h0".to_string(),
-        antenna: Some(1),
-        elevation: Some(2),
-        azimuth: Some(180),
-        location: Some(123),
         location_changed_at: None,
-        location_asserts: Some(5),
-        owner: None,
         owner_changed_at: Some(t),
+        hash_params: HashParams {
+            gateway_type,
+            location: Some(123),
+            antenna: Some(1),
+            elevation: Some(2),
+            azimuth: Some(180),
+            location_asserts: Some(5),
+            owner: None,
+        },
     }
 }

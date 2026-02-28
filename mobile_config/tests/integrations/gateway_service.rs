@@ -8,7 +8,7 @@ use helium_proto::services::mobile_config::{
 };
 use mobile_config::{
     gateway::{
-        db::{Gateway, GatewayType},
+        db::{Gateway, GatewayType, HashParams},
         service::GatewayService,
     },
     key_cache::{CacheKeys, KeyCache},
@@ -117,7 +117,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
-        .inserted_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -131,7 +130,6 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
-        .inserted_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -176,7 +174,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(now)
-        .inserted_at(now)
         .last_changed_at(now)
         .antenna(None)
         .location(Some(loc1))
@@ -190,7 +187,6 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(now_plus_10)
-        .inserted_at(now_plus_10)
         .last_changed_at(now_plus_10)
         .antenna(None)
         .location(Some(loc2))
@@ -241,7 +237,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address1.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(None)
         .location(Some(loc1))
@@ -255,7 +250,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address2.clone())
         .gateway_type(GatewayType::WifiIndoor)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1u32))
         .location(Some(loc2))
@@ -269,7 +263,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address3.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
-        .inserted_at(inserted_at)
         .last_changed_at(inserted_at)
         .antenna(Some(1))
         .elevation(Some(2))
@@ -285,7 +278,6 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         .address(address4.clone())
         .gateway_type(GatewayType::WifiDataOnly)
         .created_at(created_at)
-        .inserted_at(created_at)
         .last_changed_at(created_at)
         .antenna(None)
         .location(Some(loc4))
@@ -381,37 +373,39 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc1),
         location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc1),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway1.insert(&pool).await?;
 
     let gateway2 = Gateway {
         address: address2.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc2),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiDataOnly,
+            location: Some(loc2),
+            antenna: None,
+            elevation: None,
+            azimuth: None,
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway2.insert(&pool).await?;
 
@@ -469,37 +463,39 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc1),
         location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc1),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway1.insert(&pool).await?;
 
     let gateway2 = Gateway {
         address: address2.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc2),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiDataOnly,
+            location: Some(loc2),
+            antenna: None,
+            elevation: None,
+            azimuth: None,
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway2.insert(&pool).await?;
 
@@ -580,73 +576,77 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc1),
         location_changed_at: Some(refreshed_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc1),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway1.insert(&pool).await?;
 
     let gateway2 = Gateway {
         address: address2.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc2),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc2),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway2.insert(&pool).await?;
 
     let gateway3 = Gateway {
         address: address3.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc3),
         location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiDataOnly,
+            location: Some(loc3),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway3.insert(&pool).await?;
 
     let gateway4 = Gateway {
         address: address4.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at,
         last_changed_at: inserted_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc4),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc4),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway4.insert(&pool).await?;
 
@@ -714,37 +714,39 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc1),
         location_changed_at: Some(refreshed_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc1),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway1.insert(&pool).await?;
 
     let gateway2 = Gateway {
         address: address2.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc2),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc2),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway2.insert(&pool).await?;
 
@@ -813,19 +815,20 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway_original = Gateway {
         address: address.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
-        antenna: Some(10),
-        elevation: Some(4),
-        azimuth: Some(168),
-        location: Some(loc_original),
         location_changed_at: Some(refreshed_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc_original),
+            antenna: Some(10),
+            elevation: Some(4),
+            azimuth: Some(168),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway_original.insert(&pool).await?;
 
@@ -839,19 +842,20 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway_recent = Gateway {
         address: address.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
         created_at,
-        inserted_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
-        location: Some(loc_recent),
         location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
         owner_changed_at: Some(created_at),
+        hash_params: HashParams {
+            gateway_type: GatewayType::WifiIndoor,
+            location: Some(loc_recent),
+            antenna: Some(18),
+            elevation: Some(2),
+            azimuth: Some(161),
+            location_asserts: Some(1),
+            owner: None,
+        },
     };
     gateway_recent.insert(&pool).await?;
 
