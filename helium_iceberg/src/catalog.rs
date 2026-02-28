@@ -395,6 +395,35 @@ impl Catalog {
     pub(crate) async fn commit_table_request(&self, request: &CommitTableRequest) -> Result<()> {
         self.endpoint.commit_table(request).await
     }
+
+    /// List all namespaces in the catalog.
+    pub async fn list_namespaces(&self) -> Result<Vec<NamespaceIdent>> {
+        self.inner
+            .list_namespaces(None)
+            .await
+            .map_err(Error::Iceberg)
+    }
+
+    /// List all namespaces under a parent namespace.
+    pub async fn list_namespaces_under(
+        &self,
+        parent: impl Into<String>,
+    ) -> Result<Vec<NamespaceIdent>> {
+        let parent_ident = NamespaceIdent::new(parent.into());
+        self.inner
+            .list_namespaces(Some(&parent_ident))
+            .await
+            .map_err(Error::Iceberg)
+    }
+
+    /// List all tables in a namespace.
+    pub async fn list_tables(&self, namespace: impl Into<String>) -> Result<Vec<TableIdent>> {
+        let namespace_ident = NamespaceIdent::new(namespace.into());
+        self.inner
+            .list_tables(&namespace_ident)
+            .await
+            .map_err(Error::Iceberg)
+    }
 }
 
 impl AsRef<RestCatalog> for Catalog {
