@@ -35,7 +35,6 @@ use futures::TryFutureExt;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use trino_rust_client::ClientBuilder;
-use uuid::Uuid;
 
 use crate::settings::{AuthConfig, S3Config, Settings};
 use crate::writer::IntoBoxedDataWriter;
@@ -68,6 +67,42 @@ enum TestHarnessError {
     TrinoRegisterCatalog(trino_rust_client::error::Error),
 }
 
+/// Generate a unique catalog name for the test.
+///
+/// Format: `{crate_module_test_name}_{timestamp_ms}`
+///
+/// Extracts the full test path from the current thread name if available,
+/// replaces `::` with `__`, sanitizes it for use in a catalog name, and appends a timestamp in milliseconds for uniqueness.
+/// Falls back to just `{timestamp_ms}` if no valid test name is found.
+fn generate_catalog_name() -> String {
+    // Get current timestamp in milliseconds
+    let now = chrono::Utc::now();
+    let timestamp = now.timestamp_millis();
+
+    // Try to extract test name from thread name
+    let test_name = std::thread::current()
+        .name()
+        .map(|name| name.replace("::", "__"))
+        .map(|name| {
+            name.chars()
+                .take(64) // Limit test name portion to 64 chars
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>()
+        })
+        .filter(|name| !name.is_empty());
+
+    match test_name {
+        Some(name) => format!("{}_{}", name, timestamp),
+        None => format!("test_{}", timestamp),
+    }
+}
+
 /// Test harness providing isolated Iceberg catalog environments.
 ///
 /// Each instance creates its own Polaris catalog registered with Trino.
@@ -84,7 +119,7 @@ impl IcebergTestHarness {
     /// Create a new test harness with default configuration.
     ///
     /// This will:
-    /// 1. Create a unique Polaris catalog `test_{uuid}`
+    /// 1. Create a unique Polaris catalog `{crate_module_test_name}_{timestamp_ms}` (or `{timestamp_ms}` if test name unavailable)
     /// 2. Register it with Trino via `CREATE CATALOG`
     /// 3. Create a `default` namespace
     /// 4. Configure Trino client with the catalog and schema
@@ -104,7 +139,7 @@ impl IcebergTestHarness {
 
     /// Create a new test harness with custom configuration.
     pub async fn with_config(config: HarnessConfig) -> Result<Self> {
-        let catalog_name = format!("test_{}", Uuid::new_v4().as_simple());
+        let catalog_name = generate_catalog_name();
         let namespace = DEFAULT_NAMESPACE.to_string();
 
         let http_client = reqwest::Client::new();
