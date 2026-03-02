@@ -1,6 +1,7 @@
 use crate::Result;
 use async_trait::async_trait;
 use serde::Serialize;
+use std::collections::HashMap;
 
 pub type BoxedDataWriter<T> = std::sync::Arc<dyn DataWriter<T>>;
 
@@ -23,11 +24,17 @@ impl<T> BranchTransaction<T>
 where
     T: Serialize + Send + 'static,
 {
-    pub async fn write(&mut self, records: Vec<T>) -> Result<()> {
+    pub async fn write_with_properties(
+        &mut self,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<()> {
         let prev = std::mem::replace(self, Self::Complete);
         match prev {
             Self::Writer(branch_writer) => {
-                let publisher = branch_writer.write(records).await?;
+                let publisher = branch_writer
+                    .write_with_properties(records, custom_properties)
+                    .await?;
                 *self = Self::Publisher(publisher);
             }
             other => {
@@ -37,6 +44,10 @@ where
         }
 
         Ok(())
+    }
+
+    pub async fn write(&mut self, records: Vec<T>) -> Result<()> {
+        self.write_with_properties(records, HashMap::new()).await
     }
 
     pub async fn publish(self) -> Result<()> {
@@ -52,7 +63,15 @@ where
 
 #[async_trait]
 pub trait BranchWriter<T: Serialize + Send + 'static>: Send {
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>>;
+    async fn write_with_properties(
+        self: Box<Self>,
+        records: Vec<T>,
+        custom_properties: HashMap<String, String>,
+    ) -> Result<Box<dyn BranchPublisher>>;
+
+    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
+        self.write_with_properties(records, HashMap::new()).await
+    }
 }
 
 #[async_trait]
