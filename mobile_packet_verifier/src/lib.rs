@@ -15,6 +15,7 @@ pub mod banning;
 pub mod burner;
 pub mod daemon;
 pub mod event_ids;
+pub mod iceberg;
 pub mod pending_burns;
 pub mod pending_txns;
 pub mod settings;

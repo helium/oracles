@@ -1,6 +1,17 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use mobile_packet_verifier::MobileConfigResolverExt;
+use helium_iceberg::IcebergTestHarness;
+use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
+
+pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
+    let harness = IcebergTestHarness::new_with_tables([
+        iceberg::session::table_definition()?,
+        iceberg::burned_session::table_definition()?,
+    ])
+    .await?;
+
+    Ok(harness)
+}
 
 enum ValidKeys {
     All,
