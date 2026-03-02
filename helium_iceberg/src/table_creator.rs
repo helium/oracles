@@ -2,19 +2,29 @@ use crate::catalog::Catalog;
 use crate::iceberg_table::IcebergTable;
 use crate::{Error, Result, Settings};
 use iceberg::spec::{
-    NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection, SortField,
-    SortOrder, Transform, Type,
+    MapType, NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection,
+    SortField, SortOrder, Transform, Type,
 };
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+enum FieldKind {
+    Primitive(Type),
+    Map {
+        key_type: PrimitiveType,
+        value_type: PrimitiveType,
+        value_required: bool,
+    },
+}
+
 /// Defines a single field (column) in a table schema.
 #[derive(Debug, Clone)]
 pub struct FieldDefinition {
     name: String,
-    field_type: Type,
+    kind: FieldKind,
     required: bool,
     doc: Option<String>,
     identifier: bool,
@@ -22,10 +32,10 @@ pub struct FieldDefinition {
 
 impl FieldDefinition {
     /// Create a new field definition.
-    fn new(name: impl Into<String>, field_type: Type, column_type: ColumnType) -> Self {
+    fn new(name: impl Into<String>, kind: FieldKind, column_type: ColumnType) -> Self {
         Self {
             name: name.into(),
-            field_type,
+            kind,
             required: column_type.required(),
             doc: None,
             identifier: column_type.identifier(),
@@ -46,7 +56,7 @@ macro_rules! impl_field_variant {
         impl FieldDefinition {
             $(
                 pub fn $fn_name(name: impl Into<String>) -> Self {
-                    Self::new(name, PrimitiveType::$field_type.into(), ColumnType::$column_type)
+                    Self::new(name, FieldKind::Primitive(Type::Primitive(PrimitiveType::$field_type)), ColumnType::$column_type)
                 }
             )+
         }
@@ -109,7 +119,7 @@ impl FieldDefinition {
     pub fn required_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            PrimitiveType::Decimal { precision, scale }.into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
             ColumnType::Required,
         )
     }
@@ -117,7 +127,7 @@ impl FieldDefinition {
     pub fn optional_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            PrimitiveType::Decimal { precision, scale }.into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
             ColumnType::Optional,
         )
     }
@@ -125,7 +135,7 @@ impl FieldDefinition {
     pub fn identifier_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            PrimitiveType::Decimal { precision, scale }.into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
             ColumnType::Identifier,
         )
     }
@@ -133,7 +143,7 @@ impl FieldDefinition {
     pub fn required_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            PrimitiveType::Fixed(fixed).into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
             ColumnType::Required,
         )
     }
@@ -141,7 +151,7 @@ impl FieldDefinition {
     pub fn optional_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            PrimitiveType::Fixed(fixed).into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
             ColumnType::Optional,
         )
     }
@@ -149,9 +159,49 @@ impl FieldDefinition {
     pub fn identifier_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            PrimitiveType::Fixed(fixed).into(),
+            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
             ColumnType::Identifier,
         )
+    }
+
+    /// Create a required map field with primitive key and value types.
+    /// The map column is required and the value is required.
+    pub fn required_map(
+        name: impl Into<String>,
+        key_type: PrimitiveType,
+        value_type: PrimitiveType,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            kind: FieldKind::Map {
+                key_type,
+                value_type,
+                value_required: true,
+            },
+            required: true,
+            doc: None,
+            identifier: false,
+        }
+    }
+
+    /// Create an optional map field with primitive key and value types.
+    /// The map column is optional and the value is optional.
+    pub fn optional_map(
+        name: impl Into<String>,
+        key_type: PrimitiveType,
+        value_type: PrimitiveType,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            kind: FieldKind::Map {
+                key_type,
+                value_type,
+                value_required: false,
+            },
+            required: false,
+            doc: None,
+            identifier: false,
+        }
     }
 }
 
@@ -353,30 +403,53 @@ impl TableDefinition {
 
     /// Build the Iceberg schema from field definitions.
     fn build_schema(&self) -> Result<Schema> {
-        let identifier_field_ids: Vec<i32> = self
-            .fields
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, field)| field.identifier.then_some((idx + 1) as i32))
-            .collect();
+        let mut next_id: i32 = 1;
+        let mut identifier_field_ids: Vec<i32> = Vec::new();
+        let mut fields: Vec<Arc<NestedField>> = Vec::new();
 
-        let fields: Vec<Arc<NestedField>> = self
-            .fields
-            .iter()
-            .enumerate()
-            .map(|(idx, field)| {
-                let field_id = (idx + 1) as i32;
-                let mut nested = if field.required {
-                    NestedField::required(field_id, &field.name, field.field_type.clone())
-                } else {
-                    NestedField::optional(field_id, &field.name, field.field_type.clone())
-                };
-                if let Some(ref doc) = field.doc {
-                    nested = nested.with_doc(doc);
+        for field in &self.fields {
+            let field_id = next_id;
+            next_id += 1;
+
+            if field.identifier {
+                identifier_field_ids.push(field_id);
+            }
+
+            let field_type = match &field.kind {
+                FieldKind::Primitive(t) => t.clone(),
+                FieldKind::Map {
+                    key_type,
+                    value_type,
+                    value_required,
+                } => {
+                    let key_id = next_id;
+                    next_id += 1;
+                    let value_id = next_id;
+                    next_id += 1;
+                    Type::Map(MapType::new(
+                        Arc::new(NestedField::map_key_element(
+                            key_id,
+                            Type::Primitive(key_type.clone()),
+                        )),
+                        Arc::new(NestedField::map_value_element(
+                            value_id,
+                            Type::Primitive(value_type.clone()),
+                            *value_required,
+                        )),
+                    ))
                 }
-                Arc::new(nested)
-            })
-            .collect();
+            };
+
+            let mut nested = if field.required {
+                NestedField::required(field_id, &field.name, field_type)
+            } else {
+                NestedField::optional(field_id, &field.name, field_type)
+            };
+            if let Some(ref doc) = field.doc {
+                nested = nested.with_doc(doc);
+            }
+            fields.push(Arc::new(nested));
+        }
 
         Schema::builder()
             .with_fields(fields)
@@ -994,5 +1067,82 @@ mod tests {
             definition.properties.get("history.expire.max-ref-age-ms"),
             Some(&"3600000".to_string())
         );
+    }
+
+    #[test]
+    fn test_required_map_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::required_string("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id = 1, tags = 2, tags.key = 3, tags.value = 4, name = 5
+        let id_field = schema.field_by_name("id").expect("id field should exist");
+        assert_eq!(id_field.id, 1);
+
+        let tags_field = schema
+            .field_by_name("tags")
+            .expect("tags field should exist");
+        assert_eq!(tags_field.id, 2);
+        assert!(tags_field.required);
+
+        let name_field = schema
+            .field_by_name("name")
+            .expect("name field should exist");
+        assert_eq!(name_field.id, 5);
+    }
+
+    #[test]
+    fn test_optional_map_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::optional_map(
+                    "metadata",
+                    PrimitiveType::String,
+                    PrimitiveType::Long,
+                ),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        let id_field = schema.field_by_name("id").expect("id field should exist");
+        assert_eq!(id_field.id, 1);
+
+        let metadata_field = schema
+            .field_by_name("metadata")
+            .expect("metadata field should exist");
+        assert_eq!(metadata_field.id, 2);
+        assert!(!metadata_field.required);
+    }
+
+    #[test]
+    fn test_identifier_fields_not_affected_by_map() {
+        // The test verifies that identifier field IDs are correct
+        // even when a map sits between two identifier fields.
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::indentifier_long("id"),
+                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::indentifier_string("tenant_id"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let identifier_ids: Vec<i32> = schema.identifier_field_ids().collect();
+
+        // id = 1, tags = 2 (key=3, value=4), tenant_id = 5
+        assert_eq!(identifier_ids.len(), 2);
+        assert!(identifier_ids.contains(&1)); // id
+        assert!(identifier_ids.contains(&5)); // tenant_id
     }
 }
