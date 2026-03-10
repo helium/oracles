@@ -28,6 +28,7 @@ pub use writer::{
 
 // Re-export iceberg types for ergonomic API usage
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
+pub use iceberg::{NamespaceIdent, TableIdent};
 
 #[cfg(feature = "test-harness")]
 pub use test_harness::{HarnessConfig, IcebergTestHarness};
