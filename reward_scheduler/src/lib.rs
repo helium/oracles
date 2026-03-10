@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use chrono::{DateTime, Utc};
 use std::{ops::Range, time::Duration};
 

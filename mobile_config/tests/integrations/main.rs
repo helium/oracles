@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 mod common;
 
 mod entity_service;

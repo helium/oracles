@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{BucketClient, BucketSettings, FileInfo};

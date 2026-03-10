@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 //! Async task lifecycle management for coordinated startup and graceful shutdown.
 //!
 //! This crate provides a lightweight task manager built on Tokio that allows you to:

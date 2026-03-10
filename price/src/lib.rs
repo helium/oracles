@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 extern crate tls_init;
 
 pub mod cli;

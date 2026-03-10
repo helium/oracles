@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 //! Common code shared between the reward and ingest servers.
 
 pub use error::{Error, Result};

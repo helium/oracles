@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use anyhow::Result;
 use clap::Parser;
 use mobile_verifier::{

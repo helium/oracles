@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 extern crate tls_init;
 
 mod branch;

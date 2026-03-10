@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use anyhow::Result;
 use helium_crypto::PublicKeyBinary;
 use notify::{event::DataChange, Config, RecommendedWatcher, RecursiveMode, Watcher};
