@@ -155,10 +155,13 @@ mod tests {
                 location_validation_timestamp: Some(Utc::now()),
                 location_source: proto::LocationSource::Asserted,
                 timestamp,
+                heartbeat_timestamp: timestamp,
             },
             cell_type: cell_type::CellType::Nova430I,
             location_trust_score_multiplier: dec!(1),
             distance_to_asserted: Some(0),
+            asserted_location: None,
+            device_type: None,
             coverage_meta: None,
             validity: proto::HeartbeatValidity::Valid,
         };

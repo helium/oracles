@@ -7,6 +7,7 @@ use crate::{
     data_session::DataSessionIngestor,
     geofence::Geofence,
     heartbeats::wifi::WifiHeartbeatDaemon,
+    iceberg,
     rewarder::Rewarder,
     speedtests::SpeedtestDaemon,
     telemetry,
@@ -89,6 +90,14 @@ impl Cmd {
 
         let ingest_bucket_client = settings.buckets.ingest.connect().await;
 
+        let iceberg_writer = if let Some(ref iceberg_settings) = settings.iceberg_settings {
+            tracing::info!("iceberg settings provided, connecting...");
+            Some(iceberg::get_writer(iceberg_settings).await?)
+        } else {
+            tracing::info!("no iceberg settings provided");
+            None
+        };
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
@@ -103,6 +112,7 @@ impl Cmd {
                     valid_heartbeats,
                     seniority_updates,
                     usa_and_mexico_geofence,
+                    iceberg_writer,
                 )
                 .await?,
             )
