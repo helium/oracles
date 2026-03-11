@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use std::{collections::HashMap, num::NonZeroU32};
 
 use chrono::{DateTime, Utc};

@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 extern crate tls_init;
 
 use base64::Engine;

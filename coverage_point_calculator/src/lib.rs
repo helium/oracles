@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 //!
 //! Many changes to the rewards algorithm are contained in and across many HIPs.
 //! The blog post [MOBILE Proof of Coverage][mobile-poc-blog] contains a more

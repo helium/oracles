@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use clap::{Parser, ValueEnum};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_lib::programs::data_credits;
