@@ -26,10 +26,13 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
             coverage_object: Some(coverage_object),
             location_validation_timestamp: None,
             timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+            heartbeat_timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
             location_source: LocationSource::Skyhook,
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: Some(1000), // Cannot be null
+        asserted_location: None,
+        device_type: None,
         coverage_meta: None,
         location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,

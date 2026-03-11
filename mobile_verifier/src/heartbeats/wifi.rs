@@ -3,7 +3,7 @@ use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::LocationCache,
-    GatewayResolver, Settings,
+    iceberg, GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -29,6 +29,7 @@ pub struct WifiHeartbeatDaemon<GIR, GFV> {
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
+    iceberg_writer: Option<iceberg::HeartbeatWriter>,
 }
 
 impl<GIR, GFV> WifiHeartbeatDaemon<GIR, GFV>
@@ -45,6 +46,7 @@ where
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        iceberg_writer: Option<iceberg::HeartbeatWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
@@ -63,6 +65,7 @@ where
             valid_heartbeats,
             seniority_updates,
             geofence,
+            iceberg_writer,
         );
 
         Ok(TaskManager::builder()
@@ -80,6 +83,7 @@ where
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        iceberg_writer: Option<iceberg::HeartbeatWriter>,
     ) -> Self {
         Self {
             pool,
@@ -89,6 +93,7 @@ where
             heartbeat_sink,
             seniority_sink,
             geofence,
+            iceberg_writer,
         }
     }
 
@@ -140,8 +145,13 @@ where
         coverage_object_cache: &CoverageObjectCache,
         location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
-        tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
+        tracing::info!(
+            file_key = file.file_info.key,
+            "Processing WIFI heartbeat file"
+        );
         let mut transaction = self.pool.begin().await?;
+        let mut iceberg_txn =
+            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let heartbeats = file
@@ -163,11 +173,13 @@ where
             &self.heartbeat_sink,
             &self.seniority_sink,
             &mut transaction,
+            iceberg_txn.as_mut(),
         )
         .await?;
         self.heartbeat_sink.commit().await?;
         self.seniority_sink.commit().await?;
         transaction.commit().await?;
+        iceberg::maybe_publish(iceberg_txn).await?;
         Ok(())
     }
 }

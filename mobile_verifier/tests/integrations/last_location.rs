@@ -275,6 +275,7 @@ impl HeartbeatBuilder {
             coverage_object: Some(self.coverage_object.coverage_object.uuid),
             location_validation_timestamp: self.location_validation_timestamp,
             timestamp: self.timestamp.unwrap_or(Utc::now()),
+            heartbeat_timestamp: self.timestamp.unwrap_or(Utc::now()),
             location_source: LocationSource::Skyhook,
         }
     }

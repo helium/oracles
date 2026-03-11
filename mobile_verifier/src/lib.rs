@@ -10,6 +10,7 @@ pub mod coverage;
 pub mod data_session;
 pub mod geofence;
 pub mod heartbeats;
+pub mod iceberg;
 pub mod reward_shares;
 pub mod rewarder;
 pub mod seniority;
@@ -24,13 +25,14 @@ pub use settings::Settings;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mobile_config::client::ClientError;
+use mobile_config::gateway::service::info::DeviceType;
 use rust_decimal::Decimal;
 use solana::SolPubkey;
 
 pub enum GatewayResolution {
     GatewayNotFound,
     GatewayNotAsserted,
-    AssertedLocation(u64),
+    AssertedLocation(u64, DeviceType),
     DataOnly,
 }
 
@@ -70,8 +72,12 @@ impl GatewayResolver for mobile_config::GatewayClient {
             }) => Ok(GatewayResolution::DataOnly),
             Some(GatewayInfo {
                 metadata: Some(metadata),
+                device_type,
                 ..
-            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
+            }) => Ok(GatewayResolution::AssertedLocation(
+                metadata.location,
+                device_type,
+            )),
             Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
         }
     }
