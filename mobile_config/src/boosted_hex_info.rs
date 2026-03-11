@@ -79,10 +79,9 @@ impl BoostedHexInfo {
             // to indicate that the hex is no longer boosted
             return Ok(None);
         };
-        if self.start_ts.is_some() {
+        if let Some(boost_start_ts) = self.start_ts {
             // start time has previously been set, so we can calculate the current multiplier
             // based on the period length and the current time
-            let boost_start_ts = self.start_ts.unwrap();
             let diff = ts - boost_start_ts;
             let index = diff
                 .num_seconds()
@@ -174,12 +173,12 @@ pub(crate) mod db {
     use std::str::FromStr;
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
-            SELECT 
+            SELECT
                 CAST(hexes.location AS bigint),
                 CAST(hexes.start_ts AS bigint),
                 CAST(config.period_length AS bigint),
                 hexes.boosts_by_period AS multipliers,
-                hexes.address AS boosted_hex_pubkey, 
+                hexes.address AS boosted_hex_pubkey,
                 config.address AS boost_config_pubkey,
                 CAST(hexes.version AS integer)
             FROM boosted_hexes hexes
@@ -190,12 +189,12 @@ pub(crate) mod db {
 
     // TODO: reuse with string above
     const GET_MODIFIED_BOOSTED_HEX_INFO_SQL: &str = r#"
-            SELECT 
+            SELECT
                 CAST(hexes.location AS bigint),
                 CAST(hexes.start_ts AS bigint),
                 CAST(config.period_length AS bigint),
                 hexes.boosts_by_period AS multipliers,
-                hexes.address AS boosted_hex_pubkey, 
+                hexes.address AS boosted_hex_pubkey,
                 config.address AS boost_config_pubkey,
                 CAST(hexes.version AS integer)
             FROM boosted_hexes hexes
