@@ -9,7 +9,7 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
 };
 use mobile_packet_verifier::{
-    backfill::{run_sessions_backfill, BackfillOptions},
+    backfill::{BackfillOptions, SessionsBackfiller},
     iceberg,
 };
 use sqlx::PgPool;
@@ -83,10 +83,18 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
 
     // Run backfill - poller will exit via idle_timeout after processing all files
     let options = test_backfill_options("test-backfill", start_time);
-    let run_future = run_sessions_backfill(pool.clone(), awsl.bucket_client(), writer, options);
-    tokio::time::timeout(TEST_TIMEOUT, run_future)
-        .await
-        .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        SessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        ),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
 
     // Verify data was written to Iceberg
     let rows = iceberg::session::get_all(harness.trino()).await?;
@@ -139,10 +147,17 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     // Run backfill with stop_after = file3_time (should process only first 2 files)
     // Poller exits via stop_after before reaching file3, then idle_timeout triggers exit
     let options = test_backfill_options("test-backfill-stop", start_time).stop_after(stop_time);
-    let run_future = run_sessions_backfill(pool.clone(), awsl.bucket_client(), writer, options);
-    tokio::time::timeout(TEST_TIMEOUT, run_future)
-        .await
-        .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        SessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        ),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
 
     // Verify only 2 sessions were written (file3 was skipped)
     let rows = iceberg::session::get_all(harness.trino()).await?;
@@ -202,7 +217,12 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let options = test_backfill_options(process_name, start_time).stop_after(stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
-        run_sessions_backfill(pool.clone(), awsl.bucket_client(), writer.clone(), options),
+        SessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer.clone(),
+            options,
+        ),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -220,7 +240,12 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let options = test_backfill_options(process_name, start_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
-        run_sessions_backfill(pool.clone(), awsl.bucket_client(), writer, options),
+        SessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        ),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
