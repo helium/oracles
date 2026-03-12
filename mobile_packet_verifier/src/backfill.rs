@@ -4,13 +4,14 @@ use crate::iceberg::{
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, file_source};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{
     mobile_session::DataTransferSessionIngestReport, mobile_transfer::ValidDataTransferSession,
     FileType,
 };
 use futures::StreamExt;
 use sqlx::{Pool, Postgres};
+use std::time::Duration;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -87,26 +88,16 @@ impl Cmd {
             "starting sessions backfill"
         );
 
-        let (reports, reports_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(settings.ingest_bucket.connect().await)
-            .prefix(FileType::DataTransferSessionIngestReport.to_string())
-            .lookback_start_after(settings.start_after)
-            .stop_after(self.stop_after)
-            .process_name(self.process_name.clone())
-            .create()
-            .await?;
+        let options = SessionsBackfillOptions::new(&self.process_name, settings.start_after)
+            .stop_after(self.stop_after);
 
-        let backfiller = SessionsBackfiller::new(pool, reports, writer);
-
-        TaskManager::builder()
-            .add_task(reports_server)
-            .add_task(backfiller)
-            .build()
-            .start()
-            .await?;
-
-        Ok(())
+        run_sessions_backfill(
+            pool,
+            settings.ingest_bucket.connect().await,
+            writer,
+            options,
+        )
+        .await
     }
 
     async fn run_burned_backfill(
@@ -197,6 +188,79 @@ impl Cmd {
 
         Ok(())
     }
+}
+
+/// Options for running sessions backfill.
+#[derive(Debug, Clone)]
+pub struct SessionsBackfillOptions {
+    pub process_name: String,
+    pub start_after: DateTime<Utc>,
+    pub stop_after: Option<DateTime<Utc>>,
+    pub poll_duration: Duration,
+    pub idle_timeout: Duration,
+}
+
+impl SessionsBackfillOptions {
+    pub fn new(process_name: impl Into<String>, start_after: DateTime<Utc>) -> Self {
+        Self {
+            process_name: process_name.into(),
+            start_after,
+            stop_after: None,
+            poll_duration: Duration::from_secs(30),
+            idle_timeout: Duration::from_secs(30),
+        }
+    }
+
+    pub fn stop_after(mut self, stop_after: DateTime<Utc>) -> Self {
+        self.stop_after = Some(stop_after);
+        self
+    }
+
+    pub fn poll_duration(mut self, poll_duration: Duration) -> Self {
+        self.poll_duration = poll_duration;
+        self
+    }
+
+    pub fn idle_timeout(mut self, idle_timeout: Duration) -> Self {
+        self.idle_timeout = idle_timeout;
+        self
+    }
+}
+
+/// Run sessions backfill with the given configuration.
+///
+/// This is the core backfill logic used by both the CLI command and tests.
+pub async fn run_sessions_backfill(
+    pool: Pool<Postgres>,
+    bucket_client: BucketClient,
+    writer: DataTransferWriter,
+    options: SessionsBackfillOptions,
+) -> Result<()> {
+    let mut builder = file_source::continuous_source()
+        .state(pool.clone())
+        .bucket_client(bucket_client)
+        .prefix(FileType::DataTransferSessionIngestReport.to_string())
+        .lookback_start_after(options.start_after)
+        .process_name(options.process_name)
+        .poll_duration(options.poll_duration)
+        .idle_timeout(options.idle_timeout);
+
+    if let Some(stop_after) = options.stop_after {
+        builder = builder.stop_after(stop_after);
+    }
+
+    let (reports, reports_server) = builder.create().await?;
+
+    let backfiller = SessionsBackfiller::new(pool, reports, writer);
+
+    TaskManager::builder()
+        .add_task(reports_server)
+        .add_task(backfiller)
+        .build()
+        .start()
+        .await?;
+
+    Ok(())
 }
 
 pub struct SessionsBackfiller {
