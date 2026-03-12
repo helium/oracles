@@ -244,6 +244,18 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
         self
     }
 
+    /// Set the idle timeout from an optional value.
+    ///
+    /// If `Some`, sets the idle timeout to the given duration.
+    /// If `None`, disables idle timeout (poller waits indefinitely).
+    pub fn idle_timeout_opt(self, idle_timeout: Option<Duration>) -> Self {
+        if let Some(idle_timeout) = idle_timeout {
+            self.idle_timeout(idle_timeout)
+        } else {
+            self.no_idle_timeout()
+        }
+    }
+
     /// Set the prefix for the file names.
     ///
     /// The prefix is used to filter files when polling.
@@ -261,6 +273,14 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     pub fn prefix_without_dot(mut self, value: impl Into<String>) -> Self {
         self.prefix = Some(value.into());
         self
+    }
+
+    /// Set the poll duration from an optional value.
+    ///
+    /// If `Some`, sets the poll duration to the given value.
+    /// If `None`, uses the default poll duration (30 seconds).
+    pub fn poll_duration_opt(self, poll_duration: Option<Duration>) -> Self {
+        self.poll_duration(poll_duration.unwrap_or(DEFAULT_POLL_DURATION))
     }
 }
 
