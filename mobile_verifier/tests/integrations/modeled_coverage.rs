@@ -1026,7 +1026,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let far_latlng = LatLng::new(40.0194278140, -105.3)?; // 2,419m
     let past_latlng = LatLng::new(40.0194278140, 105.2715848904)?; // 10,591,975m
 
-    // It's easy to gloss over floats, let make sure the distances are within the ranges we expect.
+    // It's easy to gloss over floats, let's make sure the distances are within the ranges we expect.
     assert!((0.0..=300.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 300
     assert!((300.0..=400.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 400
     assert!(covered_latlng.distance_m(far_latlng) > 400.0); // Indoor Over Distance => 400

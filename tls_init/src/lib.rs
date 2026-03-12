@@ -5,9 +5,9 @@
 //! Until more crates have updated to default to `aws-lc-rs` we need to ensure
 //! that a single CryptoProvider backend is installed. Because of our heavy
 //! reliance on aws crates, we've chosen `aws-lc-rs`. Also because `rustls` has
-//! recently chosen that as it's default.
+//! recently chosen that as its default.
 //!
-//! If you're crate needs to use tls, add the following.
+//! If your crate needs to use tls, add the following.
 //! // Cargo.toml
 //! tls-init = { path = "../tls_init" }
 //!
