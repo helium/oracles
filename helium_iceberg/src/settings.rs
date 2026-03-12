@@ -40,6 +40,10 @@ pub struct S3Config {
     pub secret_access_key: Option<String>,
     pub region: Option<String>,
     pub path_style_access: Option<bool>,
+    /// Skip loading credentials from environment variables and config files.
+    /// Use this when you want to use explicit credentials instead of the default
+    /// AWS credential chain.
+    pub disable_config_load: Option<bool>,
 }
 
 impl S3Config {
@@ -64,6 +68,12 @@ impl S3Config {
             props.insert(
                 "s3.path-style-access".to_string(),
                 path_style_access.to_string(),
+            );
+        }
+        if let Some(disable_config_load) = self.disable_config_load {
+            props.insert(
+                "s3.disable-config-load".to_string(),
+                disable_config_load.to_string(),
             );
         }
         props
