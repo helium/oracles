@@ -55,7 +55,7 @@ impl Cmd {
         let options =
             BackfillOptions::new(&self.process_name, settings.start_after, self.stop_after);
 
-        let sessions_task = SessionsBackfiller::create_managed_task(
+        let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             settings.ingest_bucket.connect().await,
             session_writer,
@@ -63,7 +63,7 @@ impl Cmd {
         )
         .await?;
 
-        let burned_session_task = BurnedBackfiller::create_managed_task(
+        let burned_sessions_task = BurnedSessionsBackfiller::create_managed_task(
             pool,
             settings.output_bucket.connect().await,
             burned_session_writer,
@@ -72,8 +72,8 @@ impl Cmd {
         .await?;
 
         TaskManager::builder()
-            .add_task(sessions_task)
-            .add_task(burned_session_task)
+            .add_task(data_sessions_task)
+            .add_task(burned_sessions_task)
             .build()
             .start()
             .await?;
@@ -117,13 +117,13 @@ impl BackfillOptions {
     }
 }
 
-pub struct SessionsBackfiller {
+pub struct DataSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     writer: DataTransferWriter,
 }
 
-impl SessionsBackfiller {
+impl DataSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
@@ -153,7 +153,7 @@ impl SessionsBackfiller {
             .idle_timeout_opt(options.idle_timeout);
 
         let (reports, reports_server) = builder.create().await?;
-        let backfiller = SessionsBackfiller::new(pool, reports, writer);
+        let backfiller = DataSessionsBackfiller::new(pool, reports, writer);
 
         Ok(TaskManager::builder()
             .add_task(reports_server)
@@ -220,19 +220,19 @@ impl SessionsBackfiller {
     }
 }
 
-impl ManagedTask for SessionsBackfiller {
+impl ManagedTask for DataSessionsBackfiller {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
 
-pub struct BurnedBackfiller {
+pub struct BurnedSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
     writer: BurnedDataTransferWriter,
 }
 
-impl BurnedBackfiller {
+impl BurnedSessionsBackfiller {
     pub async fn create_managed_task(
         pool: PgPool,
         bucket_client: BucketClient,
@@ -250,7 +250,7 @@ impl BurnedBackfiller {
             .idle_timeout_opt(options.idle_timeout);
 
         let (burned_reports, burned_reports_server) = builder.create().await?;
-        let burned_backfiller = BurnedBackfiller::new(pool, burned_reports, writer);
+        let burned_backfiller = BurnedSessionsBackfiller::new(pool, burned_reports, writer);
 
         Ok(TaskManager::builder()
             .add_task(burned_reports_server)
@@ -326,7 +326,7 @@ impl BurnedBackfiller {
     }
 }
 
-impl ManagedTask for BurnedBackfiller {
+impl ManagedTask for BurnedSessionsBackfiller {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }

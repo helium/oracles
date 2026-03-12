@@ -9,7 +9,7 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
 };
 use mobile_packet_verifier::{
-    backfill::{BackfillOptions, SessionsBackfiller},
+    backfill::{BackfillOptions, DataSessionsBackfiller},
     iceberg,
 };
 use sqlx::PgPool;
@@ -90,7 +90,7 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
 
     tokio::time::timeout(
         TEST_TIMEOUT,
-        SessionsBackfiller::create_managed_task(
+        DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
             writer,
@@ -153,7 +153,7 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let options = test_backfill_options("test-backfill-stop", start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
-        SessionsBackfiller::create_managed_task(
+        DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
             writer,
@@ -222,7 +222,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let options = test_backfill_options(process_name, start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
-        SessionsBackfiller::create_managed_task(
+        DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
             writer.clone(),
@@ -245,7 +245,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let options = test_backfill_options(process_name, start_time, end_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
-        SessionsBackfiller::create_managed_task(
+        DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
             writer,
