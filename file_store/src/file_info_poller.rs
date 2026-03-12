@@ -146,6 +146,10 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     queue_size: usize,
     #[builder(default = r#""default".to_string()"#)]
     process_name: String,
+    /// Optional timestamp after which the poller will stop.
+    /// When a file with `timestamp >= stop_after` is encountered, the poller exits cleanly.
+    #[builder(default, setter(custom))]
+    stop_after: Option<DateTime<Utc>>,
     #[builder(setter(skip))]
     p: PhantomData<Message>,
 }
@@ -186,6 +190,33 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     /// `max_lookback` window, it will not be retrieved.
     pub fn lookback_max(self, max_lookback: Duration) -> Self {
         self.lookback(LookbackBehavior::Max(max_lookback))
+    }
+
+    /// Set when the poller should stop processing files.
+    ///
+    /// When a file with `timestamp >= stop_after` is encountered, the poller
+    /// will exit cleanly. The file at the boundary is NOT processed, allowing
+    /// a future run (without `stop_after` or with a later value) to pick it up.
+    pub fn stop_after(mut self, stop_after: DateTime<Utc>) -> Self {
+        self.stop_after = Some(Some(stop_after));
+        self
+    }
+
+    /// Stop processing files at the current time.
+    ///
+    /// This is useful for "catch up" jobs that process historical files
+    /// up to now and then exit. Equivalent to `.stop_after(Utc::now())`.
+    pub fn stop_at_now(self) -> Self {
+        self.stop_after(Utc::now())
+    }
+
+    /// Run continuously without stopping (default behavior).
+    ///
+    /// This explicitly sets the poller to never stop based on file timestamps.
+    /// The poller will only stop when the shutdown signal is triggered.
+    pub fn stop_never(mut self) -> Self {
+        self.stop_after = Some(None);
+        self
     }
 
     /// Set the prefix for the file names.
@@ -292,10 +323,21 @@ where
     Parser: FileInfoPollerParser<Message>,
     Store: FileInfoPollerStore + Send + Sync + 'static,
 {
-    async fn get_next_file(&mut self) -> Result<FileInfo> {
+    async fn get_next_file(&mut self) -> Result<Option<FileInfo>> {
         loop {
             if let Some(file_info) = self.file_queue.pop_front() {
-                return Ok(file_info);
+                // If file timestamp >= stop_after, we're done
+                if let Some(stop_after) = self.config.stop_after {
+                    if file_info.timestamp > stop_after {
+                        tracing::info!(
+                            file = %file_info,
+                            %stop_after,
+                            "file reached stop_after, closing stream"
+                        );
+                        return Ok(None);
+                    }
+                }
+                return Ok(Some(file_info));
             }
 
             let after = self.after(self.latest_file_timestamp);
@@ -327,6 +369,7 @@ where
         tracing::info!(
             r#type = self.config.prefix,
             %process_name,
+            stop_after = ?self.config.stop_after,
             "starting FileInfoPoller",
         );
 
@@ -340,13 +383,24 @@ where
                 }
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
                 result = futures::future::try_join(sender.reserve().map_err(|_| ChannelError::poller_send_error(&prefix, &process_name)), self.get_next_file()) => {
-                    let (permit, file) = result?;
-                    let byte_stream = self.config.store.get_raw(file.clone()).await?;
-                    let data = self.config.parser.parse(byte_stream).await?;
-                    let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
+                    match result? {
+                        (permit, Some(file)) => {
+                            let byte_stream = self.config.store.get_raw(file.clone()).await?;
+                            let data = self.config.parser.parse(byte_stream).await?;
+                            let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
 
-                    permit.send(file_info_stream);
-                    cache_file(&self.cache, &file).await;
+                            permit.send(file_info_stream);
+                            cache_file(&self.cache, &file).await;
+                        }
+                        (_, None) => {
+                            tracing::info!(
+                                r#type = self.config.prefix,
+                                %process_name,
+                                "FileInfoPoller completed (stop_after reached)"
+                            );
+                            break;
+                        }
+                    }
                 }
             }
         }
