@@ -23,6 +23,11 @@ pub struct Cmd {
     #[clap(long, default_value = "backfill")]
     process_name: String,
 
+    /// Start processing files after this timestamp.
+    /// Format: RFC 3339 (e.g., 2024-01-01T00:00:00Z)
+    #[clap(long)]
+    start_after: DateTime<Utc>,
+
     /// Stop processing files when their timestamp is > this value.
     /// Use this to avoid reprocessing files that the daemon has already handled.
     /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
@@ -48,12 +53,13 @@ impl Cmd {
 
         tracing::info!(
             process_name = %self.process_name,
+            start_after = %self.start_after,
             stop_after = %self.stop_after,
             "starting all backfills"
         );
 
         let options =
-            BackfillOptions::new(&self.process_name, settings.start_after, self.stop_after);
+            BackfillOptions::new(&self.process_name, self.start_after, self.stop_after);
 
         let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
