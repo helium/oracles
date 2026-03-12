@@ -52,8 +52,8 @@ impl Cmd {
             "starting all backfills"
         );
 
-        let options = BackfillOptions::new(&self.process_name, settings.start_after)
-            .stop_after(self.stop_after);
+        let options =
+            BackfillOptions::new(&self.process_name, settings.start_after, self.stop_after);
 
         let sessions_task = SessionsBackfiller::create_managed_task(
             pool.clone(),
@@ -86,34 +86,33 @@ impl Cmd {
 pub struct BackfillOptions {
     pub process_name: String,
     pub start_after: DateTime<Utc>,
-    pub stop_after: Option<DateTime<Utc>>,
-    pub poll_duration: Duration,
-    pub idle_timeout: Duration,
+    pub stop_after: DateTime<Utc>,
+    pub poll_duration: Option<Duration>,
+    pub idle_timeout: Option<Duration>,
 }
 
 impl BackfillOptions {
-    pub fn new(process_name: impl Into<String>, start_after: DateTime<Utc>) -> Self {
+    pub fn new(
+        process_name: impl Into<String>,
+        start_after: DateTime<Utc>,
+        stop_after: DateTime<Utc>,
+    ) -> Self {
         Self {
             process_name: process_name.into(),
             start_after,
-            stop_after: None,
-            poll_duration: Duration::from_secs(30),
-            idle_timeout: Duration::from_secs(30),
+            stop_after,
+            poll_duration: None,
+            idle_timeout: None,
         }
     }
 
-    pub fn stop_after(mut self, stop_after: DateTime<Utc>) -> Self {
-        self.stop_after = Some(stop_after);
-        self
-    }
-
     pub fn poll_duration(mut self, poll_duration: Duration) -> Self {
-        self.poll_duration = poll_duration;
+        self.poll_duration = Some(poll_duration);
         self
     }
 
     pub fn idle_timeout(mut self, idle_timeout: Duration) -> Self {
-        self.idle_timeout = idle_timeout;
+        self.idle_timeout = Some(idle_timeout);
         self
     }
 }
@@ -143,18 +142,15 @@ impl SessionsBackfiller {
         writer: DataTransferWriter,
         options: BackfillOptions,
     ) -> anyhow::Result<impl ManagedTask> {
-        let mut builder = file_source::continuous_source()
+        let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(options.start_after)
+            .stop_after(options.stop_after)
             .process_name(options.process_name)
-            .poll_duration(options.poll_duration)
-            .idle_timeout(options.idle_timeout);
-
-        if let Some(stop_after) = options.stop_after {
-            builder = builder.stop_after(stop_after);
-        }
+            .poll_duration_opt(options.poll_duration)
+            .idle_timeout_opt(options.idle_timeout);
 
         let (reports, reports_server) = builder.create().await?;
         let backfiller = SessionsBackfiller::new(pool, reports, writer);
@@ -243,17 +239,15 @@ impl BurnedBackfiller {
         writer: BurnedDataTransferWriter,
         options: BackfillOptions,
     ) -> anyhow::Result<impl ManagedTask> {
-        let mut builder = file_source::continuous_source()
+        let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .lookback_start_after(options.start_after)
-            .process_name(format!("{}-burned", options.process_name))
-            .idle_timeout(options.idle_timeout);
-
-        if let Some(stop_after) = options.stop_after {
-            builder = builder.stop_after(stop_after);
-        }
+            .stop_after(options.stop_after)
+            .process_name(options.process_name)
+            .poll_duration_opt(options.poll_duration)
+            .idle_timeout_opt(options.idle_timeout);
 
         let (burned_reports, burned_reports_server) = builder.create().await?;
         let burned_backfiller = BurnedBackfiller::new(pool, burned_reports, writer);

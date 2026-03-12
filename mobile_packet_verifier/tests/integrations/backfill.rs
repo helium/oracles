@@ -44,8 +44,12 @@ fn make_report(timestamp: DateTime<Utc>, event_id: &str) -> DataTransferSessionI
     .into()
 }
 
-fn test_backfill_options(process_name: &str, start_after: DateTime<Utc>) -> BackfillOptions {
-    BackfillOptions::new(process_name, start_after)
+fn test_backfill_options(
+    process_name: &str,
+    start_after: DateTime<Utc>,
+    stop_after: DateTime<Utc>,
+) -> BackfillOptions {
+    BackfillOptions::new(process_name, start_after, stop_after)
         .poll_duration(std::time::Duration::from_millis(100))
         .idle_timeout(std::time::Duration::from_millis(500))
 }
@@ -61,11 +65,11 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     awsl.create_bucket().await?;
 
     // Create test files with distinct timestamps
-    // Truncate to milliseconds to avoid sub-millisecond comparison issues
     let base_time = Utc::now() - Duration::hours(1);
-    let start_time = base_time - Duration::minutes(1);
+    let start_time = base_time - Duration::minutes(1); // start polling for files
     let file1_time = base_time;
     let file2_time = base_time + Duration::minutes(5);
+    let end_time = base_time + Duration::days(42); // backfill requires stop time
 
     awsl.put_protos_at_time(
         FileType::DataTransferSessionIngestReport.to_string(),
@@ -82,7 +86,7 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     .await?;
 
     // Run backfill - poller will exit via idle_timeout after processing all files
-    let options = test_backfill_options("test-backfill", start_time);
+    let options = test_backfill_options("test-backfill", start_time, end_time);
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -117,10 +121,10 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     // Create 3 files with distinct timestamps
     // Truncate to milliseconds to avoid sub-millisecond comparison issues
     let base_time = Utc::now() - Duration::hours(2);
-    let start_time = base_time - Duration::minutes(1);
+    let start_time = base_time - Duration::minutes(1); // start polling for files
     let file1_time = base_time;
     let file2_time = base_time + Duration::minutes(30);
-    let stop_time = base_time + Duration::minutes(45);
+    let stop_time = base_time + Duration::minutes(45); // stop processing files
     let file3_time = base_time + Duration::hours(1); // This one should be skipped
 
     awsl.put_protos_at_time(
@@ -146,7 +150,7 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 
     // Run backfill with stop_after = file3_time (should process only first 2 files)
     // Poller exits via stop_after before reaching file3, then idle_timeout triggers exit
-    let options = test_backfill_options("test-backfill-stop", start_time).stop_after(stop_time);
+    let options = test_backfill_options("test-backfill-stop", start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         SessionsBackfiller::create_managed_task(
@@ -184,11 +188,12 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     // Create 3 files
     // Truncate to milliseconds to avoid sub-millisecond comparison issues
     let base_time = Utc::now() - Duration::hours(2);
-    let start_time = base_time - Duration::minutes(1);
+    let start_time = base_time - Duration::minutes(1); // start polling for files
     let file1_time = base_time;
     let file2_time = base_time + Duration::minutes(30);
-    let stop_time = base_time + Duration::minutes(45);
+    let stop_time = base_time + Duration::minutes(45); // interruption
     let file3_time = base_time + Duration::hours(1);
+    let end_time = base_time + Duration::days(42); // continue to end of files
 
     awsl.put_protos_at_time(
         FileType::DataTransferSessionIngestReport.to_string(),
@@ -214,7 +219,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let process_name = "test-backfill-resume";
 
     // First run: process only first 2 files (stop before file3_time)
-    let options = test_backfill_options(process_name, start_time).stop_after(stop_time);
+    let options = test_backfill_options(process_name, start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         SessionsBackfiller::create_managed_task(
@@ -237,7 +242,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     // Second run: resume and process remaining files (same process_name)
     // The FileInfoPoller should skip already-processed files
     // Poller exits via idle_timeout after processing file3
-    let options = test_backfill_options(process_name, start_time);
+    let options = test_backfill_options(process_name, start_time, end_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         SessionsBackfiller::create_managed_task(
