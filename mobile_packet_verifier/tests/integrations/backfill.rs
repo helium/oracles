@@ -9,7 +9,7 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
 };
 use mobile_packet_verifier::{
-    backfill::{run_sessions_backfill, SessionsBackfillOptions},
+    backfill::{run_sessions_backfill, BackfillOptions},
     iceberg,
 };
 use sqlx::PgPool;
@@ -44,11 +44,8 @@ fn make_report(timestamp: DateTime<Utc>, event_id: &str) -> DataTransferSessionI
     .into()
 }
 
-fn test_backfill_options(
-    process_name: &str,
-    start_after: DateTime<Utc>,
-) -> SessionsBackfillOptions {
-    SessionsBackfillOptions::new(process_name, start_after)
+fn test_backfill_options(process_name: &str, start_after: DateTime<Utc>) -> BackfillOptions {
+    BackfillOptions::new(process_name, start_after)
         .poll_duration(std::time::Duration::from_millis(100))
         .idle_timeout(std::time::Duration::from_millis(500))
 }
