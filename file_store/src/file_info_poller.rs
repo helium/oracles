@@ -970,6 +970,98 @@ pub mod sqlx_postgres {
             Ok(msgs)
         }
 
+        #[sqlx::test]
+        async fn poller_exits_after_idle_timeout(pool: PgPool) -> TestResult {
+            // When configured with an idle_timeout, the poller should exit
+            // after being idle (no files to process) for that duration.
+
+            create_files_processed_table(&pool).await?;
+
+            let awsl = AwsLocal::new().await;
+            awsl.create_bucket().await?;
+
+            // Put a single file to process
+            let now = Utc::now();
+            awsl.put_protos_at_time("file_type", vec![TestMsg {}], now)
+                .await?;
+
+            let idle_timeout = Duration::from_millis(500);
+            let (receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
+                .state(pool.clone())
+                .bucket_client(awsl.bucket_client())
+                .lookback_start_after(now - Duration::from_secs(60))
+                .prefix("file_type")
+                .poll_duration(Duration::from_millis(100))
+                .idle_timeout(idle_timeout)
+                .create()
+                .await?;
+
+            let (trigger, shutdown) = triggered::trigger();
+            let handle = tokio::spawn(server.run(shutdown));
+
+            // Process the one file
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert_eq!(files.len(), 1, "should process the one file");
+
+            // The poller should exit on its own due to idle timeout (no shutdown trigger needed)
+            let result = tokio::time::timeout(Duration::from_secs(5), handle).await;
+            assert!(
+                result.is_ok(),
+                "poller should exit due to idle timeout, not timeout waiting"
+            );
+
+            // Clean up (trigger just in case, though poller should already be done)
+            trigger.trigger();
+            awsl.cleanup().await?;
+
+            Ok(())
+        }
+
+        #[sqlx::test]
+        async fn poller_without_idle_timeout_does_not_exit(pool: PgPool) -> TestResult {
+            // Without idle_timeout configured, the poller should NOT exit on its own.
+
+            create_files_processed_table(&pool).await?;
+
+            let awsl = AwsLocal::new().await;
+            awsl.create_bucket().await?;
+
+            // Put a single file to process
+            let now = Utc::now();
+            awsl.put_protos_at_time("file_type", vec![TestMsg {}], now)
+                .await?;
+
+            let (receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
+                .state(pool.clone())
+                .bucket_client(awsl.bucket_client())
+                .lookback_start_after(now - Duration::from_secs(60))
+                .prefix("file_type")
+                .poll_duration(Duration::from_millis(100))
+                // No idle_timeout configured
+                .create()
+                .await?;
+
+            let (trigger, shutdown) = triggered::trigger();
+            let handle = tokio::spawn(server.run(shutdown));
+
+            // Process the one file
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert_eq!(files.len(), 1, "should process the one file");
+
+            // The poller should NOT exit on its own - it should keep waiting
+            let result = tokio::time::timeout(Duration::from_millis(500), handle).await;
+            assert!(
+                result.is_err(),
+                "poller should NOT exit on its own without idle_timeout"
+            );
+
+            // Clean up by triggering shutdown
+            trigger.trigger();
+            awsl.cleanup().await?;
+
+            Ok(())
+        }
+
         // When you need to make a FileInfoPoller that doesn't use a Store...
         struct UnimplementedStore;
 
