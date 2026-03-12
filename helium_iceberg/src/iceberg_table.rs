@@ -163,7 +163,11 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
         custom_properties: HashMap<String, String>,
     ) -> Result<Box<dyn BranchPublisher>> {
         if records.is_empty() {
-            return Ok(Box::new(EmptyIcebergBranchPublisher));
+            return Ok(Box::new(EmptyIcebergBranchPublisher {
+                catalog: self.catalog,
+                table: self.table,
+                branch_name: self.branch_name,
+            }));
         }
 
         reload_table(&self.catalog, &self.table).await?;
@@ -195,17 +199,22 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
     }
 }
 
-/// When no records are passed to an [IcebergBranchWriter], we do not want to
-/// send off the request to create a branch for no data so it can be published.
-/// In that case, we return this struct, that allows us to complete the
-/// publish() dance without causing errors of non-existent branches in iceberg.
-struct EmptyIcebergBranchPublisher;
+/// When no records are passed to an [IcebergBranchWriter], the branch created
+/// by [`begin()`] has no data. Publishing this struct deletes the empty branch
+/// to avoid leaving orphaned refs in the catalog.
+struct EmptyIcebergBranchPublisher {
+    catalog: Catalog,
+    table: Arc<RwLock<Table>>,
+    branch_name: String,
+}
 
 #[async_trait]
 impl BranchPublisher for EmptyIcebergBranchPublisher {
     async fn publish(self: Box<Self>) -> Result {
-        tracing::debug!("Publishing empty branch");
-        Ok(())
+        tracing::debug!("Deleting empty branch");
+        reload_table(&self.catalog, &self.table).await?;
+        let table_guard = self.table.read().await;
+        crate::branch::delete_branch(&self.catalog, &table_guard, &self.branch_name).await
     }
 }
 
