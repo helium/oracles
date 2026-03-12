@@ -2,7 +2,7 @@ use crate::iceberg::{
     self, burned_session::IcebergBurnedDataTransferSession, session::IcebergDataTransferSession,
     BurnedDataTransferWriter, DataTransferWriter,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source};
 use file_store_oracles::{
@@ -11,37 +11,10 @@ use file_store_oracles::{
 };
 use futures::StreamExt;
 use sqlx::{Pool, Postgres};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::settings::Settings;
-
-/// Runs the poller server and backfiller until the backfiller completes.
-/// When the backfiller finishes (either by hitting stop_at or completing all files),
-/// it triggers shutdown which stops the poller server.
-async fn run_until_done<T: ManagedTask + 'static>(
-    poller_server: impl ManagedTask + 'static,
-    backfiller: T,
-    shutdown_listener: triggered::Listener,
-) -> Result<()> {
-    let (poller_trigger, poller_listener) = triggered::trigger();
-    let mut poller_future = Box::new(poller_server).start_task(poller_listener);
-    let backfiller_future = Box::new(backfiller).start_task(shutdown_listener.clone());
-
-    // Wait for either the backfiller to complete or an external shutdown
-    tokio::select! {
-        result = backfiller_future => {
-            // Backfiller finished, stop the poller
-            poller_trigger.trigger();
-            let _ = (&mut poller_future).await;
-            result.map_err(Into::into)
-        }
-        result = &mut poller_future => {
-            // Poller finished unexpectedly (shouldn't happen normally)
-            result.map_err(Into::into)
-        }
-    }
-}
 
 #[derive(Debug, clap::Subcommand)]
 pub enum BackfillTarget {
@@ -63,11 +36,11 @@ pub struct Cmd {
     #[clap(long, default_value = "backfill")]
     process_name: String,
 
-    /// Stop processing files when their timestamp is >= this value.
+    /// Stop processing files when their timestamp is > this value.
     /// Use this to avoid reprocessing files that the daemon has already handled.
     /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
     #[clap(long)]
-    stop_at: Option<DateTime<Utc>>,
+    stop_after: DateTime<Utc>,
 }
 
 impl Cmd {
@@ -110,6 +83,7 @@ impl Cmd {
     ) -> Result<()> {
         tracing::info!(
             process_name = %self.process_name,
+            stop_after = %self.stop_after,
             "starting sessions backfill"
         );
 
@@ -118,15 +92,21 @@ impl Cmd {
             .bucket_client(settings.ingest_bucket.connect().await)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(settings.start_after)
+            .stop_after(self.stop_after)
             .process_name(self.process_name.clone())
             .create()
             .await?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let backfiller =
-            SessionsBackfiller::new(pool, reports, writer, self.stop_at, shutdown_trigger);
+        let backfiller = SessionsBackfiller::new(pool, reports, writer);
 
-        run_until_done(reports_server, backfiller, shutdown_listener).await
+        TaskManager::builder()
+            .add_task(reports_server)
+            .add_task(backfiller)
+            .build()
+            .start()
+            .await?;
+
+        Ok(())
     }
 
     async fn run_burned_backfill(
@@ -138,6 +118,7 @@ impl Cmd {
         let burned_process_name = format!("{}-burned", self.process_name);
         tracing::info!(
             process_name = %burned_process_name,
+            stop_after = %self.stop_after,
             "starting burned sessions backfill"
         );
 
@@ -146,15 +127,21 @@ impl Cmd {
             .bucket_client(settings.output_bucket.connect().await)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .lookback_start_after(settings.start_after)
+            .stop_after(self.stop_after)
             .process_name(burned_process_name)
             .create()
             .await?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let backfiller =
-            BurnedBackfiller::new(pool, reports, writer, self.stop_at, shutdown_trigger);
+        let backfiller = BurnedBackfiller::new(pool, reports, writer);
 
-        run_until_done(reports_server, backfiller, shutdown_listener).await
+        TaskManager::builder()
+            .add_task(reports_server)
+            .add_task(backfiller)
+            .build()
+            .start()
+            .await?;
+
+        Ok(())
     }
 
     async fn run_all_backfills(
@@ -166,6 +153,7 @@ impl Cmd {
     ) -> Result<()> {
         tracing::info!(
             process_name = %self.process_name,
+            stop_after = %self.stop_after,
             "starting all backfills"
         );
 
@@ -175,19 +163,13 @@ impl Cmd {
             .bucket_client(settings.ingest_bucket.connect().await)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(settings.start_after)
+            .stop_after(self.stop_after)
             .process_name(self.process_name.clone())
             .create()
             .await?;
 
-        // Run sessions and burned backfills concurrently using separate run_until_done calls
-        let (sessions_shutdown_trigger, sessions_shutdown_listener) = triggered::trigger();
-        let sessions_backfiller = SessionsBackfiller::new(
-            pool.clone(),
-            sessions_reports,
-            session_writer,
-            self.stop_at,
-            sessions_shutdown_trigger,
-        );
+        let sessions_backfiller =
+            SessionsBackfiller::new(pool.clone(), sessions_reports, session_writer);
 
         // Burned sessions backfill setup
         let burned_process_name = format!("{}-burned", self.process_name);
@@ -196,28 +178,23 @@ impl Cmd {
             .bucket_client(settings.output_bucket.connect().await)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .lookback_start_after(settings.start_after)
+            .stop_after(self.stop_after)
             .process_name(burned_process_name)
             .create()
             .await?;
 
-        let (burned_shutdown_trigger, burned_shutdown_listener) = triggered::trigger();
-        let burned_backfiller = BurnedBackfiller::new(
-            pool,
-            burned_reports,
-            burned_writer,
-            self.stop_at,
-            burned_shutdown_trigger,
-        );
+        let burned_backfiller = BurnedBackfiller::new(pool, burned_reports, burned_writer);
 
-        // Run both backfills concurrently, each with its own poller
-        let sessions_handle =
-            run_until_done(sessions_server, sessions_backfiller, sessions_shutdown_listener);
-        let burned_handle =
-            run_until_done(burned_server, burned_backfiller, burned_shutdown_listener);
+        // Run both pipelines under a single TaskManager
+        TaskManager::builder()
+            .add_task(sessions_server)
+            .add_task(sessions_backfiller)
+            .add_task(burned_server)
+            .add_task(burned_backfiller)
+            .build()
+            .start()
+            .await?;
 
-        let (sessions_result, burned_result) = tokio::join!(sessions_handle, burned_handle);
-        sessions_result?;
-        burned_result?;
         Ok(())
     }
 }
@@ -226,8 +203,6 @@ pub struct SessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     writer: DataTransferWriter,
-    stop_at: Option<DateTime<Utc>>,
-    shutdown_trigger: triggered::Trigger,
 }
 
 impl SessionsBackfiller {
@@ -235,51 +210,30 @@ impl SessionsBackfiller {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         writer: DataTransferWriter,
-        stop_at: Option<DateTime<Utc>>,
-        shutdown_trigger: triggered::Trigger,
     ) -> Self {
         Self {
             pool,
             reports,
             writer,
-            stop_at,
-            shutdown_trigger,
         }
     }
 
     async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        let result = self.run_inner(&mut shutdown).await;
-        self.shutdown_trigger.trigger();
-        result
-    }
-
-    async fn run_inner(
-        &mut self,
-        shutdown: &mut triggered::Listener,
-    ) -> Result<()> {
-        tracing::info!(stop_at = ?self.stop_at, "sessions backfiller starting");
+        tracing::info!("sessions backfiller starting");
         loop {
             tokio::select! {
                 biased;
-                _ = &mut *shutdown => {
+                _ = &mut shutdown => {
                     tracing::info!("sessions backfiller shutting down");
                     return Ok(());
                 }
                 file = self.reports.recv() => {
                     let Some(file_info_stream) = file else {
-                        bail!("sessions FileInfoPoller sender was dropped unexpectedly");
+                        // Channel closed - poller reached stop_after or finished
+                        tracing::info!("sessions backfiller completed");
+                        return Ok(());
                     };
                     tracing::info!(file = %file_info_stream.file_info, "received file");
-                    if let Some(stop_at) = self.stop_at {
-                        if file_info_stream.file_info.timestamp >= stop_at {
-                            tracing::info!(
-                                file = %file_info_stream.file_info,
-                                %stop_at,
-                                "reached stop_at timestamp, stopping sessions backfill"
-                            );
-                            return Ok(());
-                        }
-                    }
                     self.handle_file(file_info_stream).await?;
                 }
             }
@@ -301,8 +255,10 @@ impl SessionsBackfiller {
 
         let reports = file.into_stream(&mut txn).await?;
 
-        let iceberg_sessions: Vec<IcebergDataTransferSession> =
-            reports.map(IcebergDataTransferSession::from).collect().await;
+        let iceberg_sessions: Vec<IcebergDataTransferSession> = reports
+            .map(IcebergDataTransferSession::from)
+            .collect()
+            .await;
 
         let count = iceberg_sessions.len();
         iceberg_txn
@@ -311,7 +267,10 @@ impl SessionsBackfiller {
             .context("writing to iceberg")?;
 
         txn.commit().await.context("committing db transaction")?;
-        iceberg_txn.publish().await.context("publishing to iceberg")?;
+        iceberg_txn
+            .publish()
+            .await
+            .context("publishing to iceberg")?;
 
         tracing::info!(count, "backfilled sessions file");
         Ok(())
@@ -328,8 +287,6 @@ pub struct BurnedBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
     writer: BurnedDataTransferWriter,
-    stop_at: Option<DateTime<Utc>>,
-    shutdown_trigger: triggered::Trigger,
 }
 
 impl BurnedBackfiller {
@@ -337,49 +294,30 @@ impl BurnedBackfiller {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
         writer: BurnedDataTransferWriter,
-        stop_at: Option<DateTime<Utc>>,
-        shutdown_trigger: triggered::Trigger,
     ) -> Self {
         Self {
             pool,
             reports,
             writer,
-            stop_at,
-            shutdown_trigger,
         }
     }
 
     async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        let result = self.run_inner(&mut shutdown).await;
-        self.shutdown_trigger.trigger();
-        result
-    }
-
-    async fn run_inner(
-        &mut self,
-        shutdown: &mut triggered::Listener,
-    ) -> Result<()> {
+        tracing::info!("burned backfiller starting");
         loop {
             tokio::select! {
                 biased;
-                _ = &mut *shutdown => {
+                _ = &mut shutdown => {
                     tracing::info!("burned backfiller shutting down");
                     return Ok(());
                 }
                 file = self.reports.recv() => {
                     let Some(file_info_stream) = file else {
-                        bail!("burned FileInfoPoller sender was dropped unexpectedly");
+                        // Channel closed - poller reached stop_after or finished
+                        tracing::info!("burned backfiller completed");
+                        return Ok(());
                     };
-                    if let Some(stop_at) = self.stop_at {
-                        if file_info_stream.file_info.timestamp >= stop_at {
-                            tracing::info!(
-                                file = %file_info_stream.file_info,
-                                %stop_at,
-                                "reached stop_at timestamp, stopping burned sessions backfill"
-                            );
-                            return Ok(());
-                        }
-                    }
+                    tracing::info!(file = %file_info_stream.file_info, "received file");
                     self.handle_file(file_info_stream).await?;
                 }
             }
@@ -410,7 +348,10 @@ impl BurnedBackfiller {
             .context("writing to iceberg")?;
 
         txn.commit().await.context("committing db transaction")?;
-        iceberg_txn.publish().await.context("publishing to iceberg")?;
+        iceberg_txn
+            .publish()
+            .await
+            .context("publishing to iceberg")?;
 
         tracing::info!(count, "backfilled burned sessions file");
         Ok(())

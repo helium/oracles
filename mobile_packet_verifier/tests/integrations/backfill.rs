@@ -14,7 +14,7 @@ use mobile_packet_verifier::{
     iceberg::{self, session::IcebergDataTransferSession},
 };
 use sqlx::PgPool;
-use task_manager::ManagedTask;
+use task_manager::TaskManager;
 
 use crate::common;
 
@@ -52,7 +52,7 @@ async fn run_sessions_backfill(
     writer: iceberg::DataTransferWriter,
     process_name: &str,
     start_after: DateTime<Utc>,
-    stop_at: Option<DateTime<Utc>>,
+    stop_after: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let (reports, reports_server) =
         file_source::continuous_source::<DataTransferSessionIngestReport, _, _>()
@@ -60,30 +60,21 @@ async fn run_sessions_backfill(
             .bucket_client(awsl.bucket_client())
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(start_after)
+            .stop_after(stop_after)
             .process_name(process_name.to_string())
             .poll_duration(std::time::Duration::from_secs(1))
             .create()
             .await?;
 
-    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-    let backfiller =
-        SessionsBackfiller::new(pool.clone(), reports, writer, stop_at, shutdown_trigger);
-
-    // Run backfiller and poller together - backfiller will trigger shutdown when done
-    let (poller_trigger, poller_listener) = triggered::trigger();
-    let poller_future = Box::new(reports_server).start_task(poller_listener);
-    let backfiller_future = Box::new(backfiller).start_task(shutdown_listener);
-
-    // Spawn both tasks and wait for the backfiller to complete
-    let poller_handle = tokio::spawn(poller_future);
-    let backfiller_handle = tokio::spawn(backfiller_future);
+    let backfiller = SessionsBackfiller::new(pool.clone(), reports, writer);
 
     let run_future = async {
-        backfiller_handle.await??;
-
-        poller_trigger.trigger();
-        poller_handle.await??;
-
+        TaskManager::builder()
+            .add_task(reports_server)
+            .add_task(backfiller)
+            .build()
+            .start()
+            .await?;
         Ok::<_, anyhow::Error>(())
     };
 
@@ -110,8 +101,8 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     let base_time_ms = DateTime::from_timestamp_millis(base_time.timestamp_millis()).unwrap();
     let file1_time = base_time_ms;
     let file2_time = base_time_ms + Duration::minutes(5);
-    // stop_at is after all files so backfiller will process everything then exit
-    let stop_at = file2_time + Duration::minutes(1);
+    // stop_after is after all files so backfiller will process everything then exit
+    let stop_after = file2_time + Duration::minutes(1);
 
     let report1 = make_report(file1_time, "event-1");
     let report2 = make_report(file2_time, "event-2");
@@ -133,11 +124,11 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     )
     .await?;
 
-    // Create an empty file at stop_at time so the backfiller has something to trigger exit
+    // Create an empty file at stop_after time so the poller has something to trigger exit
     awsl.put_protos_at_time(
         FileType::DataTransferSessionIngestReport.to_string(),
         Vec::<DataTransferSessionIngestReportV1>::new(),
-        stop_at,
+        stop_after,
     )
     .await?;
 
@@ -148,7 +139,7 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
         writer,
         "test-backfill",
         base_time - Duration::minutes(1),
-        Some(stop_at),
+        stop_after,
     )
     .await?;
 
@@ -203,14 +194,14 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    // Run backfill with stop_at = file3_time (should process only first 2 files)
+    // Run backfill with stop_after = file3_time (should process only first 2 files)
     run_sessions_backfill(
         &pool,
         &awsl,
         writer,
         "test-backfill-stop",
         base_time - Duration::minutes(1),
-        Some(file3_time),
+        file3_time,
     )
     .await?;
 
@@ -219,7 +210,7 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(
         rows.len(),
         2,
-        "expected 2 sessions (3rd file should be skipped due to stop_at)"
+        "expected 2 sessions (3rd file should be skipped due to stop_after)"
     );
 
     awsl.cleanup().await?;
@@ -243,7 +234,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let file1_time = base_time_ms;
     let file2_time = base_time_ms + Duration::minutes(30);
     let file3_time = base_time_ms + Duration::hours(1);
-    // Sentinel file to trigger backfiller exit after processing all real files
+    // Sentinel file to trigger poller exit after processing all real files
     let sentinel_time = file3_time + Duration::minutes(1);
 
     let proto1: DataTransferSessionIngestReportV1 = make_report(file1_time, "event-1").into();
@@ -271,7 +262,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     )
     .await?;
 
-    // Create an empty sentinel file to trigger backfiller exit
+    // Create an empty sentinel file to trigger poller exit
     awsl.put_protos_at_time(
         FileType::DataTransferSessionIngestReport.to_string(),
         Vec::<DataTransferSessionIngestReportV1>::new(),
@@ -288,7 +279,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
         writer.clone(),
         process_name,
         base_time - Duration::minutes(1),
-        Some(file3_time),
+        file3_time,
     )
     .await?;
 
@@ -302,14 +293,14 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
 
     // Second run: resume and process remaining files (same process_name)
     // The FileInfoPoller should skip already-processed files
-    // Use sentinel_time as stop_at so backfiller exits after processing file3
+    // Use sentinel_time as stop_after so poller exits after processing file3
     run_sessions_backfill(
         &pool,
         &awsl,
         writer,
         process_name,
         base_time - Duration::minutes(1),
-        Some(sentinel_time),
+        sentinel_time,
     )
     .await?;
 
