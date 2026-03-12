@@ -8,6 +8,7 @@ use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::Instant;
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: Duration = Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
@@ -146,6 +147,15 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     queue_size: usize,
     #[builder(default = r#""default".to_string()"#)]
     process_name: String,
+    /// Optional timestamp after which the poller will stop.
+    /// When a file with `timestamp >= stop_after` is encountered, the poller exits cleanly.
+    #[builder(default, setter(custom))]
+    stop_after: Option<DateTime<Utc>>,
+    /// Optional duration after which the poller will stop if no new files are found.
+    /// When the poller has been idle (no files to process) for this duration, it performs
+    /// one final check and then exits cleanly if still idle.
+    #[builder(default, setter(custom))]
+    idle_timeout: Option<Duration>,
     #[builder(setter(skip))]
     p: PhantomData<Message>,
 }
@@ -188,6 +198,64 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
         self.lookback(LookbackBehavior::Max(max_lookback))
     }
 
+    /// Set when the poller should stop processing files.
+    ///
+    /// When a file with `timestamp >= stop_after` is encountered, the poller
+    /// will exit cleanly. The file at the boundary is NOT processed, allowing
+    /// a future run (without `stop_after` or with a later value) to pick it up.
+    pub fn stop_after(mut self, stop_after: DateTime<Utc>) -> Self {
+        self.stop_after = Some(Some(stop_after));
+        self
+    }
+
+    /// Stop processing files at the current time.
+    ///
+    /// This is useful for "catch up" jobs that process historical files
+    /// up to now and then exit. Equivalent to `.stop_after(Utc::now())`.
+    pub fn stop_at_now(self) -> Self {
+        self.stop_after(Utc::now())
+    }
+
+    /// Run continuously without stopping (default behavior).
+    ///
+    /// This explicitly sets the poller to never stop based on file timestamps.
+    /// The poller will only stop when the shutdown signal is triggered.
+    pub fn stop_never(mut self) -> Self {
+        self.stop_after = Some(None);
+        self
+    }
+
+    /// Set the idle timeout duration.
+    ///
+    /// When the poller has been idle (no new files to process) for this duration,
+    /// it performs one final check and then exits cleanly if still idle.
+    /// This is useful for batch processing jobs that should exit after processing
+    /// all available files rather than waiting indefinitely.
+    pub fn idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(Some(timeout));
+        self
+    }
+
+    /// Disable idle timeout (default behavior).
+    ///
+    /// The poller will wait indefinitely for new files.
+    pub fn no_idle_timeout(mut self) -> Self {
+        self.idle_timeout = Some(None);
+        self
+    }
+
+    /// Set the idle timeout from an optional value.
+    ///
+    /// If `Some`, sets the idle timeout to the given duration.
+    /// If `None`, disables idle timeout (poller waits indefinitely).
+    pub fn idle_timeout_opt(self, idle_timeout: Option<Duration>) -> Self {
+        if let Some(idle_timeout) = idle_timeout {
+            self.idle_timeout(idle_timeout)
+        } else {
+            self.no_idle_timeout()
+        }
+    }
+
     /// Set the prefix for the file names.
     ///
     /// The prefix is used to filter files when polling.
@@ -205,6 +273,14 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     pub fn prefix_without_dot(mut self, value: impl Into<String>) -> Self {
         self.prefix = Some(value.into());
         self
+    }
+
+    /// Set the poll duration from an optional value.
+    ///
+    /// If `Some`, sets the poll duration to the given value.
+    /// If `None`, uses the default poll duration (30 seconds).
+    pub fn poll_duration_opt(self, poll_duration: Option<Duration>) -> Self {
+        self.poll_duration(poll_duration.unwrap_or(DEFAULT_POLL_DURATION))
     }
 }
 
@@ -235,6 +311,9 @@ pub struct FileInfoPollerServer<
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
     cache: MemoryFileCache,
+    /// Tracks when the poller first became idle (no files to process).
+    /// Reset to None when files are found.
+    idle_since: Option<Instant>,
 }
 
 type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
@@ -267,6 +346,7 @@ where
                 file_queue: VecDeque::new(),
                 latest_file_timestamp,
                 cache: create_cache(),
+                idle_since: None,
             },
         ))
     }
@@ -292,10 +372,12 @@ where
     Parser: FileInfoPollerParser<Message>,
     Store: FileInfoPollerStore + Send + Sync + 'static,
 {
-    async fn get_next_file(&mut self) -> Result<FileInfo> {
+    async fn get_next_file(&mut self) -> Result<Option<FileInfo>> {
         loop {
             if let Some(file_info) = self.file_queue.pop_front() {
-                return Ok(file_info);
+                // File found, reset idle time
+                self.idle_since = None;
+                return self.check_stop_after(file_info);
             }
 
             let after = self.after(self.latest_file_timestamp);
@@ -314,8 +396,44 @@ where
             }
 
             if self.file_queue.is_empty() {
+                let idle_start = *self.idle_since.get_or_insert_with(Instant::now);
+                if self.idle_timeout_elapsed(idle_start) {
+                    return Ok(None);
+                }
                 tokio::time::sleep(self.poll_duration()).await;
             }
+        }
+    }
+
+    fn check_stop_after(&self, file_info: FileInfo) -> Result<Option<FileInfo>> {
+        if let Some(stop_after) = self.config.stop_after {
+            if file_info.timestamp > stop_after {
+                tracing::info!(
+                    file = %file_info,
+                    %stop_after,
+                    "file reached stop_after, closing stream"
+                );
+                return Ok(None);
+            }
+        }
+        Ok(Some(file_info))
+    }
+
+    /// Returns true if idle timeout has elapsed and the poller should exit.
+    fn idle_timeout_elapsed(&self, idle_start: Instant) -> bool {
+        let Some(idle_timeout) = self.config.idle_timeout else {
+            return false;
+        };
+
+        if idle_start.elapsed() >= idle_timeout {
+            tracing::info!(
+                idle_duration = ?idle_start.elapsed(),
+                ?idle_timeout,
+                "idle timeout exceeded, closing stream"
+            );
+            true
+        } else {
+            false
         }
     }
 
@@ -327,6 +445,8 @@ where
         tracing::info!(
             r#type = self.config.prefix,
             %process_name,
+            stop_after = ?self.config.stop_after,
+            idle_timeout = ?self.config.idle_timeout,
             "starting FileInfoPoller",
         );
 
@@ -340,13 +460,24 @@ where
                 }
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
                 result = futures::future::try_join(sender.reserve().map_err(|_| ChannelError::poller_send_error(&prefix, &process_name)), self.get_next_file()) => {
-                    let (permit, file) = result?;
-                    let byte_stream = self.config.store.get_raw(file.clone()).await?;
-                    let data = self.config.parser.parse(byte_stream).await?;
-                    let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
+                    match result? {
+                        (permit, Some(file)) => {
+                            let byte_stream = self.config.store.get_raw(file.clone()).await?;
+                            let data = self.config.parser.parse(byte_stream).await?;
+                            let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
 
-                    permit.send(file_info_stream);
-                    cache_file(&self.cache, &file).await;
+                            permit.send(file_info_stream);
+                            cache_file(&self.cache, &file).await;
+                        }
+                        (_, None) => {
+                            tracing::info!(
+                                r#type = self.config.prefix,
+                                %process_name,
+                                "FileInfoPoller completed"
+                            );
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -857,6 +988,98 @@ pub mod sqlx_postgres {
             txn.commit().await?;
 
             Ok(msgs)
+        }
+
+        #[sqlx::test]
+        async fn poller_exits_after_idle_timeout(pool: PgPool) -> TestResult {
+            // When configured with an idle_timeout, the poller should exit
+            // after being idle (no files to process) for that duration.
+
+            create_files_processed_table(&pool).await?;
+
+            let awsl = AwsLocal::new().await;
+            awsl.create_bucket().await?;
+
+            // Put a single file to process
+            let now = Utc::now();
+            awsl.put_protos_at_time("file_type", vec![TestMsg {}], now)
+                .await?;
+
+            let idle_timeout = Duration::from_millis(500);
+            let (receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
+                .state(pool.clone())
+                .bucket_client(awsl.bucket_client())
+                .lookback_start_after(now - Duration::from_secs(60))
+                .prefix("file_type")
+                .poll_duration(Duration::from_millis(100))
+                .idle_timeout(idle_timeout)
+                .create()
+                .await?;
+
+            let (trigger, shutdown) = triggered::trigger();
+            let handle = tokio::spawn(server.run(shutdown));
+
+            // Process the one file
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert_eq!(files.len(), 1, "should process the one file");
+
+            // The poller should exit on its own due to idle timeout (no shutdown trigger needed)
+            let result = tokio::time::timeout(Duration::from_secs(5), handle).await;
+            assert!(
+                result.is_ok(),
+                "poller should exit due to idle timeout, not timeout waiting"
+            );
+
+            // Clean up (trigger just in case, though poller should already be done)
+            trigger.trigger();
+            awsl.cleanup().await?;
+
+            Ok(())
+        }
+
+        #[sqlx::test]
+        async fn poller_without_idle_timeout_does_not_exit(pool: PgPool) -> TestResult {
+            // Without idle_timeout configured, the poller should NOT exit on its own.
+
+            create_files_processed_table(&pool).await?;
+
+            let awsl = AwsLocal::new().await;
+            awsl.create_bucket().await?;
+
+            // Put a single file to process
+            let now = Utc::now();
+            awsl.put_protos_at_time("file_type", vec![TestMsg {}], now)
+                .await?;
+
+            let (receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
+                .state(pool.clone())
+                .bucket_client(awsl.bucket_client())
+                .lookback_start_after(now - Duration::from_secs(60))
+                .prefix("file_type")
+                .poll_duration(Duration::from_millis(100))
+                // No idle_timeout configured
+                .create()
+                .await?;
+
+            let (trigger, shutdown) = triggered::trigger();
+            let handle = tokio::spawn(server.run(shutdown));
+
+            // Process the one file
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert_eq!(files.len(), 1, "should process the one file");
+
+            // The poller should NOT exit on its own - it should keep waiting
+            let result = tokio::time::timeout(Duration::from_millis(500), handle).await;
+            assert!(
+                result.is_err(),
+                "poller should NOT exit on its own without idle_timeout"
+            );
+
+            // Clean up by triggering shutdown
+            trigger.trigger();
+            awsl.cleanup().await?;
+
+            Ok(())
         }
 
         // When you need to make a FileInfoPoller that doesn't use a Store...
