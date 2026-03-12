@@ -4,7 +4,7 @@ use crate::iceberg::{
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient, FileInfo};
 use file_store_oracles::{
     mobile_session::DataTransferSessionIngestReport, mobile_transfer::ValidDataTransferSession,
     FileType,
@@ -176,7 +176,13 @@ impl DataSessionsBackfiller {
                         tracing::info!("sessions backfiller completed");
                         return Ok(());
                     };
-                    tracing::info!(file = %file_info_stream.file_info, "received file");
+                    let age = format_file_age(&file_info_stream.file_info);
+                    tracing::info!(
+                        file = %file_info_stream.file_info,
+                        timestamp = %file_info_stream.file_info.timestamp,
+                        age = %age,
+                        "received file"
+                    );
                     self.handle_file(file_info_stream).await?;
                 }
             }
@@ -187,7 +193,14 @@ impl DataSessionsBackfiller {
         &self,
         file: FileInfoStream<DataTransferSessionIngestReport>,
     ) -> Result<()> {
-        tracing::info!(file = %file.file_info, "backfilling sessions file to iceberg");
+        let file_info = file.file_info.clone();
+        let age = format_file_age(&file_info);
+        tracing::debug!(
+            file = %file_info,
+            timestamp = %file_info.timestamp,
+            age = %age,
+            "backfilling sessions file to iceberg"
+        );
 
         let mut txn = self.pool.begin().await?;
         let mut iceberg_txn = self
@@ -215,7 +228,7 @@ impl DataSessionsBackfiller {
             .context("publishing to iceberg")?;
         txn.commit().await.context("committing db transaction")?;
 
-        tracing::info!(count, "backfilled sessions file");
+        tracing::info!(file = %file_info, count, "backfilled sessions file");
         Ok(())
     }
 }
@@ -285,7 +298,13 @@ impl BurnedSessionsBackfiller {
                         tracing::info!("burned backfiller completed");
                         return Ok(());
                     };
-                    tracing::info!(file = %file_info_stream.file_info, "received file");
+                    let age = format_file_age(&file_info_stream.file_info);
+                    tracing::info!(
+                        file = %file_info_stream.file_info,
+                        timestamp = %file_info_stream.file_info.timestamp,
+                        age = %age,
+                        "received file"
+                    );
                     self.handle_file(file_info_stream).await?;
                 }
             }
@@ -293,7 +312,14 @@ impl BurnedSessionsBackfiller {
     }
 
     async fn handle_file(&self, file: FileInfoStream<ValidDataTransferSession>) -> Result<()> {
-        tracing::info!(file = %file.file_info, "backfilling burned sessions file to iceberg");
+        let file_info = file.file_info.clone();
+        let age = format_file_age(&file_info);
+        tracing::info!(
+            file = %file_info,
+            timestamp = %file_info.timestamp,
+            age = %age,
+            "backfilling burned sessions file to iceberg"
+        );
 
         let mut txn = self.pool.begin().await?;
         let mut iceberg_txn = self
@@ -321,7 +347,7 @@ impl BurnedSessionsBackfiller {
             .context("publishing to iceberg")?;
         txn.commit().await.context("committing db transaction")?;
 
-        tracing::info!(count, "backfilled burned sessions file");
+        tracing::info!(file = %file_info, count, "backfilled burned sessions file");
         Ok(())
     }
 }
@@ -329,5 +355,25 @@ impl BurnedSessionsBackfiller {
 impl ManagedTask for BurnedSessionsBackfiller {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
+    }
+}
+
+/// Format the age of a file in a human-readable way (e.g., "2d 5h 30m ago")
+fn format_file_age(file_info: &FileInfo) -> String {
+    let age = Utc::now().signed_duration_since(file_info.timestamp);
+
+    let total_seconds = age.num_seconds();
+    if total_seconds < 0 {
+        return "in the future".to_string();
+    }
+
+    let days = age.num_days();
+    let hours = age.num_hours() % 24;
+    let minutes = age.num_minutes() % 60;
+
+    match (days, hours, minutes) {
+        (0, 0, m) => format!("{m}m ago"),
+        (0, h, m) => format!("{h}h {m}m ago"),
+        (d, h, _) => format!("{d}d {h}h ago"),
     }
 }
