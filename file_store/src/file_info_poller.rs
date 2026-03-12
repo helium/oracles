@@ -8,6 +8,7 @@ use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::Instant;
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: Duration = Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
@@ -150,6 +151,11 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     /// When a file with `timestamp >= stop_after` is encountered, the poller exits cleanly.
     #[builder(default, setter(custom))]
     stop_after: Option<DateTime<Utc>>,
+    /// Optional duration after which the poller will stop if no new files are found.
+    /// When the poller has been idle (no files to process) for this duration, it performs
+    /// one final check and then exits cleanly if still idle.
+    #[builder(default, setter(custom))]
+    idle_timeout: Option<Duration>,
     #[builder(setter(skip))]
     p: PhantomData<Message>,
 }
@@ -219,6 +225,25 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
         self
     }
 
+    /// Set the idle timeout duration.
+    ///
+    /// When the poller has been idle (no new files to process) for this duration,
+    /// it performs one final check and then exits cleanly if still idle.
+    /// This is useful for batch processing jobs that should exit after processing
+    /// all available files rather than waiting indefinitely.
+    pub fn idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(Some(timeout));
+        self
+    }
+
+    /// Disable idle timeout (default behavior).
+    ///
+    /// The poller will wait indefinitely for new files.
+    pub fn no_idle_timeout(mut self) -> Self {
+        self.idle_timeout = Some(None);
+        self
+    }
+
     /// Set the prefix for the file names.
     ///
     /// The prefix is used to filter files when polling.
@@ -266,6 +291,9 @@ pub struct FileInfoPollerServer<
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
     cache: MemoryFileCache,
+    /// Tracks when the poller first became idle (no files to process).
+    /// Reset to None when files are found.
+    idle_since: Option<Instant>,
 }
 
 type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
@@ -298,6 +326,7 @@ where
                 file_queue: VecDeque::new(),
                 latest_file_timestamp,
                 cache: create_cache(),
+                idle_since: None,
             },
         ))
     }
@@ -326,18 +355,9 @@ where
     async fn get_next_file(&mut self) -> Result<Option<FileInfo>> {
         loop {
             if let Some(file_info) = self.file_queue.pop_front() {
-                // If file timestamp >= stop_after, we're done
-                if let Some(stop_after) = self.config.stop_after {
-                    if file_info.timestamp > stop_after {
-                        tracing::info!(
-                            file = %file_info,
-                            %stop_after,
-                            "file reached stop_after, closing stream"
-                        );
-                        return Ok(None);
-                    }
-                }
-                return Ok(Some(file_info));
+                // File found, reset idle time
+                self.idle_since = None;
+                return self.check_stop_after(file_info);
             }
 
             let after = self.after(self.latest_file_timestamp);
@@ -356,8 +376,44 @@ where
             }
 
             if self.file_queue.is_empty() {
+                let idle_start = *self.idle_since.get_or_insert_with(Instant::now);
+                if self.idle_timeout_elapsed(idle_start) {
+                    return Ok(None);
+                }
                 tokio::time::sleep(self.poll_duration()).await;
             }
+        }
+    }
+
+    fn check_stop_after(&self, file_info: FileInfo) -> Result<Option<FileInfo>> {
+        if let Some(stop_after) = self.config.stop_after {
+            if file_info.timestamp > stop_after {
+                tracing::info!(
+                    file = %file_info,
+                    %stop_after,
+                    "file reached stop_after, closing stream"
+                );
+                return Ok(None);
+            }
+        }
+        Ok(Some(file_info))
+    }
+
+    /// Returns true if idle timeout has elapsed and the poller should exit.
+    fn idle_timeout_elapsed(&self, idle_start: Instant) -> bool {
+        let Some(idle_timeout) = self.config.idle_timeout else {
+            return false;
+        };
+
+        if idle_start.elapsed() >= idle_timeout {
+            tracing::info!(
+                idle_duration = ?idle_start.elapsed(),
+                ?idle_timeout,
+                "idle timeout exceeded, closing stream"
+            );
+            true
+        } else {
+            false
         }
     }
 
@@ -370,6 +426,7 @@ where
             r#type = self.config.prefix,
             %process_name,
             stop_after = ?self.config.stop_after,
+            idle_timeout = ?self.config.idle_timeout,
             "starting FileInfoPoller",
         );
 
@@ -396,7 +453,7 @@ where
                             tracing::info!(
                                 r#type = self.config.prefix,
                                 %process_name,
-                                "FileInfoPoller completed (stop_after reached)"
+                                "FileInfoPoller completed"
                             );
                             break;
                         }
