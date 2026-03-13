@@ -16,6 +16,7 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
+use mobile_config::gateway::service::info::DeviceType;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -160,6 +161,7 @@ pub struct Heartbeat {
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub location_source: LocationSource,
     pub timestamp: DateTime<Utc>,
+    pub heartbeat_timestamp: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -186,6 +188,7 @@ impl Heartbeat {
 impl From<WifiHeartbeatIngestReport> for Heartbeat {
     fn from(value: WifiHeartbeatIngestReport) -> Self {
         let received_timestamp = value.received_timestamp;
+        let heartbeat_timestamp = value.report.timestamp;
         let location_validation_timestamp = value
             .report
             .location_validation_timestamp
@@ -200,6 +203,7 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             location_validation_timestamp,
             location_source: value.report.location_source,
             timestamp: received_timestamp,
+            heartbeat_timestamp,
         }
     }
 }
@@ -256,6 +260,8 @@ pub struct ValidatedHeartbeat {
     pub cell_type: CellType,
     pub location_trust_score_multiplier: Decimal,
     pub distance_to_asserted: Option<i64>,
+    pub asserted_location: Option<u64>,
+    pub device_type: Option<DeviceType>,
     pub coverage_meta: Option<CoverageObjectMeta>,
     pub validity: proto::HeartbeatValidity,
 }
@@ -269,11 +275,14 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         heartbeat: Heartbeat,
         cell_type: CellType,
         location_trust_score_multiplier: Decimal,
         distance_to_asserted: Option<i64>,
+        asserted_location: Option<u64>,
+        device_type: Option<DeviceType>,
         coverage_meta: Option<CoverageObjectMeta>,
         validity: proto::HeartbeatValidity,
     ) -> Self {
@@ -282,6 +291,8 @@ impl ValidatedHeartbeat {
             cell_type,
             location_trust_score_multiplier,
             distance_to_asserted,
+            asserted_location,
+            device_type,
             coverage_meta,
             validity,
         }
@@ -305,6 +316,8 @@ impl ValidatedHeartbeat {
                 dec!(0),
                 None,
                 None,
+                None,
+                None,
                 proto::HeartbeatValidity::BadCoverageObject,
             ));
         };
@@ -317,6 +330,8 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 CellType::CellTypeNone,
                 dec!(0),
+                None,
+                None,
                 None,
                 None,
                 proto::HeartbeatValidity::NoSuchCoverageObject,
@@ -339,6 +354,8 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
+                None,
+                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::NotOperational,
             ));
@@ -349,6 +366,8 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(0),
+                None,
+                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::HeartbeatOutsideRange,
@@ -361,6 +380,8 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
+                None,
+                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::InvalidLatLon,
             ));
@@ -371,6 +392,8 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(0),
+                None,
+                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::UnsupportedLocation,
@@ -386,6 +409,8 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
+                None,
+                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::InvalidDeviceType,
             )),
@@ -393,6 +418,8 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(0),
+                None,
+                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::GatewayNotFound,
@@ -403,11 +430,15 @@ impl ValidatedHeartbeat {
                     cell_type,
                     dec!(0),
                     None,
+                    None,
+                    None,
                     Some(coverage_object.meta),
                     proto::HeartbeatValidity::GatewayNotAsserted,
                 ))
             }
-            GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
+            GatewayResolution::AssertedLocation(location, device_type)
+                if heartbeat.hb_type == HbType::Wifi =>
+            {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
@@ -465,6 +496,8 @@ impl ValidatedHeartbeat {
                     cell_type,
                     location_trust_score_multiplier,
                     Some(distance_to_asserted),
+                    Some(location),
+                    Some(device_type),
                     Some(coverage_object.meta),
                     proto::HeartbeatValidity::Valid,
                 ))
@@ -473,6 +506,8 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(1.0),
+                None,
+                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::Valid,
@@ -588,7 +623,9 @@ pub(crate) async fn process_validated_heartbeats(
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
     seniority_sink: &FileSinkClient<proto::SeniorityUpdate>,
     transaction: &mut Transaction<'_, Postgres>,
+    iceberg_txn: Option<&mut crate::iceberg::HeartbeatTransaction>,
 ) -> anyhow::Result<()> {
+    let mut iceberg_records = Vec::new();
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
@@ -596,6 +633,11 @@ pub(crate) async fn process_validated_heartbeats(
         if !validated_heartbeat.is_valid() {
             continue;
         }
+
+        if iceberg_txn.is_some() {
+            iceberg_records.push(crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat));
+        }
+
         if let Some(coverage_claim_time) = coverage_claim_time_cache
             .fetch_coverage_claim_time(
                 validated_heartbeat.heartbeat.key(),
@@ -622,6 +664,12 @@ pub(crate) async fn process_validated_heartbeats(
             heartbeat_cache
                 .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
                 .await;
+        }
+    }
+
+    if let Some(txn) = iceberg_txn {
+        if !iceberg_records.is_empty() {
+            txn.write(iceberg_records).await?;
         }
     }
 
@@ -693,10 +741,13 @@ mod test {
                 coverage_object: Some(coverage_object),
                 location_validation_timestamp: None,
                 location_source: LocationSource::Skyhook,
+                heartbeat_timestamp: timestamp,
             },
             validity: Default::default(),
             location_trust_score_multiplier: dec!(1.0),
             distance_to_asserted: None,
+            asserted_location: None,
+            device_type: None,
             coverage_meta: None,
         }
     }

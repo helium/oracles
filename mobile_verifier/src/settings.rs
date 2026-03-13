@@ -49,6 +49,7 @@ pub struct Settings {
     /// Poll duration for new data sets
     #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
     pub data_sets_poll_duration: Duration,
+    pub iceberg_settings: Option<helium_iceberg::Settings>,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,
