@@ -539,6 +539,7 @@ async fn connect_to_iceberg_catalog_with_namespace(
             secret_access_key: Some(config.s3_secret_key.clone()),
             region: Some(config.s3_region.clone()),
             path_style_access: Some(true),
+            disable_config_load: Some(true),
         },
         properties: Default::default(),
     };
