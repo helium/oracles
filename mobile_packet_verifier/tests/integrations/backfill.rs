@@ -95,7 +95,9 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
             awsl.bucket_client(),
             writer,
             options,
-        ),
+        )
+        .await?
+        .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -158,7 +160,9 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
             awsl.bucket_client(),
             writer,
             options,
-        ),
+        )
+        .await?
+        .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -227,7 +231,9 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
             awsl.bucket_client(),
             writer.clone(),
             options,
-        ),
+        )
+        .await?
+        .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -250,7 +256,9 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
             awsl.bucket_client(),
             writer,
             options,
-        ),
+        )
+        .await?
+        .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;

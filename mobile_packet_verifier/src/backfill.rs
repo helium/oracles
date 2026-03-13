@@ -58,8 +58,7 @@ impl Cmd {
             "starting all backfills"
         );
 
-        let options =
-            BackfillOptions::new(&self.process_name, self.start_after, self.stop_after);
+        let options = BackfillOptions::new(&self.process_name, self.start_after, self.stop_after);
 
         let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
@@ -147,7 +146,7 @@ impl DataSessionsBackfiller {
         bucket_client: BucketClient,
         writer: DataTransferWriter,
         options: BackfillOptions,
-    ) -> anyhow::Result<impl ManagedTask> {
+    ) -> anyhow::Result<TaskManager> {
         let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -257,7 +256,7 @@ impl BurnedSessionsBackfiller {
         bucket_client: BucketClient,
         writer: BurnedDataTransferWriter,
         options: BackfillOptions,
-    ) -> anyhow::Result<impl ManagedTask> {
+    ) -> anyhow::Result<TaskManager> {
         let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
