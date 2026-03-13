@@ -221,14 +221,16 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
 
 impl From<Gateway> for GatewayInfo {
     fn from(gateway: Gateway) -> Self {
-        let metadata = if let Some(location) = gateway.location {
-            let deployment_info = match (gateway.antenna, gateway.elevation, gateway.azimuth) {
+        let device_type = gateway.gateway_type().into();
+        let metadata = if let Some(location) = gateway.location() {
+            let deployment_info = match (gateway.antenna(), gateway.elevation(), gateway.azimuth())
+            {
                 (None, None, None) => None,
                 _ => Some(gateway::service::info::DeploymentInfo::WifiDeploymentInfo(
                     WifiDeploymentInfo {
-                        antenna: gateway.antenna.unwrap_or(0),
-                        elevation: gateway.elevation.unwrap_or(0),
-                        azimuth: gateway.azimuth.unwrap_or(0),
+                        antenna: gateway.antenna().unwrap_or(0),
+                        elevation: gateway.elevation().unwrap_or(0),
+                        azimuth: gateway.azimuth().unwrap_or(0),
                         mechanical_down_tilt: 0,
                         electrical_down_tilt: 0,
                     },
@@ -246,7 +248,7 @@ impl From<Gateway> for GatewayInfo {
         Self {
             address: gateway.address,
             metadata,
-            device_type: gateway.gateway_type.into(),
+            device_type,
             created_at: Some(gateway.created_at),
             // because updated_at refers to the last time the data was actually changed.
             updated_at: Some(gateway.last_changed_at),
