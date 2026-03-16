@@ -55,9 +55,7 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         .build()
 }
 
-pub async fn get_all(
-    trino: &trino_rust_client::Client,
-) -> anyhow::Result<Vec<IcebergHeartbeat>> {
+pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<IcebergHeartbeat>> {
     let all = match trino
         .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
         .await
