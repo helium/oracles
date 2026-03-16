@@ -40,59 +40,52 @@ pub struct S3Config {
     pub secret_access_key: Option<String>,
     pub region: Option<String>,
     pub path_style_access: Option<bool>,
+    /// Skip loading credentials from environment variables and config files.
+    /// Use this when you want to use explicit credentials instead of the default
+    /// AWS credential chain.
+    pub disable_config_load: Option<bool>,
+}
+
+/// Converts a list of key-value pairs into a `HashMap`, only inserting the key
+/// when the value is `Some`.
+macro_rules! option_hashmap {
+    ( $($key:expr => $maybe_val:expr),+ $(,)? ) => {
+        {
+            let mut map = HashMap::new();
+            $(
+                if let Some(ref val) = $maybe_val {
+                    map.insert($key.to_string(), val.to_string());
+                }
+            ) +
+            map
+        }
+    };
 }
 
 impl S3Config {
     pub fn props(&self) -> HashMap<String, String> {
-        let mut props = HashMap::new();
-        if let Some(ref endpoint) = self.endpoint {
-            props.insert("s3.endpoint".to_string(), endpoint.clone());
+        option_hashmap! {
+            "s3.endpoint" => self.endpoint,
+            "s3.access-key-id" => self.access_key_id,
+            "s3.secret-access-key" => self.secret_access_key,
+            "s3.region" => self.region,
+            "s3.path-style-access" => self.path_style_access,
+            "s3.disable-config-load" => self.disable_config_load
         }
-        if let Some(ref access_key_id) = self.access_key_id {
-            props.insert("s3.access-key-id".to_string(), access_key_id.clone());
-        }
-        if let Some(ref secret_access_key) = self.secret_access_key {
-            props.insert(
-                "s3.secret-access-key".to_string(),
-                secret_access_key.clone(),
-            );
-        }
-        if let Some(ref region) = self.region {
-            props.insert("s3.region".to_string(), region.clone());
-        }
-        if let Some(path_style_access) = self.path_style_access {
-            props.insert(
-                "s3.path-style-access".to_string(),
-                path_style_access.to_string(),
-            );
-        }
-        props
     }
 }
 
 impl AuthConfig {
     /// Produce the props HashMap entries expected by `iceberg-catalog-rest`.
     pub fn props(&self) -> HashMap<String, String> {
-        let mut props = HashMap::new();
-        if let Some(ref token) = self.token {
-            props.insert("token".to_string(), token.clone());
+        option_hashmap! {
+            "token" => self.token,
+            "credential" => self.credential,
+            "oauth2-server-uri" => self.oauth2_server_uri,
+            "scope" => self.scope,
+            "audience" => self.audience,
+            "resource" => self.resource
         }
-        if let Some(ref credential) = self.credential {
-            props.insert("credential".to_string(), credential.clone());
-        }
-        if let Some(ref uri) = self.oauth2_server_uri {
-            props.insert("oauth2-server-uri".to_string(), uri.clone());
-        }
-        if let Some(ref scope) = self.scope {
-            props.insert("scope".to_string(), scope.clone());
-        }
-        if let Some(ref audience) = self.audience {
-            props.insert("audience".to_string(), audience.clone());
-        }
-        if let Some(ref resource) = self.resource {
-            props.insert("resource".to_string(), resource.clone());
-        }
-        props
     }
 }
 
