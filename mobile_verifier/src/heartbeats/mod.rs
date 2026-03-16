@@ -668,9 +668,7 @@ pub(crate) async fn process_validated_heartbeats(
     }
 
     if let Some(txn) = iceberg_txn {
-        if !iceberg_records.is_empty() {
-            txn.write(iceberg_records).await?;
-        }
+        txn.write(iceberg_records).await?;
     }
 
     Ok(())

@@ -3,6 +3,7 @@ use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
 };
+use helium_iceberg::IcebergTestHarness;
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -432,4 +433,12 @@ impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
         }
         map
     }
+}
+
+pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
+    let harness = IcebergTestHarness::new_with_tables([
+        mobile_verifier::iceberg::heartbeat::table_definition()?,
+    ])
+    .await?;
+    Ok(harness)
 }
