@@ -232,8 +232,7 @@ async fn write_heartbeats_via_maybe_begin_maybe_publish() -> anyhow::Result<()> 
     assert_eq!(all[0], iceberg_hb);
 
     // Test with None path — should produce no error and no additional rows
-    let txn_none =
-        iceberg::maybe_begin::<IcebergHeartbeat>(None, "test_maybe_none").await?;
+    let txn_none = iceberg::maybe_begin::<IcebergHeartbeat>(None, "test_maybe_none").await?;
     assert!(txn_none.is_none());
     iceberg::maybe_publish(txn_none).await?;
 
