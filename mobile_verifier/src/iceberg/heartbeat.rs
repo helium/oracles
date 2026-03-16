@@ -55,6 +55,20 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         .build()
 }
 
+pub async fn get_all(
+    trino: &trino_rust_client::Client,
+) -> anyhow::Result<Vec<IcebergHeartbeat>> {
+    let all = match trino
+        .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
+        .await
+    {
+        Ok(all) => all.into_vec(),
+        Err(trino_rust_client::error::Error::EmptyData) => vec![],
+        Err(err) => return Err(err.into()),
+    };
+    Ok(all)
+}
+
 impl From<&ValidatedHeartbeat> for IcebergHeartbeat {
     fn from(value: &ValidatedHeartbeat) -> Self {
         Self {
