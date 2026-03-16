@@ -6,7 +6,9 @@ use file_store_oracles::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+    verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+    VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
     backfill::{BackfillOptions, DataSessionsBackfiller},
@@ -44,6 +46,18 @@ fn make_report(timestamp: DateTime<Utc>, event_id: &str) -> DataTransferSessionI
     .into()
 }
 
+fn make_verified_report(
+    timestamp: DateTime<Utc>,
+    event_id: &str,
+    status: ReportStatus,
+) -> VerifiedDataTransferIngestReportV1 {
+    VerifiedDataTransferIngestReportV1 {
+        report: Some(make_report(timestamp, event_id)),
+        status: status as i32,
+        timestamp: timestamp.timestamp_millis() as u64,
+    }
+}
+
 fn test_backfill_options(
     process_name: &str,
     start_after: DateTime<Utc>,
@@ -72,15 +86,23 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     let end_time = base_time + Duration::days(42); // backfill requires stop time
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-1")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-1",
+            ReportStatus::Valid,
+        )],
         file1_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-2")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-2",
+            ReportStatus::Valid,
+        )],
         file2_time,
     )
     .await?;
@@ -130,22 +152,34 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let file3_time = base_time + Duration::hours(1); // This one should be skipped
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-1")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-1",
+            ReportStatus::Valid,
+        )],
         file1_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file2_time, "event-2")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file2_time,
+            "event-2",
+            ReportStatus::Valid,
+        )],
         file2_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file3_time, "event-3")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file3_time,
+            "event-3",
+            ReportStatus::Valid,
+        )],
         file3_time,
     )
     .await?;
@@ -200,22 +234,34 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let end_time = base_time + Duration::days(42); // continue to end of files
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-1")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-1",
+            ReportStatus::Valid,
+        )],
         file1_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-2")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-2",
+            ReportStatus::Valid,
+        )],
         file2_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_report(file1_time, "event-3")],
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(
+            file1_time,
+            "event-3",
+            ReportStatus::Valid,
+        )],
         file3_time,
     )
     .await?;
@@ -270,6 +316,63 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
         3,
         "after resume, should have all 3 sessions"
     );
+
+    awsl.cleanup().await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file_time = base_time;
+    let end_time = base_time + Duration::days(42);
+
+    // Write a file with mixed statuses - only Valid ones should be written to Iceberg
+    awsl.put_protos_at_time(
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![
+            make_verified_report(file_time, "valid-1", ReportStatus::Valid),
+            make_verified_report(
+                file_time,
+                "invalid-gateway",
+                ReportStatus::InvalidGatewayKey,
+            ),
+            make_verified_report(file_time, "valid-2", ReportStatus::Valid),
+            make_verified_report(file_time, "duplicate", ReportStatus::Duplicate),
+            make_verified_report(file_time, "banned", ReportStatus::Banned),
+        ],
+        file_time,
+    )
+    .await?;
+
+    let options = test_backfill_options("test-backfill-filter", start_time, end_time);
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        DataSessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        )
+        .await?
+        .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    // Verify only the 2 Valid sessions were written to Iceberg
+    let rows = iceberg::session::get_all(harness.trino()).await?;
+    assert_eq!(rows.len(), 2, "expected only 2 valid sessions in iceberg");
 
     awsl.cleanup().await?;
     Ok(())

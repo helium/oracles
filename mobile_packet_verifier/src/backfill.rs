@@ -6,10 +6,11 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient, FileInfo};
 use file_store_oracles::{
-    mobile_session::DataTransferSessionIngestReport, mobile_transfer::ValidDataTransferSession,
+    mobile_session::VerifiedDataTransferIngestReport, mobile_transfer::ValidDataTransferSession,
     FileType,
 };
 use futures::StreamExt;
+use helium_proto::services::poc_mobile::verified_data_transfer_ingest_report_v1::ReportStatus;
 use sqlx::{PgPool, Pool, Postgres};
 use std::time::Duration;
 use task_manager::{ManagedTask, TaskManager};
@@ -62,7 +63,7 @@ impl Cmd {
 
         let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
-            settings.ingest_bucket.connect().await,
+            settings.output_bucket.connect().await,
             session_writer,
             options.clone(),
         )
@@ -124,14 +125,14 @@ impl BackfillOptions {
 
 pub struct DataSessionsBackfiller {
     pool: Pool<Postgres>,
-    reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+    reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
     writer: DataTransferWriter,
 }
 
 impl DataSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
-        reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+        reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
         writer: DataTransferWriter,
     ) -> Self {
         Self {
@@ -150,7 +151,7 @@ impl DataSessionsBackfiller {
         let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
-            .prefix(FileType::DataTransferSessionIngestReport.to_string())
+            .prefix(FileType::VerifiedDataTransferSession.to_string())
             .lookback_start_after(options.start_after)
             .stop_after(options.stop_after)
             .process_name(options.process_name)
@@ -196,7 +197,7 @@ impl DataSessionsBackfiller {
 
     async fn handle_file(
         &self,
-        file: FileInfoStream<DataTransferSessionIngestReport>,
+        file: FileInfoStream<VerifiedDataTransferIngestReport>,
     ) -> Result<()> {
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
@@ -204,7 +205,7 @@ impl DataSessionsBackfiller {
             file = %file_info,
             timestamp = %file_info.timestamp,
             age = %age,
-            "backfilling sessions file to iceberg"
+            "backfilling verified sessions file to iceberg"
         );
 
         let mut txn = self.pool.begin().await?;
@@ -216,12 +217,17 @@ impl DataSessionsBackfiller {
 
         let reports = file.into_stream(&mut txn).await?;
 
-        let iceberg_sessions = reports
-            .map(IcebergDataTransferSession::from)
-            .collect::<Vec<_>>()
-            .await;
+        let all_reports: Vec<_> = reports.collect().await;
+        let total = all_reports.len();
 
-        let count = iceberg_sessions.len();
+        let iceberg_sessions: Vec<_> = all_reports
+            .into_iter()
+            .filter(|verified_report| verified_report.status == ReportStatus::Valid)
+            .map(|verified_report| IcebergDataTransferSession::from(verified_report.report))
+            .collect();
+
+        let valid_count = iceberg_sessions.len();
+        let filtered_count = total - valid_count;
         iceberg_txn
             .write(iceberg_sessions)
             .await
@@ -233,7 +239,12 @@ impl DataSessionsBackfiller {
             .context("publishing to iceberg")?;
         txn.commit().await.context("committing db transaction")?;
 
-        tracing::info!(file = %file_info, count, "backfilled sessions file");
+        tracing::info!(
+            file = %file_info,
+            valid_count,
+            filtered_count,
+            "backfilled verified sessions file"
+        );
         Ok(())
     }
 }
