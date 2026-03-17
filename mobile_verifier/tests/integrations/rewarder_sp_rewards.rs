@@ -12,7 +12,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
 
     let reward_info = reward_info_24_hours();
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, &mut None).await?;
 
     let rewards = mobile_rewards.finish().await?;
 
@@ -79,7 +79,7 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
     // Total reward amount of 350 HNT
     reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
 
-    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info, &mut None).await?;
 
     let rewards = mobile_rewards.finish().await?;
 
