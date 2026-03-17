@@ -134,9 +134,9 @@ where
         )
         .await?;
 
+        iceberg::maybe_publish(iceberg_txn).await?;
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
-        iceberg::maybe_publish(iceberg_txn).await?;
 
         Ok(())
     }
