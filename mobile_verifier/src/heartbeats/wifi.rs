@@ -176,10 +176,10 @@ where
             iceberg_txn.as_mut(),
         )
         .await?;
+        iceberg::maybe_publish(iceberg_txn).await?;
         self.heartbeat_sink.commit().await?;
         self.seniority_sink.commit().await?;
         transaction.commit().await?;
-        iceberg::maybe_publish(iceberg_txn).await?;
         Ok(())
     }
 }
