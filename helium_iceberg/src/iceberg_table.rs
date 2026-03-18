@@ -234,13 +234,12 @@ impl BranchPublisher for IcebergBranchPublisher {
 }
 
 async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Result {
-    use iceberg::Catalog as IcebergCatalog;
     let identifier = table.read().await.identifier().clone();
-    let new_table = catalog
-        .as_ref()
-        .load_table(&identifier)
-        .await
-        .map_err(Error::Iceberg)?;
+    let namespace = identifier.namespace().to_url_string();
+    let table_name = identifier.name().to_string();
+
+    // Use Catalog::load_table which has 401 retry logic
+    let new_table = catalog.load_table(namespace, table_name).await?;
     *table.write().await = new_table;
     Ok(())
 }
