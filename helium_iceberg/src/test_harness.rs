@@ -325,6 +325,72 @@ impl Default for HarnessConfig {
     }
 }
 
+impl HarnessConfigBuilder {
+    /// Update only the host for s3_host_local
+    pub fn s3_host_local_host(mut self, host: impl Into<String>) -> Self {
+        if let Some(x) = self.s3_host_local.as_mut() {
+            x.set_host(host)
+        }
+        self
+    }
+
+    /// Update only the port for s3_host_local
+    pub fn s3_host_local_port(mut self, port: u16) -> Self {
+        if let Some(x) = self.s3_host_local.as_mut() {
+            x.set_port(port)
+        }
+        self
+    }
+
+    /// Update only the host for s3_host_qualified
+    pub fn s3_host_qualified_host(mut self, host: impl Into<String>) -> Self {
+        if let Some(x) = self.s3_host_qualified.as_mut() {
+            x.set_host(host)
+        }
+        self
+    }
+
+    /// Update only the port for s3_host_qualified
+    pub fn s3_host_qualified_port(mut self, port: u16) -> Self {
+        if let Some(x) = self.s3_host_qualified.as_mut() {
+            x.set_port(port)
+        }
+        self
+    }
+
+    /// Update only the host for catalog_host_local
+    pub fn catalog_host_local_host(mut self, host: impl Into<String>) -> Self {
+        if let Some(x) = self.catalog_host_local.as_mut() {
+            x.set_host(host)
+        }
+        self
+    }
+
+    /// Update only the port for catalog_host_local
+    pub fn catalog_host_local_port(mut self, port: u16) -> Self {
+        if let Some(x) = self.catalog_host_local.as_mut() {
+            x.set_port(port)
+        }
+        self
+    }
+
+    /// Update only the host for catalog_host_qualified
+    pub fn catalog_host_qualified_host(mut self, host: impl Into<String>) -> Self {
+        if let Some(x) = self.catalog_host_qualified.as_mut() {
+            x.set_host(host)
+        }
+        self
+    }
+
+    /// Update only the port for catalog_host_qualified
+    pub fn catalog_host_qualified_port(mut self, port: u16) -> Self {
+        if let Some(x) = self.catalog_host_qualified.as_mut() {
+            x.set_port(port)
+        }
+        self
+    }
+}
+
 impl HarnessConfig {
     pub fn builder() -> HarnessConfigBuilder {
         HarnessConfigBuilder::default()
@@ -604,6 +670,14 @@ impl TestHost {
             host: host.into(),
             port,
         }
+    }
+
+    fn set_host(&mut self, host: impl Into<String>) {
+        self.host = host.into();
+    }
+
+    fn set_port(&mut self, port: u16) {
+        self.port = port;
     }
 
     fn with_path(&self, path: &str) -> String {
