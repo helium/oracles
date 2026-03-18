@@ -28,6 +28,23 @@ pub use writer::{
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
 pub use iceberg::{NamespaceIdent, TableIdent};
 
+/// Converts a list of key-value pairs into a `HashMap`, only inserting the key
+/// when the value is `Some`.
+#[macro_export]
+macro_rules! option_hashmap {
+    ( $($key:expr => $maybe_val:expr),+ $(,)? ) => {
+        {
+            let mut map = std::collections::HashMap::new();
+            $(
+                if let Some(ref val) = $maybe_val {
+                    map.insert($key.to_string(), val.to_string());
+                }
+            )+
+            map
+        }
+    };
+}
+
 #[cfg(feature = "test-harness")]
 pub use test_harness::{HarnessConfig, IcebergTestHarness};
 

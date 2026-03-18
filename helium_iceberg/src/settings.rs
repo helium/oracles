@@ -1,5 +1,5 @@
-use crate::catalog::Catalog;
 use crate::Result;
+use crate::{catalog::Catalog, option_hashmap};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -44,22 +44,6 @@ pub struct S3Config {
     /// Use this when you want to use explicit credentials instead of the default
     /// AWS credential chain.
     pub disable_config_load: Option<bool>,
-}
-
-/// Converts a list of key-value pairs into a `HashMap`, only inserting the key
-/// when the value is `Some`.
-macro_rules! option_hashmap {
-    ( $($key:expr => $maybe_val:expr),+ $(,)? ) => {
-        {
-            let mut map = HashMap::new();
-            $(
-                if let Some(ref val) = $maybe_val {
-                    map.insert($key.to_string(), val.to_string());
-                }
-            ) +
-            map
-        }
-    };
 }
 
 impl S3Config {

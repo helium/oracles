@@ -22,3 +22,16 @@ pub enum Error {
     #[error("branch error: {0}")]
     Branch(String),
 }
+
+pub trait IntoHeliumIcebergError<T> {
+    fn err_into(self) -> Result<T>;
+}
+
+impl<T, E> IntoHeliumIcebergError<T> for std::result::Result<T, E>
+where
+    Error: From<E>,
+{
+    fn err_into(self) -> Result<T> {
+        self.map_err(|e| e.into())
+    }
+}
