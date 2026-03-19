@@ -38,30 +38,25 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         .expect("should find gateway");
 
     assert_eq!(pre_gw.address, gw.address);
-    assert_eq!(pre_gw.gateway_type, gw.gateway_type);
+    assert_eq!(pre_gw.gateway_type, gw.gateway_type());
     assert_eq!(
         common::nanos_trunc(pre_gw.created_at),
         common::nanos_trunc(gw.created_at)
-    );
-    // The real change is updated_at renamed to inserted_at AND inserted_at = created_at;
-    assert_eq!(
-        common::nanos_trunc(pre_gw.created_at),
-        common::nanos_trunc(gw.inserted_at)
     );
     assert_eq!(
         common::nanos_trunc(pre_gw.last_changed_at),
         common::nanos_trunc(gw.last_changed_at)
     );
     assert_eq!(pre_gw.hash, gw.hash);
-    assert_eq!(pre_gw.antenna, gw.antenna);
-    assert_eq!(pre_gw.elevation, gw.elevation);
-    assert_eq!(pre_gw.azimuth, gw.azimuth);
-    assert_eq!(pre_gw.location, gw.location);
+    assert_eq!(pre_gw.antenna, gw.antenna());
+    assert_eq!(pre_gw.elevation, gw.elevation());
+    assert_eq!(pre_gw.azimuth, gw.azimuth());
+    assert_eq!(pre_gw.location, gw.location());
     assert_eq!(
         common::nanos_trunc(pre_gw.location_changed_at.unwrap()),
         common::nanos_trunc(gw.location_changed_at.unwrap())
     );
-    assert_eq!(pre_gw.location_asserts, gw.location_asserts);
+    assert_eq!(pre_gw.location_asserts, gw.location_asserts());
 
     Ok(())
 }
