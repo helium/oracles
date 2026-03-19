@@ -5,6 +5,7 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
@@ -12,6 +13,7 @@ use helium_proto::services::poc_mobile::{
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
+use mobile_config::gateway::service::info::DeviceType;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
@@ -216,7 +218,10 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
         _address: &PublicKeyBinary,
         _gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<GatewayResolution, ClientError> {
-        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
+        Ok(GatewayResolution::AssertedLocation(
+            0x8c2681a3064d9ff,
+            DeviceType::WifiIndoor,
+        ))
     }
 }
 
@@ -428,4 +433,12 @@ impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
         }
         map
     }
+}
+
+pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
+    let harness = IcebergTestHarness::new_with_tables([
+        mobile_verifier::iceberg::heartbeat::table_definition()?,
+    ])
+    .await?;
+    Ok(harness)
 }

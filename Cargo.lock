@@ -5342,6 +5342,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
+ "helium-iceberg",
  "helium-proto",
  "hex-assignments",
  "hextree",
@@ -5380,6 +5381,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-rust-client",
  "uuid",
 ]
 

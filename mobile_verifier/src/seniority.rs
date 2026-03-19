@@ -241,10 +241,13 @@ mod tests {
                     location_validation_timestamp: None,
                     location_source: LocationSource::Skyhook,
                     timestamp: Utc::now(),
+                    heartbeat_timestamp: Utc::now(),
                 },
                 cell_type: CellType::NovaGenericWifiOutdoor,
                 location_trust_score_multiplier: Decimal::from_u32(0).unwrap(),
                 distance_to_asserted: Some(0),
+                asserted_location: None,
+                device_type: None,
                 coverage_meta: None,
                 validity: poc_mobile::HeartbeatValidity::Valid,
             })
