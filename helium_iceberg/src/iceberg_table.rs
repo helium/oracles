@@ -157,11 +157,7 @@ struct IcebergBranchWriter<T> {
 
 #[async_trait]
 impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
-    async fn write_with_properties(
-        self: Box<Self>,
-        records: Vec<T>,
-        custom_properties: HashMap<String, String>,
-    ) -> Result<Box<dyn BranchPublisher>> {
+    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
         if records.is_empty() {
             return Ok(Box::new(EmptyIcebergBranchPublisher {
                 catalog: self.catalog,
@@ -182,7 +178,6 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
             &self.branch_name,
             data_files,
             &self.branch_name,
-            custom_properties,
         )
         .await?;
         drop(table_guard);
@@ -192,10 +187,6 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
             table: self.table,
             branch_name: self.branch_name,
         }))
-    }
-
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
-        self.write_with_properties(records, HashMap::new()).await
     }
 }
 
