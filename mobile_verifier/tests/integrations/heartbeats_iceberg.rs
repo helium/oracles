@@ -64,8 +64,7 @@ async fn write_single_heartbeat_with_all_fields() -> anyhow::Result<()> {
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
 
-    assert_eq!(all.len(), 1);
-    assert_eq!(all[0], iceberg_hb);
+    assert_eq!(all, vec![iceberg_hb]);
 
     Ok(())
 }
