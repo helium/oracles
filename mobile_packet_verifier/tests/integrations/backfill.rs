@@ -1,20 +1,27 @@
+use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::aws_local::AwsLocal;
 use file_store_oracles::{
     mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
+    mobile_transfer::ValidDataTransferSession,
     FileType,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
-    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
-    VerifiedDataTransferIngestReportV1,
+use helium_proto::services::{
+    packet_verifier as proto,
+    poc_mobile::{
+        verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
+        DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+        VerifiedDataTransferIngestReportV1,
+    },
 };
 use mobile_packet_verifier::{
-    backfill::{BackfillOptions, DataSessionsBackfiller},
+    backfill::{BackfillOptions, BurnedSessionsBackfiller, DataSessionsBackfiller},
     iceberg,
 };
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use trino_rust_client::Trino;
 
 use crate::common;
 
@@ -373,6 +380,168 @@ async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
     // Verify only the 2 Valid sessions were written to Iceberg
     let rows = iceberg::session::get_all(harness.trino()).await?;
     assert_eq!(rows.len(), 2, "expected only 2 valid sessions in iceberg");
+
+    awsl.cleanup().await?;
+    Ok(())
+}
+
+fn make_valid_data_transfer_session(
+    first_timestamp: DateTime<Utc>,
+    last_timestamp: DateTime<Utc>,
+    burn_timestamp: DateTime<Utc>,
+) -> proto::ValidDataTransferSession {
+    ValidDataTransferSession {
+        pub_key: PublicKeyBinary::from(vec![1]),
+        payer: PublicKeyBinary::from(vec![2]),
+        upload_bytes: 100,
+        download_bytes: 200,
+        rewardable_bytes: 300,
+        num_dcs: 10,
+        first_timestamp,
+        last_timestamp,
+        burn_timestamp,
+    }
+    .into()
+}
+
+#[sqlx::test]
+async fn burned_backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::burned_session::TABLE_NAME)
+        .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file_time = base_time;
+    let end_time = base_time + Duration::days(42);
+
+    let burn_time = base_time - Duration::minutes(5);
+
+    awsl.put_protos_at_time(
+        FileType::ValidDataTransferSession.to_string(),
+        vec![make_valid_data_transfer_session(
+            base_time - Duration::hours(1),
+            base_time - Duration::minutes(30),
+            burn_time,
+        )],
+        file_time,
+    )
+    .await?;
+
+    let options = test_backfill_options("test-burned-backfill", start_time, end_time);
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        BurnedSessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        )
+        .await?
+        .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows = iceberg::burned_session::get_all(harness.trino()).await?;
+    assert_eq!(rows.len(), 1, "expected 1 burned session in iceberg");
+
+    awsl.cleanup().await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::burned_session::TABLE_NAME)
+        .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file_time = base_time;
+    let end_time = base_time + Duration::days(42);
+
+    // Use epoch (0) for burn_timestamp to simulate old data before the field was added
+    let epoch = DateTime::UNIX_EPOCH;
+
+    awsl.put_protos_at_time(
+        FileType::ValidDataTransferSession.to_string(),
+        vec![make_valid_data_transfer_session(
+            base_time - Duration::hours(1),
+            base_time - Duration::minutes(30),
+            epoch,
+        )],
+        file_time,
+    )
+    .await?;
+
+    let options = test_backfill_options("test-burned-backfill-epoch", start_time, end_time);
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        BurnedSessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            writer,
+            options,
+        )
+        .await
+        .context("burned backfiller")?
+        .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows = iceberg::burned_session::get_all(harness.trino())
+        .await
+        .context("attempting to get all")?;
+    assert_eq!(rows.len(), 1, "expected 1 burned session in iceberg");
+
+    // Query the files metadata to verify burn_timestamp was set to file_time (not epoch).
+    // The partition field is a ROW type with a burn_timestamp_day field.
+    let namespace = iceberg::burned_session::NAMESPACE;
+    let table_name = iceberg::burned_session::TABLE_NAME;
+    let query = format!(
+        r#"SELECT partition.burn_timestamp_day as burn_timestamp_day FROM {namespace}."{table_name}$files""#
+    );
+
+    #[derive(Debug, Trino, Serialize, Deserialize)]
+    struct FileRow {
+        burn_timestamp_day: chrono::NaiveDate,
+    }
+
+    let files = harness
+        .trino()
+        .get_all::<FileRow>(query)
+        .await
+        .context("get all")?
+        .into_vec();
+
+    assert_eq!(files.len(), 1, "expected 1 file");
+
+    let actual_day = files[0].burn_timestamp_day;
+    let expected_day = file_time.date_naive();
+    let epoch_day = epoch.date_naive();
+
+    assert_ne!(
+        actual_day, epoch_day,
+        "partition should not be epoch date (1970-01-01)"
+    );
+    assert_eq!(
+        actual_day, expected_day,
+        "partition should be file_time date"
+    );
 
     awsl.cleanup().await?;
     Ok(())

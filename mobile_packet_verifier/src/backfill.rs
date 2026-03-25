@@ -347,7 +347,7 @@ impl BurnedSessionsBackfiller {
         let reports = file.into_stream(&mut txn).await?;
 
         let iceberg_sessions = reports
-            .map(IcebergBurnedDataTransferSession::from)
+            .map(|session| IcebergBurnedDataTransferSession::from_session(session, &file_info))
             .collect::<Vec<_>>()
             .await;
 
