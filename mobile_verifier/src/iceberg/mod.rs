@@ -13,6 +13,7 @@ pub mod unallocated_reward;
 pub use heartbeat::IcebergHeartbeat;
 
 pub const NAMESPACE: &str = "poc";
+pub const REWARDS_NAMESPACE: &str = "rewards";
 
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type HeartbeatTransaction = BranchTransaction<IcebergHeartbeat>;
@@ -42,59 +43,55 @@ pub async fn get_writer(settings: &helium_iceberg::Settings) -> anyhow::Result<H
 }
 
 pub struct RewardWriters {
-    radio_rewards: BoxedDataWriter<radio_reward::IcebergRadioReward>,
-    radio_reward_covered_hexes:
-        BoxedDataWriter<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
-    gateway_rewards: BoxedDataWriter<gateway_reward::IcebergGatewayReward>,
-    service_provider_rewards:
-        BoxedDataWriter<service_provider_reward::IcebergServiceProviderReward>,
-    unallocated_rewards: BoxedDataWriter<unallocated_reward::IcebergUnallocatedReward>,
+    proof_of_coverage: BoxedDataWriter<radio_reward::IcebergRadioReward>,
+    covered_hexes: BoxedDataWriter<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
+    data_transfer: BoxedDataWriter<gateway_reward::IcebergGatewayReward>,
+    service_provider: BoxedDataWriter<service_provider_reward::IcebergServiceProviderReward>,
+    unallocated: BoxedDataWriter<unallocated_reward::IcebergUnallocatedReward>,
 }
 
 pub struct RewardTransactions {
-    pub radio_rewards: BranchTransaction<radio_reward::IcebergRadioReward>,
-    pub radio_reward_covered_hexes:
-        BranchTransaction<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
-    pub gateway_rewards: BranchTransaction<gateway_reward::IcebergGatewayReward>,
-    pub service_provider_rewards:
-        BranchTransaction<service_provider_reward::IcebergServiceProviderReward>,
-    pub unallocated_rewards: BranchTransaction<unallocated_reward::IcebergUnallocatedReward>,
+    pub proof_of_coverage: BranchTransaction<radio_reward::IcebergRadioReward>,
+    pub covered_hexes: BranchTransaction<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
+    pub data_transfer: BranchTransaction<gateway_reward::IcebergGatewayReward>,
+    pub service_provider: BranchTransaction<service_provider_reward::IcebergServiceProviderReward>,
+    pub unallocated: BranchTransaction<unallocated_reward::IcebergUnallocatedReward>,
 }
 
 impl RewardWriters {
     pub async fn begin(&self, wap_id: &str) -> anyhow::Result<RewardTransactions> {
         Ok(RewardTransactions {
-            radio_rewards: self.radio_rewards.begin(wap_id).await?,
-            radio_reward_covered_hexes: self.radio_reward_covered_hexes.begin(wap_id).await?,
-            gateway_rewards: self.gateway_rewards.begin(wap_id).await?,
-            service_provider_rewards: self.service_provider_rewards.begin(wap_id).await?,
-            unallocated_rewards: self.unallocated_rewards.begin(wap_id).await?,
+            proof_of_coverage: self.proof_of_coverage.begin(wap_id).await?,
+            covered_hexes: self.covered_hexes.begin(wap_id).await?,
+            data_transfer: self.data_transfer.begin(wap_id).await?,
+            service_provider: self.service_provider.begin(wap_id).await?,
+            unallocated: self.unallocated.begin(wap_id).await?,
         })
     }
 }
 
 impl RewardTransactions {
     pub async fn publish(self) -> anyhow::Result<()> {
-        self.radio_rewards
+        self.proof_of_coverage
             .publish()
             .await
-            .context("publishing radio_rewards")?;
-        self.radio_reward_covered_hexes
+            .context("publishing proof_of_coverage")?;
+        self.covered_hexes
             .publish()
             .await
-            .context("publishing radio_reward_covered_hexes")?;
-        self.gateway_rewards
+            .context("publishing covered_hexes")?;
+        self.data_transfer
             .publish()
             .await
-            .context("publishing gateway_rewards")?;
-        self.service_provider_rewards
+            .context("publishing data_transfer")?;
+        self.service_provider
             .publish()
             .await
-            .context("publishing service_provider_rewards")?;
-        self.unallocated_rewards
+            .context("publishing service_provider")?;
+        self.unallocated
             .publish()
             .await
-            .context("publishing unallocated_rewards")?;
+            .context("publishing unallocated")?;
         Ok(())
     }
 }
@@ -104,30 +101,32 @@ pub async fn get_reward_writers(
 ) -> anyhow::Result<RewardWriters> {
     let catalog = settings.connect().await.context("connecting to catalog")?;
 
-    catalog.create_namespace_if_not_exists(NAMESPACE).await?;
+    catalog
+        .create_namespace_if_not_exists(REWARDS_NAMESPACE)
+        .await?;
 
-    let radio_rewards = catalog
+    let proof_of_coverage = catalog
         .create_table_if_not_exists(radio_reward::table_definition()?)
         .await?;
-    let radio_reward_covered_hexes = catalog
+    let covered_hexes = catalog
         .create_table_if_not_exists(radio_reward_covered_hex::table_definition()?)
         .await?;
-    let gateway_rewards = catalog
+    let data_transfer = catalog
         .create_table_if_not_exists(gateway_reward::table_definition()?)
         .await?;
-    let service_provider_rewards = catalog
+    let service_provider = catalog
         .create_table_if_not_exists(service_provider_reward::table_definition()?)
         .await?;
-    let unallocated_rewards = catalog
+    let unallocated = catalog
         .create_table_if_not_exists(unallocated_reward::table_definition()?)
         .await?;
 
     Ok(RewardWriters {
-        radio_rewards: radio_rewards.boxed(),
-        radio_reward_covered_hexes: radio_reward_covered_hexes.boxed(),
-        gateway_rewards: gateway_rewards.boxed(),
-        service_provider_rewards: service_provider_rewards.boxed(),
-        unallocated_rewards: unallocated_rewards.boxed(),
+        proof_of_coverage: proof_of_coverage.boxed(),
+        covered_hexes: covered_hexes.boxed(),
+        data_transfer: data_transfer.boxed(),
+        service_provider: service_provider.boxed(),
+        unallocated: unallocated.boxed(),
     })
 }
 

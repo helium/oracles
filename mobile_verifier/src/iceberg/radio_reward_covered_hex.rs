@@ -7,9 +7,9 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use super::{proto_decimal_to_f64, timestamp_to_dt, NAMESPACE};
+use super::{proto_decimal_to_f64, timestamp_to_dt, REWARDS_NAMESPACE};
 
-pub const TABLE_NAME: &str = "radio_reward_covered_hexes";
+pub const TABLE_NAME: &str = "covered_hexes";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergRadioRewardCoveredHex {
@@ -30,7 +30,7 @@ pub struct IcebergRadioRewardCoveredHex {
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(NAMESPACE, TABLE_NAME)
+    TableDefinition::builder(REWARDS_NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_string("hotspot_key"),
             FieldDefinition::required_long("location"),
@@ -103,7 +103,7 @@ mod tests {
     fn table_definition_builds_successfully() {
         let def = table_definition().expect("table definition should build");
         assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), NAMESPACE);
+        assert_eq!(def.namespace(), REWARDS_NAMESPACE);
     }
 
     #[test]

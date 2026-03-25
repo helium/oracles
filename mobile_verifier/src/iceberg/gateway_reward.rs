@@ -7,9 +7,9 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use super::{timestamp_to_dt, NAMESPACE};
+use super::{timestamp_to_dt, REWARDS_NAMESPACE};
 
-pub const TABLE_NAME: &str = "gateway_rewards";
+pub const TABLE_NAME: &str = "data_transfer";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergGatewayReward {
@@ -22,7 +22,7 @@ pub struct IcebergGatewayReward {
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(NAMESPACE, TABLE_NAME)
+    TableDefinition::builder(REWARDS_NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_string("hotspot_key"),
             FieldDefinition::required_long("dc_transfer_reward"),
@@ -67,7 +67,7 @@ mod tests {
     fn table_definition_builds_successfully() {
         let def = table_definition().expect("table definition should build");
         assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), NAMESPACE);
+        assert_eq!(def.namespace(), REWARDS_NAMESPACE);
     }
 
     #[test]

@@ -494,10 +494,8 @@ pub async fn reward_poc(
                     .await??;
             }
             if let Some(txns) = reward_txns.as_mut() {
-                txns.radio_rewards.write(iceberg_radio_rewards).await?;
-                txns.radio_reward_covered_hexes
-                    .write(iceberg_covered_hexes)
-                    .await?;
+                txns.proof_of_coverage.write(iceberg_radio_rewards).await?;
+                txns.covered_hexes.write(iceberg_covered_hexes).await?;
             }
             telemetry::poc_rewarded_radios(count_rewarded_radios);
             // calculate any unallocated poc reward
@@ -540,7 +538,7 @@ pub async fn reward_dc(
             .await??;
     }
     if let Some(txns) = reward_txns.as_mut() {
-        txns.gateway_rewards.write(iceberg_gateway_rewards).await?;
+        txns.data_transfer.write(iceberg_gateway_rewards).await?;
     }
     telemetry::data_transfer_rewarded_gateways(count_rewarded_gateways);
     // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
@@ -596,9 +594,7 @@ pub async fn reward_service_providers(
     }
 
     if let Some(txns) = reward_txns.as_mut() {
-        txns.service_provider_rewards
-            .write(iceberg_sp_rewards)
-            .await?;
+        txns.service_provider.write(iceberg_sp_rewards).await?;
     }
 
     Ok(())
@@ -621,7 +617,7 @@ async fn write_unallocated_reward(
             })),
         };
         if let Some(txns) = reward_txns.as_mut() {
-            txns.unallocated_rewards
+            txns.unallocated
                 .write(vec![
                     iceberg::unallocated_reward::IcebergUnallocatedReward::from(
                         &unallocated_reward,
