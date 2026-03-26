@@ -1,5 +1,4 @@
 use anyhow::Context;
-use chrono::{DateTime, FixedOffset};
 use helium_iceberg::{BoxedDataWriter, BranchTransaction, IntoBoxedDataWriter};
 use serde::Serialize;
 
@@ -17,18 +16,6 @@ pub const REWARDS_NAMESPACE: &str = "rewards";
 
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type HeartbeatTransaction = BranchTransaction<IcebergHeartbeat>;
-
-pub(crate) fn proto_decimal_to_f64(d: &Option<helium_proto::Decimal>) -> f64 {
-    d.as_ref()
-        .and_then(|d| d.value.parse::<f64>().ok())
-        .unwrap_or_default()
-}
-
-pub(crate) fn timestamp_to_dt(ts: u64) -> DateTime<FixedOffset> {
-    DateTime::from_timestamp(ts as i64, 0)
-        .unwrap_or_default()
-        .fixed_offset()
-}
 
 pub async fn get_writer(settings: &helium_iceberg::Settings) -> anyhow::Result<HeartbeatWriter> {
     let catalog = settings.connect().await.context("connecting to catalog")?;
