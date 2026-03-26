@@ -147,6 +147,7 @@ jobs:
         image: rustfs/rustfs:latest
         ports:
           - 9000:9000
+          - 4566:9000
         env:
           RUSTFS_CONSOLE_ENABLE: false
           RUSTFS_ACCESS_KEY: admin
