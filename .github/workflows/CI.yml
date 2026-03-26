@@ -143,13 +143,6 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      localstack:
-        image: localstack/localstack:4.14.0
-        env:
-          SERVICES: s3
-          EAGER_SERVICE_LOADING: 1
-        ports:
-          - 4566:4566
       rustfs:
         image: rustfs/rustfs:latest
         ports:
@@ -225,7 +218,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
-          AWSLOCAL_ENDPOINT: "http://localstack:4566"
+          AWSLOCAL_ENDPOINT: "http://rustfs:9000"
           S3_QUALIFIED_HOST: rustfs
           S3_LOCAL_HOST: rustfs
           CATALOG_QUALIFIED_HOST: polaris

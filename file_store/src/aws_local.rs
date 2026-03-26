@@ -16,7 +16,7 @@ impl AwsLocalError {
 pub type Result<T> = std::result::Result<T, AwsLocalError>;
 
 pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
-pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
+pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:9000";
 
 pub fn aws_local_default_endpoint() -> String {
     env::var(AWSLOCAL_ENDPOINT_ENV).unwrap_or_else(|_| AWSLOCAL_DEFAULT_ENDPOINT.to_string())
@@ -26,7 +26,7 @@ pub fn gen_bucket_name() -> String {
     format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
 }
 
-// Interacts with the locastack.
+// Interacts with an S3-compatible object storage (RustFS).
 pub struct AwsLocal {
     client: BucketClient,
     endpoint: String,
