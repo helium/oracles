@@ -76,6 +76,7 @@ impl Catalog {
             Err(e) if is_iceberg_auth_error(&e) => {
                 tracing::warn!("auth error, invaliding token and retrying");
                 self.endpoint.auth.invalidate().await;
+                self.inner.invalidate_token().await?;
                 f().await
             }
             Err(e) => Err(e),
