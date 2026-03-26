@@ -127,7 +127,7 @@ impl MobileHotspotInfo {
 
         Ok(Some(Gateway {
             address: self.entity_key.clone(),
-            gateway_type: GatewayType::try_from(self.device_type.clone())?,
+            gateway_type: GatewayType::try_from(self.device_type)?,
             created_at: self.created_at,
             inserted_at: Utc::now(),
             last_changed_at: refreshed_at,
