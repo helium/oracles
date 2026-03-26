@@ -269,13 +269,13 @@ pub struct HarnessConfig {
     /// S3 host name when talking to s3 from inside another container
     #[builder(default = "env_defaults::s3_qualified()")]
     pub s3_host_qualified: TestHost,
-    /// S3 access key for MinIO/S3 writes from the host.
+    /// S3 access key for RustFS/S3 writes from the host.
     #[builder(default = "env_defaults::s3_access_key()")]
     pub s3_access_key: String,
-    /// S3 secret key for MinIO/S3 writes from the host.
+    /// S3 secret key for RustFS/S3 writes from the host.
     #[builder(default = "env_defaults::s3_secret_key()")]
     pub s3_secret_key: String,
-    /// S3 region for MinIO/S3
+    /// S3 region for RustFS/S3
     #[builder(default = "env_defaults::s3_region()")]
     pub s3_region: String,
 
@@ -459,7 +459,7 @@ async fn fetch_polaris_token(
 
 /// Create a new Polaris catalog with full admin permissions.
 ///
-/// Mirrors the `polaris-setup` service from `iceberg-compose.yml`:
+/// Mirrors the `polaris-setup` service from `docker-compose.yml`:
 /// 1. Create catalog with S3 storage config
 /// 2. Create `admin` catalog role
 /// 3. Grant `CATALOG_MANAGE_CONTENT` to admin role
@@ -722,7 +722,7 @@ mod env_defaults {
     }
 
     pub fn s3_qualified_host() -> String {
-        env_str(S3_QUALIFIED_HOST_ENV, "minio")
+        env_str(S3_QUALIFIED_HOST_ENV, "rustfs")
     }
     pub fn s3_qualified_port() -> u16 {
         env_port(S3_QUALIFIED_PORT_ENV, S3_DEFAULT_PORT)
@@ -735,7 +735,7 @@ mod env_defaults {
         env_str(S3_ACCESS_KEY_ENV, "admin")
     }
     pub fn s3_secret_key() -> String {
-        env_str(S3_SECRET_KEY_ENV, "password")
+        env_str(S3_SECRET_KEY_ENV, "admin")
     }
     pub fn s3_region() -> String {
         env_str(S3_REGION_ENV, "us-east-1")

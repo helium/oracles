@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v6
 
       - name: Check for bypass label
         id: check-label
@@ -39,7 +39,7 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
@@ -49,11 +49,11 @@ jobs:
           sudo apt-get install -y protobuf-compiler
 
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+        uses: Swatinem/rust-cache@v2
 
       - name: Setup | Restore cargo binary from cache
         id: cache-binary
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Setup | Save cargo binary to cache
         if: always() && steps.cache-binary.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}

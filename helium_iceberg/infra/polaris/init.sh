@@ -58,8 +58,7 @@ if [ "$STATUS" != "200" ]; then
       "storageConfigInfo": {
         "storageType": "S3",
         "allowedLocations": ["s3://iceberg"],
-        "endpoint": "http://localhost:9000",
-        "endpointInternal": "http://minio:9000",
+        "endpoint": "http://rustfs:9000",
         "pathStyleAccess": true
       }
     }

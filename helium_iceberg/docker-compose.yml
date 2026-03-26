@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     image: local/postgres16-pgpartman
     networks:
-      iceberg_net:
+      oracles_net:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -22,42 +22,47 @@ services:
       retries: 5
       start_period: 10s
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+  rustfs:
+    image: rustfs/rustfs:latest
     networks:
-      iceberg_net:
-        # aliases:
-        #   - iceberg.minio
+      oracles_net:
     restart: unless-stopped
-    environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
     ports:
-      - 9100:9100
-      - 9000:9000
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - minio_data:/data
-    command: ["server", "/data", "--console-address", ":9100"]
+      - rustfs_data:/data
+    environment:
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_ACCESS_KEY=admin
+      - RUSTFS_SECRET_KEY=admin
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 1s
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health",
+        ]
+      interval: 30s
       timeout: 10s
+      retries: 3
+      start_period: 10s
 
-  minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+  rustfs-init:
+    image: amazon/aws-cli:latest
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
     networks:
-      iceberg_net:
-    entrypoint: "/bin/sh"
-    command:
-      - "-c"
-      - >-
-        mc alias set minio http://minio:9000 admin password &&
-        mc mb minio/iceberg || true &&
-        mc mb minio/iceberg-test || true &&
-        mc ls minio
+      - oracles_net
+    restart: no
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=admin
+    volumes:
+      - ./infra/rustfs/init.sh:/init.sh:ro
+    entrypoint: ["/init.sh"]
 
   polaris-db-bootstrap:
     image: apache/polaris-admin-tool:1.3.0-incubating
@@ -65,7 +70,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      iceberg_net:
+      oracles_net:
     environment:
       POLARIS_PERSISTENCE_TYPE: relational-jdbc
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/POLARIS
@@ -81,20 +86,20 @@ services:
   polaris:
     image: apache/polaris:1.3.0-incubating
     ports:
-      - "8181:8181"
+      - 8181:8181
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
-      minio-init:
+      rustfs-init:
         condition: service_completed_successfully
       polaris-db-bootstrap:
         condition: service_completed_successfully
     networks:
-      iceberg_net:
+      oracles_net:
     environment:
       AWS_REGION: us-west-2
       AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password
+      AWS_SECRET_ACCESS_KEY: admin
       POLARIS_PERSISTENCE_TYPE: relational-jdbc
       POLARIS_PERSISTENCE_RELATIONAL_JDBC_MAX_RETRIES: 5
       POLARIS_PERSISTENCE_RELATIONAL_JDBC_INITIAL_DELAY_IN_MS: 100
@@ -122,7 +127,7 @@ services:
       polaris:
         condition: service_healthy
     networks:
-      iceberg_net:
+      oracles_net:
     environment:
       - CLIENT_ID=${ROOT_CLIENT_ID:-root}
       - CLIENT_SECRET=${ROOT_CLIENT_SECRET:-s3cr3t}
@@ -140,16 +145,30 @@ services:
 
   trino:
     image: trinodb/trino:latest
+    depends_on:
+      polaris:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
+      polaris-db-bootstrap:
+        condition: service_completed_successfully
+      polaris-setup:
+        condition: service_completed_successfully
     networks:
-      - iceberg_net
+      - oracles_net
     restart: unless-stopped
     ports:
       - 8080:8080
     environment:
       - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_SECRET_ACCESS_KEY=admin
     volumes:
-      - ./infra/trino/etc:/etc/trino
+      - ./infra/trino/etc/catalog/iceberg.properties:/etc/trino/catalog/iceberg.properties:ro
+      - ./infra/trino/etc/catalog/postgres.properties:/etc/trino/catalog/postgres.properties:ro
+      - ./infra/trino/etc/config.properties:/etc/trino/config.properties:ro
+      - ./infra/trino/etc/jvm.config:/etc/trino/jvm.config:ro
     healthcheck:
       test: ["CMD-SHELL", "trino --execute 'SELECT 1' || exit 1"]
       interval: 15s
@@ -158,8 +177,8 @@ services:
       start_period: 45s
 
 networks:
-  iceberg_net:
+  oracles_net:
 
 volumes:
   postgres_data:
-  minio_data:
+  rustfs_data:
