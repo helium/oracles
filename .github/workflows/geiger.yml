@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Check for bypass label
         id: check-label
@@ -49,11 +49,11 @@ jobs:
           sudo apt-get install -y protobuf-compiler
 
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Setup | Restore cargo binary from cache
         id: cache-binary
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Setup | Save cargo binary to cache
         if: always() && steps.cache-binary.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
