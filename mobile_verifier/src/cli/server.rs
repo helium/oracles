@@ -90,7 +90,7 @@ impl Cmd {
 
         let ingest_bucket_client = settings.buckets.ingest.connect().await;
 
-        let (iceberg_writer, reward_writers) =
+        let (heartbeat_writer, reward_writers) =
             if let Some(ref iceberg_settings) = settings.iceberg_settings {
                 tracing::info!("iceberg settings provided, connecting...");
                 let writer = iceberg::get_writer(iceberg_settings).await?;
@@ -115,7 +115,7 @@ impl Cmd {
                     valid_heartbeats,
                     seniority_updates,
                     usa_and_mexico_geofence,
-                    iceberg_writer,
+                    heartbeat_writer,
                 )
                 .await?,
             )
