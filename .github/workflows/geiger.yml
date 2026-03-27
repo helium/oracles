@@ -18,11 +18,11 @@ jobs:
       GEIGER_MANIFEST_DIR: mobile_verifier
       CARGO_BINARY: cargo-geiger
       CARGO_BINARY_VERSION: 0.13.0
-      UNSAFE_THRESHOLD: 20  # Fail if unsafe code increases by more than this
+      UNSAFE_THRESHOLD: 20 # Fail if unsafe code increases by more than this
 
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Check for bypass label
         id: check-label
@@ -39,7 +39,7 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a
         with:
           toolchain: stable
 
@@ -49,11 +49,11 @@ jobs:
           sudo apt-get install -y protobuf-compiler
 
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Setup | Restore cargo binary from cache
         id: cache-binary
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Setup | Save cargo binary to cache
         if: always() && steps.cache-binary.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: /home/runner/.cargo/bin/${{ env.CARGO_BINARY }}
           key: ${{ runner.os }}-${{ env.CARGO_BINARY }}-${{ env.CARGO_BINARY_VERSION }}
@@ -87,14 +87,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          
+
           echo "Fetching main branch for comparison..."
           git fetch origin main --depth=100
-          
+
           echo "Detecting changed workspace packages..."
           # Get list of all workspace members
           WORKSPACE_MEMBERS=$(cargo metadata --format-version=1 --no-deps | jq -r '.workspace_members[] | split("#")[0] | split("/")[-1]')
-          
+
           # Find packages with changes
           CHANGED_PACKAGES=""
           for pkg in $WORKSPACE_MEMBERS; do
@@ -104,13 +104,13 @@ jobs:
               CHANGED_PACKAGES="$CHANGED_PACKAGES $pkg"
             fi
           done
-          
+
           # If no packages changed, scan the default package
           if [ -z "$CHANGED_PACKAGES" ]; then
             echo "No workspace packages changed, using default: $GEIGER_MANIFEST_DIR"
             CHANGED_PACKAGES="$GEIGER_MANIFEST_DIR"
           fi
-          
+
           echo "packages=$CHANGED_PACKAGES" >> $GITHUB_OUTPUT
           echo ""
           echo "Will scan packages: $CHANGED_PACKAGES"
@@ -119,13 +119,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          
+
           echo "Checking out main branch..."
           git checkout origin/main
-          
+
           echo "Running geiger on baseline packages..."
           echo "0" > /tmp/baseline_total.txt
-          
+
           for pkg in ${{ steps.detect-packages.outputs.packages }}; do
             echo "  Scanning $pkg on main branch..."
             MANIFEST_PATH="$GITHUB_WORKSPACE/$pkg/Cargo.toml"
@@ -138,7 +138,7 @@ jobs:
               echo $((TOTAL + COUNT)) > /tmp/baseline_total.txt
             fi
           done
-          
+
           echo ""
           echo "Total baseline unsafe: $(cat /tmp/baseline_total.txt)"
           cat /tmp/baseline_total.txt > /tmp/baseline.txt
@@ -147,13 +147,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          
+
           echo "Checking out PR branch..."
           git checkout ${{ github.sha }}
-          
+
           echo "Running geiger on PR packages..."
           echo "0" > /tmp/current_total.txt
-          
+
           for pkg in ${{ steps.detect-packages.outputs.packages }}; do
             echo "  Scanning $pkg on PR branch..."
             MANIFEST_PATH="$GITHUB_WORKSPACE/$pkg/Cargo.toml"
@@ -166,7 +166,7 @@ jobs:
               echo $((TOTAL + COUNT)) > /tmp/current_total.txt
             fi
           done
-          
+
           echo ""
           echo "Total current unsafe: $(cat /tmp/current_total.txt)"
           cat /tmp/current_total.txt > /tmp/current.txt
@@ -177,11 +177,11 @@ jobs:
           GEIGER_BYPASS: ${{ steps.check-label.outputs.bypass }}
         run: |
           set -euo pipefail
-          
+
           # Read aggregated totals
           baseline_unsafe=$(cat /tmp/baseline.txt | tr -d '\n' | tr -d ' ')
           current_unsafe=$(cat /tmp/current.txt | tr -d '\n' | tr -d ' ')
-          
+
           echo "=== Scanned packages ==="
           echo "Packages: ${{ steps.detect-packages.outputs.packages }}"
           echo ""
@@ -189,14 +189,14 @@ jobs:
           echo "baseline_unsafe: '$baseline_unsafe'"
           echo "current_unsafe: '$current_unsafe'"
           echo ""
-          
+
           # Validate extraction
           if [ -z "$baseline_unsafe" ] || [ -z "$current_unsafe" ]; then
             echo "❌ ERROR: Failed to extract unsafe counts from geiger output"
             echo "This usually means the output format changed or parsing failed."
             exit 1
           fi
-          
+
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🔒 Unsafe Code Analysis Results"

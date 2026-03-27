@@ -26,7 +26,7 @@ pub fn gen_bucket_name() -> String {
     format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
 }
 
-// Interacts with the locastack.
+// Interacts with an S3-compatible object storage (RustFS).
 pub struct AwsLocal {
     client: BucketClient,
     endpoint: String,
@@ -203,27 +203,15 @@ impl AwsLocalBuilder {
         self
     }
 
-    fn next_fake_credential(&self) -> String {
-        // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
-        // cache collisions. This prevents "dispatch task is gone" errors in tests
-        // where cached clients' dispatch tasks can outlive the test runtime.
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static BUILT_CLIENT_COUNT: AtomicUsize = AtomicUsize::new(0);
-        let count = BUILT_CLIENT_COUNT.fetch_add(1, Ordering::Relaxed);
-        format!("fake-{count}")
-    }
-
     pub async fn build(self) -> AwsLocal {
-        let fake_cred = self.next_fake_credential();
-
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = without_caching(BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
             self.region.or(Some("us-east-1".to_string())),
             Some(endpoint.clone()),
-            self.access_key_id.or(Some(fake_cred.clone())),
-            self.secret_access_key.or(Some(fake_cred)),
+            self.access_key_id.or(Some("admin".to_string())),
+            self.secret_access_key.or(Some("admin".to_string())),
         ))
         .await;
 

@@ -779,7 +779,6 @@ pub mod sqlx_postgres {
 
         use crate::{aws_local::AwsLocal, file_source};
         use sqlx::{Executor, PgPool};
-        use tokio::time::timeout;
 
         use super::*;
 
@@ -803,6 +802,8 @@ pub mod sqlx_postgres {
                 .state(pool.clone())
                 .bucket_client(awsl.bucket_client())
                 .lookback_start_after(DateTime::UNIX_EPOCH)
+                .idle_timeout(Duration::from_millis(25))
+                .poll_duration(Duration::from_millis(10))
                 .prefix("file_type")
                 .create()
                 .await?;
@@ -811,6 +812,8 @@ pub mod sqlx_postgres {
                 .state(pool.clone())
                 .bucket_client(awsl.bucket_client())
                 .lookback_start_after(DateTime::UNIX_EPOCH)
+                .idle_timeout(Duration::from_millis(25))
+                .poll_duration(Duration::from_millis(10))
                 .prefix("file_type_v2")
                 .create()
                 .await?;
@@ -872,6 +875,8 @@ pub mod sqlx_postgres {
                     .bucket_client(awsl.bucket_client())
                     .lookback_max(six_hours)
                     .prefix("file_type".to_string())
+                    .idle_timeout(Duration::from_millis(25))
+                    .poll_duration(Duration::from_millis(10))
                     .offset(six_hours)
                     .create()
             };
@@ -974,15 +979,31 @@ pub mod sqlx_postgres {
             mut receiver: FileInfoStreamReceiver<T>,
             pool: &PgPool,
         ) -> std::result::Result<Vec<FileInfo>, Box<dyn std::error::Error>> {
+            let recv_timeout = Duration::from_secs(3);
             let mut msgs = Vec::with_capacity(10);
             let mut txn = pool.begin().await?;
 
             // FileInfoPoller puts a single file into the channel at a time. It's easier
             // to loop here with a timeout than sleep some arbitrary amount hoping it
             // will have processed all it's files by then.
-            while let Ok(Some(msg)) = timeout(Duration::from_millis(250), receiver.recv()).await {
-                msgs.push(msg.file_info.clone());
-                msg.mark_processed(&mut txn).await?;
+            loop {
+                match tokio::time::timeout(recv_timeout, receiver.recv()).await {
+                    Ok(None) => break,
+                    Ok(Some(msg)) => {
+                        msgs.push(msg.file_info.clone());
+                        msg.mark_processed(&mut txn).await?;
+                    }
+                    Err(_timeout) => Err("
+=============== ERROR!!! ===============
+FileInfoStreamReceiver did not shutdown cleanly.
+Maybe you want to configure the poller to shutdown faster?
+```
+.idle_timeout(Duration::from_millis(25))
+.poll_duration(Duration::from_millis(10))
+```
+Or something else went wrong.
+=============== ERROR!!! ===============")?,
+                }
             }
 
             txn.commit().await?;
@@ -1051,7 +1072,7 @@ pub mod sqlx_postgres {
             awsl.put_protos_at_time("file_type", vec![TestMsg {}], now)
                 .await?;
 
-            let (receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
+            let (mut receiver, server) = file_source::Continuous::prost_source::<TestMsg, _, _>()
                 .state(pool.clone())
                 .bucket_client(awsl.bucket_client())
                 .lookback_start_after(now - Duration::from_secs(60))
@@ -1064,19 +1085,35 @@ pub mod sqlx_postgres {
             let (trigger, shutdown) = triggered::trigger();
             let handle = tokio::spawn(server.run(shutdown));
 
+            use tokio::time::timeout;
+
             // Process the one file
-            let files = consume_files_and_mark_processed(receiver, &pool).await?;
-            assert_eq!(files.len(), 1, "should process the one file");
+            let first_file = timeout(Duration::from_millis(100), receiver.recv()).await;
+            assert!(
+                matches!(first_file, Ok(Some(_))),
+                "Expected 1 file, got: {first_file:?}"
+            );
 
             // The poller should NOT exit on its own - it should keep waiting
-            let result = tokio::time::timeout(Duration::from_millis(500), handle).await;
+            let result = timeout(Duration::from_millis(500), handle).await;
             assert!(
                 result.is_err(),
                 "poller should NOT exit on its own without idle_timeout"
             );
 
-            // Clean up by triggering shutdown
+            // Clean up by triggering shutdown.
+            //
+            // NOTE(mj): Something async must happen after this shutdown to give
+            // the runtime a chance to switch tasks and process this trigger.
             trigger.trigger();
+
+            // No other files should be put on the channel, and it whoudl be closed.
+            let no_file = timeout(Duration::from_millis(50), receiver.recv()).await;
+            assert!(
+                matches!(no_file, Ok(None)),
+                "Expected closed channel, got: {no_file:?}"
+            );
+
             awsl.cleanup().await?;
 
             Ok(())

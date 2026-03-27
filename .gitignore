@@ -9,5 +9,5 @@ flamegraph.*
 .env
 *.DS_STORE
 
-!/minio/bucket-policy.json
+
 *.bak

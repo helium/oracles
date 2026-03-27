@@ -7,11 +7,7 @@ RUN apt-get update && apt-get install -y \
     mold \
     ca-certificates \
     curl \
-    jq # used by polaris-setup.sh
-
-# Used by minio-setup.sh
-RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc \
-    && chmod +x /usr/local/bin/mc
+    jq
 
 # BUILDER
 FROM base AS builder

@@ -1,4 +1,4 @@
-name: Docker CI
+name: CI
 
 on:
   pull_request:
@@ -17,48 +17,50 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.out.outputs.tag }}
-      trino_image_tag: ${{ steps.out.outputs.trino_tag }}
-      minio_image_tag: ${{ steps.out.outputs.minio_tag }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Create Tag
         id: out
-        run: |
-          echo "tag=${{ hashFiles('Dockerfile','rust-toolchain.toml') }}" >> "$GITHUB_OUTPUT"
-          echo "trino_tag=${{ hashFiles('helium_iceberg/infra/trino/**') }}" >> "$GITHUB_OUTPUT"
-          echo "minio_tag=${{ hashFiles('helium_iceberg/infra/minio/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${{ hashFiles('Dockerfile','rust-toolchain.toml') }}" >> "$GITHUB_OUTPUT"
+
   build-base:
     needs: compute-base-build-tag
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_name: base
-      image_tag: ${{ needs.compute-base-build-tag.outputs.image_tag }}
-      context: .
-      dockerfile: Dockerfile
-      target: base
-    secrets: inherit
-  build-trino:
-    needs: compute-base-build-tag
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_name: trino
-      image_tag: ${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
-      context: helium_iceberg/infra/trino
-      dockerfile: helium_iceberg/infra/trino/Dockerfile
-    secrets: inherit
-  build-minio:
-    needs: compute-base-build-tag
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_name: minio
-      image_tag: ${{ needs.compute-base-build-tag.outputs.minio_image_tag }}
-      context: helium_iceberg/infra/minio
-      dockerfile: helium_iceberg/infra/minio/Dockerfile
-    secrets: inherit
+    runs-on: ubuntu-latest
+    env:
+      CACHE_HIT: false
+      IMAGE: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull Cached base Image
+        run: |
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "CACHE_HIT=true" >> $GITHUB_ENV
+          else
+            echo "CACHE_HIT=false" >> $GITHUB_ENV
+          fi
+      - name: Set up Docker Buildx
+        if: env.CACHE_HIT == 'false'
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+      - name: Build and Push base Image (if not cached)
+        if: env.CACHE_HIT == 'false'
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        with:
+          context: .
+          file: Dockerfile
+          target: base
+          push: true
+          tags: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
 
   fmt:
-    needs: [compute-base-build-tag, build-base, build-trino, build-minio]
+    needs: [compute-base-build-tag, build-base]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
@@ -68,11 +70,12 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Check formatting
         run: cargo fmt -- --check
+
   clippy:
-    needs: [compute-base-build-tag, build-base, build-trino, build-minio]
+    needs: [compute-base-build-tag, build-base]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
@@ -82,9 +85,9 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Cache Cargo Target Directory
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: target
           key: clippy-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
@@ -92,16 +95,17 @@ jobs:
             clippy-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -Dclippy::all -D warnings
+
   generate-matrix:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.get-matrix.outputs.matrix }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Restore Cached Matrix
         id: cache-matrix
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: matrix.json
           key: matrix-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
@@ -113,15 +117,9 @@ jobs:
       - name: Save Matrix to Output
         id: get-matrix
         run: echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
+
   tests:
-    needs:
-      [
-        compute-base-build-tag,
-        build-base,
-        build-trino,
-        build-minio,
-        generate-matrix,
-      ]
+    needs: [compute-base-build-tag, build-base, generate-matrix]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
@@ -135,9 +133,11 @@ jobs:
       cancel-in-progress: true
     services:
       postgres:
-        image: postgres:14.9-alpine
+        image: postgres:14.17
         env:
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: POLARIS
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -145,18 +145,15 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      localstack:
-        image: localstack/localstack:4.14.0
-        env:
-          SERVICES: s3
-          EAGER_SERVICE_LOADING: 1
+      rustfs:
+        image: rustfs/rustfs:1.0.0-alpha.90
         ports:
-          - 4566:4566
-      minio:
-        image: ghcr.io/${{ github.repository }}/minio:${{ needs.compute-base-build-tag.outputs.minio_image_tag }}
+          - 9000:9000
+          - 4566:9000
         env:
-          MINIO_ROOT_USER: admin
-          MINIO_ROOT_PASSWORD: password
+          RUSTFS_CONSOLE_ENABLE: false
+          RUSTFS_ACCESS_KEY: admin
+          RUSTFS_SECRET_KEY: admin
       polaris:
         image: apache/polaris:1.3.0-incubating
         env:
@@ -170,32 +167,50 @@ jobs:
           POLARIS_FEATURES__DROP_WITH_PURGE_ENABLED: "true"
           AWS_REGION: us-west-2
           AWS_ACCESS_KEY_ID: admin
-          AWS_SECRET_ACCESS_KEY: password
+          AWS_SECRET_ACCESS_KEY: admin
         ports:
           - 8181:8181
       trino:
-        image: ghcr.io/${{ github.repository }}/trino:${{ needs.compute-base-build-tag.outputs.trino_image_tag }}
+        image: trinodb/trino:480
         env:
           AWS_ACCESS_KEY_ID: admin
-          AWS_SECRET_ACCESS_KEY: password
+          AWS_SECRET_ACCESS_KEY: admin
+          CATALOG_MANAGEMENT: dynamic
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo Target Directory
         # Anything above 4min run
         if: contains('["ingest", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: target
           key: tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
 
-      - name: Minio init
-        run: helium_iceberg/infra/minio/init.sh
+      - name: Install AWS CLI (user install)
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          /tmp/aws/install --install-dir $HOME/.local/aws-cli --bin-dir $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Rustfs init
+        timeout-minutes: 1
+        env:
+          AWS_ACCESS_KEY_ID: admin
+          AWS_SECRET_ACCESS_KEY: admin
+        run: |
+          until curl -sf http://rustfs:9000/health > /dev/null 2>&1; do
+            echo "...waiting for Rustfs..."
+            sleep 2
+          done
+          ./infra/rustfs/init.sh
 
       - name: Wait for Trino
+        timeout-minutes: 1
         run: |
           until curl -sf http://trino:8080/v1/info | grep -q '"starting":false'; do
             echo "...waiting for Trino..."
@@ -206,13 +221,14 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
-          AWSLOCAL_ENDPOINT: "http://localstack:4566"
-          S3_QUALIFIED_HOST: minio
-          S3_LOCAL_HOST: minio
+          AWSLOCAL_ENDPOINT: http://rustfs:9000
+          S3_QUALIFIED_HOST: rustfs
+          S3_LOCAL_HOST: rustfs
           CATALOG_QUALIFIED_HOST: polaris
           CATALOG_LOCAL_HOST: polaris
           TRINO_HOST: trino
         run: cargo test -p ${{ matrix.package }} --locked
+
   build-mobile-images:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [fmt, clippy, tests]
@@ -233,17 +249,17 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
       - name: Build and Push Base Image
-        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
         with:
           context: .
           file: Dockerfile
