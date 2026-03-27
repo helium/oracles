@@ -128,5 +128,31 @@ pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Mobile.key()
 }
 
+pub trait ToProtoDecimal {
+    fn proto_decimal(&self) -> helium_proto::Decimal;
+}
+
+impl ToProtoDecimal for rust_decimal::Decimal {
+    fn proto_decimal(&self) -> helium_proto::Decimal {
+        helium_proto::Decimal {
+            value: self.to_string(),
+        }
+    }
+}
+
+pub trait FromProtoDecimal {
+    fn to_f64(&self) -> f64;
+}
+
+impl FromProtoDecimal for Option<helium_proto::Decimal> {
+    fn to_f64(&self) -> f64 {
+        let Some(dec) = self else {
+            return 0.0;
+        };
+
+        dec.value.parse().ok().unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 tls_init::include_tls_tests!();

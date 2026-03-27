@@ -1,19 +1,20 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
-use helium_proto::services::poc_mobile::{
-    mobile_reward_share::Reward as ProtoReward, MobileRewardShare, UnallocatedRewardType,
-};
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use super::{timestamp_to_dt, REWARDS_NAMESPACE};
+mod proto {
+    pub use helium_proto::services::poc_mobile::UnallocatedReward;
+}
+
+use super::REWARDS_NAMESPACE;
 
 pub const TABLE_NAME: &str = "unallocated";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergUnallocatedReward {
     reward_type: String,
-    amount: i64,
+    amount: u64,
     start_period: DateTime<FixedOffset>,
     end_period: DateTime<FixedOffset>,
 }
@@ -32,21 +33,17 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         .build()
 }
 
-impl From<&MobileRewardShare> for IcebergUnallocatedReward {
-    fn from(share: &MobileRewardShare) -> Self {
-        let reward = match &share.reward {
-            Some(ProtoReward::UnallocatedReward(r)) => r,
-            other => panic!("expected UnallocatedReward, got {other:?}"),
-        };
-
+impl IcebergUnallocatedReward {
+    pub fn from_reward(
+        reward: &proto::UnallocatedReward,
+        start_period: DateTime<Utc>,
+        end_period: DateTime<Utc>,
+    ) -> Self {
         Self {
-            reward_type: UnallocatedRewardType::try_from(reward.reward_type)
-                .unwrap_or(UnallocatedRewardType::Poc)
-                .as_str_name()
-                .to_string(),
-            amount: reward.amount as i64,
-            start_period: timestamp_to_dt(share.start_period),
-            end_period: timestamp_to_dt(share.end_period),
+            reward_type: reward.reward_type().as_str_name().to_string(),
+            amount: reward.amount,
+            start_period: start_period.into(),
+            end_period: end_period.into(),
         }
     }
 }
@@ -54,7 +51,7 @@ impl From<&MobileRewardShare> for IcebergUnallocatedReward {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helium_proto::services::poc_mobile as proto;
+    use helium_proto::services::poc_mobile::UnallocatedRewardType;
 
     #[test]
     fn table_definition_builds_successfully() {
@@ -65,16 +62,12 @@ mod tests {
 
     #[test]
     fn convert_unallocated_reward() {
-        let share = MobileRewardShare {
-            start_period: 1_700_000_000,
-            end_period: 1_700_086_400,
-            reward: Some(ProtoReward::UnallocatedReward(proto::UnallocatedReward {
-                reward_type: UnallocatedRewardType::Poc as i32,
-                amount: 999_999,
-            })),
+        let reward = proto::UnallocatedReward {
+            reward_type: UnallocatedRewardType::Poc as i32,
+            amount: 999_999,
         };
 
-        let iceberg = IcebergUnallocatedReward::from(&share);
+        let iceberg = IcebergUnallocatedReward::from_reward(&reward, Utc::now(), Utc::now());
 
         assert_eq!(iceberg.amount, 999_999);
     }

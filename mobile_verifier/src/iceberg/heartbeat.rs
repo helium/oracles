@@ -75,7 +75,6 @@ impl From<&ValidatedHeartbeat> for IcebergHeartbeat {
             heartbeat_timestamp: value.heartbeat.heartbeat_timestamp.into(),
             device_type: value
                 .device_type
-                .as_ref()
                 .map(|dt| device_type_string(dt).to_string()),
             lat: value.heartbeat.lat,
             lon: value.heartbeat.lon,
@@ -99,7 +98,7 @@ impl From<&ValidatedHeartbeat> for IcebergHeartbeat {
     }
 }
 
-fn device_type_string(device_type: &DeviceType) -> &'static str {
+fn device_type_string(device_type: DeviceType) -> &'static str {
     match device_type {
         DeviceType::Cbrs => "cbrs",
         DeviceType::WifiIndoor => "wifi_indoor",
@@ -223,11 +222,11 @@ mod tests {
 
     #[test]
     fn device_type_string_covers_all_variants() {
-        assert_eq!(device_type_string(&DeviceType::Cbrs), "cbrs");
-        assert_eq!(device_type_string(&DeviceType::WifiIndoor), "wifi_indoor");
-        assert_eq!(device_type_string(&DeviceType::WifiOutdoor), "wifi_outdoor");
+        assert_eq!(device_type_string(DeviceType::Cbrs), "cbrs");
+        assert_eq!(device_type_string(DeviceType::WifiIndoor), "wifi_indoor");
+        assert_eq!(device_type_string(DeviceType::WifiOutdoor), "wifi_outdoor");
         assert_eq!(
-            device_type_string(&DeviceType::WifiDataOnly),
+            device_type_string(DeviceType::WifiDataOnly),
             "wifi_data_only"
         );
     }

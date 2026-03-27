@@ -1,14 +1,18 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
+use file_store::traits::TimestampDecode;
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
-use helium_proto::services::poc_mobile::{
-    self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-};
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 use uuid::Uuid;
 
-use super::{proto_decimal_to_f64, timestamp_to_dt, REWARDS_NAMESPACE};
+mod proto {
+    pub use helium_proto::services::poc_mobile::RadioRewardV2;
+}
+
+use crate::FromProtoDecimal;
+
+use super::REWARDS_NAMESPACE;
 
 pub const TABLE_NAME: &str = "proof_of_coverage";
 
@@ -20,17 +24,17 @@ pub struct IcebergRadioReward {
     boosted_coverage_points_sum: f64,
     base_reward_shares: f64,
     boosted_reward_shares: f64,
-    base_poc_reward: i64,
-    boosted_poc_reward: i64,
+    base_poc_reward: u64,
+    boosted_poc_reward: u64,
     seniority_timestamp: DateTime<FixedOffset>,
     coverage_object: String,
     location_trust_score_multiplier: f64,
     speedtest_multiplier: f64,
     sp_boosted_hex_status: String,
     oracle_boosted_hex_status: String,
-    speedtest_avg_upload_speed_bps: i64,
-    speedtest_avg_download_speed_bps: i64,
-    speedtest_avg_latency_ms: i64,
+    speedtest_avg_upload_speed_bps: u64,
+    speedtest_avg_download_speed_bps: u64,
+    speedtest_avg_latency_ms: u32,
     start_period: DateTime<FixedOffset>,
     end_period: DateTime<FixedOffset>,
 }
@@ -67,63 +71,67 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         .build()
 }
 
-impl From<&MobileRewardShare> for IcebergRadioReward {
-    fn from(share: &MobileRewardShare) -> Self {
-        let reward = match &share.reward {
-            Some(ProtoReward::RadioRewardV2(r)) => r,
-            other => panic!("expected RadioRewardV2, got {other:?}"),
-        };
-
+impl IcebergRadioReward {
+    pub fn from_radio_reward(
+        reward: &proto::RadioRewardV2,
+        start_period: DateTime<Utc>,
+        end_period: DateTime<Utc>,
+    ) -> Self {
         let (avg_upload, avg_download, avg_latency) =
             reward.speedtest_average.as_ref().map_or((0, 0, 0), |s| {
-                (
-                    s.upload_speed_bps as i64,
-                    s.download_speed_bps as i64,
-                    s.latency_ms as i64,
-                )
+                (s.upload_speed_bps, s.download_speed_bps, s.latency_ms)
             });
+
+        let seniority_timestamp = reward
+            .seniority_timestamp
+            .to_timestamp()
+            .unwrap_or_default()
+            .fixed_offset();
+
+        let coverage_object = Uuid::from_slice(&reward.coverage_object)
+            .map(|u| u.to_string())
+            .unwrap_or_default();
+
+        let sp_boosted_hex_status = reward.sp_boosted_hex_status().as_str_name().to_string();
+
+        let oracle_boosted_hex_status =
+            reward.oracle_boosted_hex_status().as_str_name().to_string();
 
         Self {
             hotspot_key: PublicKeyBinary::from(reward.hotspot_key.as_slice()).to_string(),
             cbsd_id: reward.cbsd_id.clone(),
-            base_coverage_points_sum: proto_decimal_to_f64(&reward.base_coverage_points_sum),
-            boosted_coverage_points_sum: proto_decimal_to_f64(&reward.boosted_coverage_points_sum),
-            base_reward_shares: proto_decimal_to_f64(&reward.base_reward_shares),
-            boosted_reward_shares: proto_decimal_to_f64(&reward.boosted_reward_shares),
-            base_poc_reward: reward.base_poc_reward as i64,
-            boosted_poc_reward: reward.boosted_poc_reward as i64,
-            seniority_timestamp: timestamp_to_dt(reward.seniority_timestamp),
-            coverage_object: Uuid::from_slice(&reward.coverage_object)
-                .map(|u| u.to_string())
-                .unwrap_or_default(),
-            location_trust_score_multiplier: proto_decimal_to_f64(
-                &reward.location_trust_score_multiplier,
-            ),
-            speedtest_multiplier: proto_decimal_to_f64(&reward.speedtest_multiplier),
-            sp_boosted_hex_status: proto::SpBoostedHexStatus::try_from(
-                reward.sp_boosted_hex_status,
-            )
-            .unwrap_or(proto::SpBoostedHexStatus::Eligible)
-            .as_str_name()
-            .to_string(),
-            oracle_boosted_hex_status: proto::OracleBoostedHexStatus::try_from(
-                reward.oracle_boosted_hex_status,
-            )
-            .unwrap_or(proto::OracleBoostedHexStatus::Eligible)
-            .as_str_name()
-            .to_string(),
+            base_coverage_points_sum: reward.base_coverage_points_sum.to_f64(),
+            boosted_coverage_points_sum: reward.boosted_coverage_points_sum.to_f64(),
+            base_reward_shares: reward.base_reward_shares.to_f64(),
+            boosted_reward_shares: reward.boosted_reward_shares.to_f64(),
+            base_poc_reward: reward.base_poc_reward,
+            boosted_poc_reward: reward.boosted_poc_reward,
+            seniority_timestamp,
+            coverage_object,
+            location_trust_score_multiplier: reward.location_trust_score_multiplier.to_f64(),
+            speedtest_multiplier: reward.speedtest_multiplier.to_f64(),
+            sp_boosted_hex_status,
+            oracle_boosted_hex_status,
             speedtest_avg_upload_speed_bps: avg_upload,
             speedtest_avg_download_speed_bps: avg_download,
             speedtest_avg_latency_ms: avg_latency,
-            start_period: timestamp_to_dt(share.start_period),
-            end_period: timestamp_to_dt(share.end_period),
+            start_period: start_period.into(),
+            end_period: end_period.into(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::ToProtoDecimal;
+
     use super::*;
+
+    use helium_proto::services::poc_mobile::{
+        OracleBoostedHexStatus, SpBoostedHexStatus, Speedtest,
+    };
+
+    use rust_decimal::dec;
 
     #[test]
     fn table_definition_builds_successfully() {
@@ -135,47 +143,31 @@ mod tests {
     #[test]
     fn convert_radio_reward_v2() {
         let coverage_uuid = Uuid::new_v4();
-        let share = MobileRewardShare {
-            start_period: 1_700_000_000,
-            end_period: 1_700_086_400,
-            reward: Some(ProtoReward::RadioRewardV2(proto::RadioRewardV2 {
-                hotspot_key: vec![1, 2, 3],
-                cbsd_id: "test-cbsd".to_string(),
-                base_coverage_points_sum: Some(helium_proto::Decimal {
-                    value: "100.5".to_string(),
-                }),
-                boosted_coverage_points_sum: Some(helium_proto::Decimal {
-                    value: "50.25".to_string(),
-                }),
-                base_reward_shares: Some(helium_proto::Decimal {
-                    value: "75.0".to_string(),
-                }),
-                boosted_reward_shares: Some(helium_proto::Decimal {
-                    value: "25.0".to_string(),
-                }),
-                base_poc_reward: 1000,
-                boosted_poc_reward: 500,
-                seniority_timestamp: 1_699_900_000,
-                coverage_object: coverage_uuid.as_bytes().to_vec(),
-                location_trust_score_multiplier: Some(helium_proto::Decimal {
-                    value: "0.9".to_string(),
-                }),
-                speedtest_multiplier: Some(helium_proto::Decimal {
-                    value: "0.8".to_string(),
-                }),
-                sp_boosted_hex_status: proto::SpBoostedHexStatus::Eligible as i32,
-                oracle_boosted_hex_status: proto::OracleBoostedHexStatus::Eligible as i32,
-                speedtest_average: Some(proto::Speedtest {
-                    upload_speed_bps: 10_000_000,
-                    download_speed_bps: 100_000_000,
-                    latency_ms: 25,
-                    timestamp: 0,
-                }),
-                ..Default::default()
-            })),
+        let reward = proto::RadioRewardV2 {
+            hotspot_key: vec![1, 2, 3],
+            cbsd_id: "test-cbsd".to_string(),
+            base_coverage_points_sum: Some(dec!(100.5).proto_decimal()),
+            boosted_coverage_points_sum: Some(dec!(50.25).proto_decimal()),
+            base_reward_shares: Some(dec!(75.0).proto_decimal()),
+            boosted_reward_shares: Some(dec!(25.0).proto_decimal()),
+            base_poc_reward: 1000,
+            boosted_poc_reward: 500,
+            seniority_timestamp: 1_699_900_000,
+            coverage_object: coverage_uuid.as_bytes().to_vec(),
+            location_trust_score_multiplier: Some(dec!(0.9).proto_decimal()),
+            speedtest_multiplier: Some(dec!(0.8).proto_decimal()),
+            sp_boosted_hex_status: SpBoostedHexStatus::Eligible as i32,
+            oracle_boosted_hex_status: OracleBoostedHexStatus::Eligible as i32,
+            speedtest_average: Some(Speedtest {
+                upload_speed_bps: 10_000_000,
+                download_speed_bps: 100_000_000,
+                latency_ms: 25,
+                timestamp: 0,
+            }),
+            ..Default::default()
         };
 
-        let iceberg = IcebergRadioReward::from(&share);
+        let iceberg = IcebergRadioReward::from_radio_reward(&reward, Utc::now(), Utc::now());
 
         assert_eq!(iceberg.cbsd_id, "test-cbsd");
         assert!((iceberg.base_coverage_points_sum - 100.5).abs() < f64::EPSILON);
@@ -194,17 +186,13 @@ mod tests {
 
     #[test]
     fn convert_radio_reward_v2_with_no_speedtest_average() {
-        let share = MobileRewardShare {
-            start_period: 1_700_000_000,
-            end_period: 1_700_086_400,
-            reward: Some(ProtoReward::RadioRewardV2(proto::RadioRewardV2 {
-                hotspot_key: vec![1, 2, 3],
-                speedtest_average: None,
-                ..Default::default()
-            })),
+        let reward = proto::RadioRewardV2 {
+            hotspot_key: vec![1, 2, 3],
+            speedtest_average: None,
+            ..Default::default()
         };
 
-        let iceberg = IcebergRadioReward::from(&share);
+        let iceberg = IcebergRadioReward::from_radio_reward(&reward, Utc::now(), Utc::now());
 
         assert_eq!(iceberg.speedtest_avg_upload_speed_bps, 0);
         assert_eq!(iceberg.speedtest_avg_download_speed_bps, 0);

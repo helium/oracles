@@ -7,7 +7,7 @@ use crate::{
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     unique_connections::{self, UniqueConnectionCounts},
-    PriceInfo,
+    PriceInfo, ToProtoDecimal,
 };
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::{
@@ -18,8 +18,8 @@ use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::EpochRewardInfo};
-use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
+use mobile_config::boosted_hex_info::BoostedHexes;
+use radio_reward_v2::RadioRewardV2Ext;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
@@ -129,39 +129,25 @@ impl TransferRewards {
         }
     }
 
-    pub fn into_rewards(
-        self,
-        reward_info: &'_ EpochRewardInfo,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        let Self {
-            reward_scale,
-            rewards,
-            ..
-        } = self;
-        let start_period = reward_info.epoch_period.start.encode_timestamp();
-        let end_period = reward_info.epoch_period.end.encode_timestamp();
+    pub fn into_rewards(self) -> impl Iterator<Item = (u64, proto::GatewayReward)> {
         let price = self.price_info.price_in_bones;
+        let reward_scale = self.reward_scale;
 
-        rewards
+        self.rewards
             .into_iter()
             .map(move |(hotspot_key, reward)| {
                 let dc_transfer_reward = (reward.bones * reward_scale)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
                     .unwrap_or(0);
+
                 (
                     dc_transfer_reward,
-                    proto::MobileRewardShare {
-                        start_period,
-                        end_period,
-                        reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
-                            proto::GatewayReward {
-                                hotspot_key: hotspot_key.into(),
-                                dc_transfer_reward,
-                                rewardable_bytes: reward.bytes_rewarded,
-                                price,
-                            },
-                        )),
+                    proto::GatewayReward {
+                        hotspot_key: hotspot_key.into(),
+                        dc_transfer_reward,
+                        rewardable_bytes: reward.bytes_rewarded,
+                        price,
                     },
                 )
             })
@@ -178,18 +164,13 @@ pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {
 
 pub fn coverage_point_to_mobile_reward_share(
     coverage_points: coverage_point_calculator::CoveragePoints,
-    reward_period: &Range<DateTime<Utc>>,
     radio_id: &RadioId,
     rewards_per_share: CalculatedPocRewardShares,
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
-) -> proto::MobileRewardShare {
-    let hotspot_key = radio_id.clone();
-
-    let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
-
-    let radio_reward_v2 = proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
-        hotspot_key: hotspot_key.into(),
+) -> proto::RadioRewardV2 {
+    proto::RadioRewardV2 {
+        hotspot_key: radio_id.clone().into(),
         cbsd_id: String::default(),
         base_coverage_points_sum: Some(coverage_points.coverage_points.base.proto_decimal()),
         boosted_coverage_points_sum: Some(coverage_points.coverage_points.boosted.proto_decimal()),
@@ -198,7 +179,7 @@ pub fn coverage_point_to_mobile_reward_share(
         base_poc_reward: rewards_per_share.base_poc_reward(&coverage_points),
         boosted_poc_reward: rewards_per_share.boosted_poc_reward(&coverage_points),
         seniority_timestamp: seniority_timestamp.encode_timestamp(),
-        coverage_object,
+        coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
         location_trust_scores: coverage_points.proto_location_trust_scores(),
         location_trust_score_multiplier: Some(
             coverage_points.location_trust_multiplier.proto_decimal(),
@@ -209,17 +190,6 @@ pub fn coverage_point_to_mobile_reward_share(
         oracle_boosted_hex_status: coverage_points.proto_oracle_boosted_hex_status().into(),
         covered_hexes: coverage_points.proto_covered_hexes(),
         speedtest_average: Some(coverage_points.proto_speedtest_avg()),
-    });
-
-    let base = proto::MobileRewardShare {
-        start_period: reward_period.start.encode_timestamp(),
-        end_period: reward_period.end.encode_timestamp(),
-        reward: None,
-    };
-
-    proto::MobileRewardShare {
-        reward: Some(radio_reward_v2),
-        ..base
     }
 }
 
@@ -393,7 +363,7 @@ impl CoverageShares {
         reward_period: &Range<DateTime<Utc>>,
     ) -> Option<(
         CalculatedPocRewardShares,
-        impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_,
+        impl Iterator<Item = (u64, proto::RadioRewardV2)>,
     )> {
         struct ProcessedRadio {
             radio_id: RadioId,
@@ -437,23 +407,16 @@ impl CoverageShares {
             processed_radios
                 .into_iter()
                 .map(move |radio| {
-                    let ProcessedRadio {
-                        radio_id,
-                        points,
-                        seniority,
-                        coverage_obj_uuid,
-                    } = radio;
-
-                    let poc_reward = rewards_per_share.poc_reward(&points);
-                    let mobile_reward_v2 = coverage_point_to_mobile_reward_share(
-                        points,
-                        reward_period,
-                        &radio_id,
-                        rewards_per_share,
-                        seniority.seniority_ts,
-                        coverage_obj_uuid,
-                    );
-                    (poc_reward, mobile_reward_v2)
+                    (
+                        rewards_per_share.poc_reward(&radio.points),
+                        coverage_point_to_mobile_reward_share(
+                            radio.points,
+                            &radio.radio_id,
+                            rewards_per_share,
+                            radio.seniority.seniority_ts,
+                            radio.coverage_obj_uuid,
+                        ),
+                    )
                 })
                 .filter(|(poc_reward, _mobile_reward_v2)| *poc_reward > 0),
         ))
@@ -583,6 +546,7 @@ mod test {
 
     use super::*;
     use hex_assignments::{assignment::HexAssignments, Assignment};
+    use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 
     use crate::{
         coverage::{CoveredHexStream, HexCoverage},
@@ -594,7 +558,6 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store_oracles::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use hextree::Cell;
     use solana::Token;
     use std::collections::HashMap;
@@ -996,7 +959,7 @@ mod test {
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
-        let (_reward_amount, mobile_reward_v2) = CoverageShares::new(
+        let (_reward_amount, radio_reward) = CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1014,10 +977,6 @@ mod test {
         .next()
         .unwrap();
 
-        let radio_reward = match mobile_reward_v2.reward {
-            Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
-            _ => unreachable!(),
-        };
         let speedtest_avg = radio_reward.speedtest_average.unwrap();
         assert_eq!(speedtest_avg.upload_speed_bps, bytes_per_s(15));
         assert_eq!(speedtest_avg.download_speed_bps, bytes_per_s(150));
@@ -1169,7 +1128,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward_v2) in CoverageShares::new(
+        for (reward_amount, radio_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1185,10 +1144,6 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward_v2.reward {
-                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
-                _ => unreachable!(),
-            };
             let owner = owners
                 .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
                 .expect("Could not find owner")
@@ -1319,7 +1274,7 @@ mod test {
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
-        for (_reward_amount, mobile_reward_v2) in CoverageShares::new(
+        for (_reward_amount, radio_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1335,10 +1290,6 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward_v2.reward {
-                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
-                _ => unreachable!(),
-            };
             let owner = owners
                 .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
                 .expect("Could not find owner")
@@ -1469,15 +1420,11 @@ mod test {
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         // gw2 does not have enough speedtests for a multiplier
         let expected_hotspot = gw1;
-        for (_reward_amount, mobile_reward_v2) in coverage_shares
+        for (_reward_amount, radio_reward) in coverage_shares
             .into_rewards(reward_shares, &rewards_info.epoch_period)
             .expect("rewards output")
             .1
         {
-            let radio_reward = match mobile_reward_v2.reward {
-                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
-                _ => unreachable!(),
-            };
             let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
             assert_eq!(actual_hotspot, expected_hotspot);
         }

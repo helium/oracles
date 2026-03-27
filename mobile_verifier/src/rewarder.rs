@@ -10,7 +10,7 @@ use crate::{
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
-    telemetry, unique_connections, PriceInfo, Settings,
+    telemetry, unique_connections, PriceInfo, Settings, ToProtoDecimal,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -325,12 +325,8 @@ where
 
         // now that the db has been purged, safe to write out the manifest
         let reward_data = ManifestMobileRewardData {
-            poc_bones_per_reward_share: Some(helium_proto::Decimal {
-                value: poc_dc_shares.normal.to_string(),
-            }),
-            boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
-                value: poc_dc_shares.boost.to_string(),
-            }),
+            poc_bones_per_reward_share: Some(poc_dc_shares.normal.proto_decimal()),
+            boosted_poc_bones_per_reward_share: Some(poc_dc_shares.boost.proto_decimal()),
             service_provider_promotions: vec![],
             token: MobileRewardToken::Hnt as i32,
         };
@@ -474,21 +470,38 @@ pub async fn reward_poc(
             let mut count_rewarded_radios = 0;
             let mut iceberg_radio_rewards = Vec::new();
             let mut iceberg_covered_hexes = Vec::new();
-            for (poc_reward_amount, mobile_reward_share_v2) in mobile_reward_shares {
+
+            for (poc_reward_amount, radio_reward_v2) in mobile_reward_shares {
                 allocated_poc_rewards += poc_reward_amount;
                 count_rewarded_radios += 1;
+
                 if collect_iceberg {
-                    iceberg_radio_rewards.push(iceberg::radio_reward::IcebergRadioReward::from(
-                        &mobile_reward_share_v2,
-                    ));
+                    iceberg_radio_rewards.push(
+                        iceberg::radio_reward::IcebergRadioReward::from_radio_reward(
+                            &radio_reward_v2,
+                            reward_info.epoch_period.start,
+                            reward_info.epoch_period.end,
+                        ),
+                    );
                     iceberg_covered_hexes.extend(
-                        iceberg::radio_reward_covered_hex::from_reward_share(
-                            &mobile_reward_share_v2,
+                        iceberg::radio_reward_covered_hex::from_radio_reward(
+                            &radio_reward_v2,
+                            reward_info.epoch_period.start,
+                            reward_info.epoch_period.end,
                         ),
                     );
                 }
+
+                let mobile_reward_share = proto::MobileRewardShare {
+                    start_period: reward_info.epoch_period.start.encode_timestamp(),
+                    end_period: reward_info.epoch_period.end.encode_timestamp(),
+                    reward: Some(proto::mobile_reward_share::Reward::RadioRewardV2(
+                        radio_reward_v2,
+                    )),
+                };
+
                 mobile_rewards
-                    .write(mobile_reward_share_v2, [])
+                    .write(mobile_reward_share, [])
                     .await?
                     // await the returned one shot to ensure that we wrote the file
                     .await??;
@@ -516,28 +529,41 @@ pub async fn reward_dc(
     reward_info: &EpochRewardInfo,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
-    mut reward_txns: Option<&mut iceberg::RewardTransactions>,
+    reward_txns: Option<&mut iceberg::RewardTransactions>,
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let collect_iceberg = reward_txns.is_some();
     let mut allocated_dc_rewards = 0_u64;
     let mut count_rewarded_gateways = 0;
     let mut iceberg_gateway_rewards = Vec::new();
-    for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_info) {
-        allocated_dc_rewards += dc_reward_amount;
+
+    let start_period = reward_info.epoch_period.start.encode_timestamp();
+    let end_period = reward_info.epoch_period.end.encode_timestamp();
+
+    for (dc_allocated, gateway) in transfer_rewards.into_rewards() {
+        allocated_dc_rewards += dc_allocated;
         count_rewarded_gateways += 1;
+
         if collect_iceberg {
-            iceberg_gateway_rewards.push(iceberg::gateway_reward::IcebergGatewayReward::from(
-                &mobile_reward_share,
-            ));
+            iceberg_gateway_rewards.push(
+                iceberg::gateway_reward::IcebergGatewayReward::from_gateway_reward(
+                    &gateway,
+                    reward_info.epoch_period.start,
+                    reward_info.epoch_period.end,
+                ),
+            );
         }
-        mobile_rewards
-            .write(mobile_reward_share, [])
-            .await?
-            // Await the returned one shot to ensure that we wrote the file
-            .await??;
+
+        let reward_share = proto::MobileRewardShare {
+            start_period,
+            end_period,
+            reward: Some(proto::mobile_reward_share::Reward::GatewayReward(gateway)),
+        };
+
+        mobile_rewards.write(reward_share, []).await?.await??;
     }
-    if let Some(txns) = reward_txns.as_mut() {
+
+    if let Some(txns) = reward_txns {
         txns.data_transfer.write(iceberg_gateway_rewards).await?;
     }
     telemetry::data_transfer_rewarded_gateways(count_rewarded_gateways);
@@ -560,42 +586,49 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
-    let subscriber_reward = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
-    let network_reward = sp_reward_amount.saturating_sub(subscriber_reward);
-
-    let mut iceberg_sp_rewards = Vec::new();
+    let subscriber_amount = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
+    let network_amount = sp_reward_amount.saturating_sub(subscriber_amount);
 
     // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
-    let subscriber_share = write_service_provider_reward(
-        &mobile_rewards,
-        reward_info,
-        subscriber_reward,
-        ServiceProvider::HeliumMobile,
-        RewardableEntityKey::Subscriber,
-    )
-    .await?;
-    if let Some(share) = subscriber_share {
-        iceberg_sp_rewards
-            .push(iceberg::service_provider_reward::IcebergServiceProviderReward::from(&share));
-    }
+    let subscriber_share = proto::ServiceProviderReward {
+        service_provider_id: ServiceProvider::HeliumMobile.into(),
+        rewardable_entity_key: RewardableEntityKey::Subscriber.to_string(),
+        amount: subscriber_amount,
+    };
 
     // Remaining rewards goes to HeliumMobile Network Wallet
-    let network_share = write_service_provider_reward(
-        &mobile_rewards,
-        reward_info,
-        network_reward,
-        ServiceProvider::HeliumMobile,
-        RewardableEntityKey::Network,
-    )
-    .await?;
-    if let Some(share) = network_share {
-        iceberg_sp_rewards
-            .push(iceberg::service_provider_reward::IcebergServiceProviderReward::from(&share));
-    }
+    let network_share = proto::ServiceProviderReward {
+        service_provider_id: ServiceProvider::HeliumMobile.into(),
+        rewardable_entity_key: RewardableEntityKey::Network.to_string(),
+        amount: network_amount,
+    };
 
     if let Some(txns) = reward_txns.as_mut() {
-        txns.service_provider.write(iceberg_sp_rewards).await?;
+        use iceberg::service_provider_reward::IcebergServiceProviderReward;
+        let start = reward_info.epoch_period.start;
+        let end = reward_info.epoch_period.end;
+
+        txns.service_provider
+            .write(vec![
+                IcebergServiceProviderReward::from_sp_reward(&subscriber_share, start, end),
+                IcebergServiceProviderReward::from_sp_reward(&network_share, start, end),
+            ])
+            .await?;
     }
+
+    let subscriber_reward = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::ServiceProviderReward(subscriber_share)),
+    };
+    let network_reward = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::ServiceProviderReward(network_share)),
+    };
+
+    mobile_rewards.write(subscriber_reward, []).await?.await??;
+    mobile_rewards.write(network_reward, []).await?.await??;
 
     Ok(())
 }
@@ -605,31 +638,36 @@ async fn write_unallocated_reward(
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_info: &'_ EpochRewardInfo,
-    mut reward_txns: Option<&mut iceberg::RewardTransactions>,
+    reward_txns: Option<&mut iceberg::RewardTransactions>,
 ) -> anyhow::Result<()> {
-    if unallocated_amount > 0 {
-        let unallocated_reward = proto::MobileRewardShare {
-            start_period: reward_info.epoch_period.start.encode_timestamp(),
-            end_period: reward_info.epoch_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
-                reward_type: unallocated_type as i32,
-                amount: unallocated_amount,
-            })),
-        };
-        if let Some(txns) = reward_txns.as_mut() {
-            txns.unallocated
-                .write(vec![
-                    iceberg::unallocated_reward::IcebergUnallocatedReward::from(
-                        &unallocated_reward,
-                    ),
-                ])
-                .await?;
-        }
-        mobile_rewards
-            .write(unallocated_reward, [])
-            .await?
-            .await??;
+    if unallocated_amount == 0 {
+        return Ok(());
+    }
+
+    let reward = UnallocatedReward {
+        reward_type: unallocated_type as i32,
+        amount: unallocated_amount,
     };
+
+    if let Some(txns) = reward_txns {
+        txns.unallocated
+            .write(vec![
+                iceberg::unallocated_reward::IcebergUnallocatedReward::from_reward(
+                    &reward,
+                    reward_info.epoch_period.start,
+                    reward_info.epoch_period.end,
+                ),
+            ])
+            .await?;
+    }
+
+    let reward_share = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::UnallocatedReward(reward)),
+    };
+    mobile_rewards.write(reward_share, []).await?.await??;
+
     Ok(())
 }
 
@@ -639,27 +677,4 @@ pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
 
 async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
     meta::store(exec, "next_reward_epoch", value).await
-}
-
-async fn write_service_provider_reward(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-    reward_amount: u64,
-    service_provider_id: ServiceProvider,
-    rewardable_entity_key: RewardableEntityKey,
-) -> anyhow::Result<Option<MobileRewardShare>> {
-    let reward = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::ServiceProviderReward(
-            proto::ServiceProviderReward {
-                service_provider_id: service_provider_id.into(),
-                amount: reward_amount,
-                rewardable_entity_key: rewardable_entity_key.to_string(),
-            },
-        )),
-    };
-
-    mobile_rewards.write(reward.clone(), []).await?.await??;
-    Ok(Some(reward))
 }

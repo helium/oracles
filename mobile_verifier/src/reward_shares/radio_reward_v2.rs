@@ -5,17 +5,8 @@ use helium_proto::services::poc_mobile::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
-pub trait ToProtoDecimal {
-    fn proto_decimal(&self) -> helium_proto::Decimal;
-}
+use crate::ToProtoDecimal;
 
-impl ToProtoDecimal for rust_decimal::Decimal {
-    fn proto_decimal(&self) -> helium_proto::Decimal {
-        helium_proto::Decimal {
-            value: self.to_string(),
-        }
-    }
-}
 pub trait RadioRewardV2Ext {
     fn proto_location_trust_scores(&self) -> Vec<LocationTrustScore>;
     fn proto_speedtests(&self) -> Vec<Speedtest>;

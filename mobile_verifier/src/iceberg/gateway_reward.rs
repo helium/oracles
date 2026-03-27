@@ -1,22 +1,23 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
-use helium_proto::services::poc_mobile::{
-    mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-};
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use super::{timestamp_to_dt, REWARDS_NAMESPACE};
+mod proto {
+    pub use helium_proto::services::poc_mobile::GatewayReward;
+}
+
+use super::REWARDS_NAMESPACE;
 
 pub const TABLE_NAME: &str = "data_transfer";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergGatewayReward {
     hotspot_key: String,
-    dc_transfer_reward: i64,
-    rewardable_bytes: i64,
-    price: i64,
+    dc_transfer_reward: u64,
+    rewardable_bytes: u64,
+    price: u64,
     start_period: DateTime<FixedOffset>,
     end_period: DateTime<FixedOffset>,
 }
@@ -40,28 +41,27 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         .build()
 }
 
-impl From<&MobileRewardShare> for IcebergGatewayReward {
-    fn from(share: &MobileRewardShare) -> Self {
-        let reward = match &share.reward {
-            Some(ProtoReward::GatewayReward(r)) => r,
-            other => panic!("expected GatewayReward, got {other:?}"),
-        };
-
+impl IcebergGatewayReward {
+    pub fn from_gateway_reward(
+        gateway: &proto::GatewayReward,
+        start_period: DateTime<Utc>,
+        end_period: DateTime<Utc>,
+    ) -> Self {
         Self {
-            hotspot_key: PublicKeyBinary::from(reward.hotspot_key.as_slice()).to_string(),
-            dc_transfer_reward: reward.dc_transfer_reward as i64,
-            rewardable_bytes: reward.rewardable_bytes as i64,
-            price: reward.price as i64,
-            start_period: timestamp_to_dt(share.start_period),
-            end_period: timestamp_to_dt(share.end_period),
+            hotspot_key: PublicKeyBinary::from(gateway.hotspot_key.as_slice()).to_string(),
+            dc_transfer_reward: gateway.dc_transfer_reward,
+            rewardable_bytes: gateway.rewardable_bytes,
+            price: gateway.price,
+            start_period: start_period.into(),
+            end_period: end_period.into(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use helium_proto::services::poc_mobile as proto;
 
     #[test]
     fn table_definition_builds_successfully() {
@@ -72,18 +72,17 @@ mod tests {
 
     #[test]
     fn convert_gateway_reward() {
-        let share = MobileRewardShare {
-            start_period: 1_700_000_000,
-            end_period: 1_700_086_400,
-            reward: Some(ProtoReward::GatewayReward(proto::GatewayReward {
-                hotspot_key: vec![1, 2, 3],
-                dc_transfer_reward: 5000,
-                rewardable_bytes: 1_000_000,
-                price: 100_000_000,
-            })),
+        let start_period = Utc::now();
+        let end_period = Utc::now();
+
+        let gateway = proto::GatewayReward {
+            hotspot_key: vec![1, 2, 3],
+            dc_transfer_reward: 5000,
+            rewardable_bytes: 1_000_000,
+            price: 100_000_000,
         };
 
-        let iceberg = IcebergGatewayReward::from(&share);
+        let iceberg = IcebergGatewayReward::from_gateway_reward(&gateway, start_period, end_period);
 
         assert_eq!(iceberg.dc_transfer_reward, 5000);
         assert_eq!(iceberg.rewardable_bytes, 1_000_000);
