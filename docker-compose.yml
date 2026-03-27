@@ -1,9 +1,6 @@
 services:
   postgres:
-    build:
-      context: infra/postgres
-      dockerfile: Dockerfile
-    image: local/postgres16-pgpartman
+    image: postgres:14.17
     networks:
       oracles_net:
     restart: unless-stopped
@@ -23,13 +20,14 @@ services:
       start_period: 10s
 
   rustfs:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.0-alpha.90
     networks:
       oracles_net:
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - 9000:9000
+      - 4566:9000
+      - 9001:9001
     volumes:
       - rustfs_data:/data
     environment:
@@ -50,7 +48,7 @@ services:
       start_period: 10s
 
   rustfs-init:
-    image: amazon/aws-cli:latest
+    image: amazon/aws-cli:2.34.18
     depends_on:
       rustfs:
         condition: service_healthy
@@ -144,7 +142,7 @@ services:
       - ./infra/polaris/init.sh:/infra/polaris/init.sh:ro
 
   trino:
-    image: trinodb/trino:latest
+    image: trinodb/trino:480
     depends_on:
       polaris:
         condition: service_healthy

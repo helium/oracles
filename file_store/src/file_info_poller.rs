@@ -819,8 +819,8 @@ pub mod sqlx_postgres {
             let _handle_v1 = tokio::spawn(server_v1.run(listener.clone()));
             let _handle_v2 = tokio::spawn(server_v2.run(listener.clone()));
 
-            let files_v1 = consume_files_and_mark_processed(receiver_v1, &pool).await?;
-            let files_v2 = consume_files_and_mark_processed(receiver_v2, &pool).await?;
+            let files_v1 = consume_files_and_mark_processed(receiver_v1, &pool, None).await?;
+            let files_v2 = consume_files_and_mark_processed(receiver_v2, &pool, None).await?;
 
             assert!(
                 files_v1
@@ -883,7 +883,8 @@ pub mod sqlx_postgres {
             let _handle = tokio::spawn(ingest_server.run(shutdown));
 
             // "process" all the files.
-            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            let recv_timeout = Some(Duration::from_secs(3));
+            let files = consume_files_and_mark_processed(receiver, &pool, recv_timeout).await?;
             assert_eq!(files.len(), EXPECTED_FILE_COUNT);
 
             // Shutdown the ingest server, we're going to create a new one and start it.
@@ -900,7 +901,7 @@ pub mod sqlx_postgres {
             // Attempting to receive files for processing. All the files we have
             // setup exist within the offset, and should still be in the
             // database.
-            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            let files = consume_files_and_mark_processed(receiver, &pool, recv_timeout).await?;
             assert!(files.is_empty());
 
             // Shut down for great good
@@ -973,14 +974,16 @@ pub mod sqlx_postgres {
         async fn consume_files_and_mark_processed<T: Send>(
             mut receiver: FileInfoStreamReceiver<T>,
             pool: &PgPool,
+            recv_timeout: Option<Duration>,
         ) -> std::result::Result<Vec<FileInfo>, Box<dyn std::error::Error>> {
+            let recv_timeout = recv_timeout.unwrap_or(Duration::from_millis(250));
             let mut msgs = Vec::with_capacity(10);
             let mut txn = pool.begin().await?;
 
             // FileInfoPoller puts a single file into the channel at a time. It's easier
             // to loop here with a timeout than sleep some arbitrary amount hoping it
             // will have processed all it's files by then.
-            while let Ok(Some(msg)) = timeout(Duration::from_millis(250), receiver.recv()).await {
+            while let Ok(Some(msg)) = timeout(recv_timeout, receiver.recv()).await {
                 msgs.push(msg.file_info.clone());
                 msg.mark_processed(&mut txn).await?;
             }
@@ -1020,7 +1023,7 @@ pub mod sqlx_postgres {
             let handle = tokio::spawn(server.run(shutdown));
 
             // Process the one file
-            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            let files = consume_files_and_mark_processed(receiver, &pool, None).await?;
             assert_eq!(files.len(), 1, "should process the one file");
 
             // The poller should exit on its own due to idle timeout (no shutdown trigger needed)
@@ -1065,7 +1068,7 @@ pub mod sqlx_postgres {
             let handle = tokio::spawn(server.run(shutdown));
 
             // Process the one file
-            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            let files = consume_files_and_mark_processed(receiver, &pool, None).await?;
             assert_eq!(files.len(), 1, "should process the one file");
 
             // The poller should NOT exit on its own - it should keep waiting

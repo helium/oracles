@@ -133,9 +133,11 @@ jobs:
       cancel-in-progress: true
     services:
       postgres:
-        image: postgres:14.9-alpine
+        image: postgres:14.17
         env:
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: POLARIS
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -144,7 +146,7 @@ jobs:
         ports:
           - 5432:5432
       rustfs:
-        image: rustfs/rustfs:latest
+        image: rustfs/rustfs:1.0.0-alpha.90
         ports:
           - 9000:9000
           - 4566:9000
@@ -169,7 +171,7 @@ jobs:
         ports:
           - 8181:8181
       trino:
-        image: trinodb/trino:latest
+        image: trinodb/trino:480
         env:
           AWS_ACCESS_KEY_ID: admin
           AWS_SECRET_ACCESS_KEY: admin
@@ -205,7 +207,7 @@ jobs:
             echo "...waiting for Rustfs..."
             sleep 2
           done
-          ./helium_iceberg/infra/rustfs/init.sh
+          ./infra/rustfs/init.sh
 
       - name: Wait for Trino
         timeout-minutes: 1
@@ -219,7 +221,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
-          AWSLOCAL_ENDPOINT: "http://rustfs:4566"
+          AWSLOCAL_ENDPOINT: http://rustfs:4566
           S3_QUALIFIED_HOST: rustfs
           S3_LOCAL_HOST: rustfs
           CATALOG_QUALIFIED_HOST: polaris
