@@ -22,7 +22,7 @@ fn make_validated_heartbeat(index: u8) -> ValidatedHeartbeat {
         DeviceType::WifiOutdoor,
         DeviceType::WifiDataOnly,
     ];
-    let device_type = device_types[index as usize % device_types.len()].clone();
+    let device_type = device_types[index as usize % device_types.len()];
 
     ValidatedHeartbeat {
         heartbeat: Heartbeat {
@@ -153,7 +153,7 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
 
     let now = truncated_now();
     let heartbeats: Vec<IcebergHeartbeat> = device_types
-        .iter()
+        .into_iter()
         .enumerate()
         .map(|(i, (dt, _))| {
             let vhb = ValidatedHeartbeat {
@@ -173,7 +173,7 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
                 location_trust_score_multiplier: dec!(1.0),
                 distance_to_asserted: None,
                 asserted_location: None,
-                device_type: Some(dt.clone()),
+                device_type: Some(dt),
                 coverage_meta: None,
                 validity: HeartbeatValidity::Valid,
             };
