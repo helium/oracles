@@ -358,7 +358,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum DeviceType {
     Cbrs,
     WifiIndoor,
@@ -442,7 +442,8 @@ pub fn stream_by_types<'a>(
     } else {
         types
             .iter()
-            .filter_map(|t| t.clone().try_into().ok())
+            .copied()
+            .filter_map(|t| t.try_into().ok())
             .collect::<Vec<_>>()
     };
 

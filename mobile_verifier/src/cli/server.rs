@@ -90,13 +90,16 @@ impl Cmd {
 
         let ingest_bucket_client = settings.buckets.ingest.connect().await;
 
-        let iceberg_writer = if let Some(ref iceberg_settings) = settings.iceberg_settings {
-            tracing::info!("iceberg settings provided, connecting...");
-            Some(iceberg::get_writer(iceberg_settings).await?)
-        } else {
-            tracing::info!("no iceberg settings provided");
-            None
-        };
+        let (heartbeat_writer, reward_writers) =
+            if let Some(ref iceberg_settings) = settings.iceberg_settings {
+                tracing::info!("iceberg settings provided, connecting...");
+                let writer = iceberg::get_writer(iceberg_settings).await?;
+                let reward_writers = iceberg::get_reward_writers(iceberg_settings).await?;
+                (Some(writer), Some(reward_writers))
+            } else {
+                tracing::info!("no iceberg settings provided");
+                (None, None)
+            };
 
         TaskManager::builder()
             .add_task(file_upload_server)
@@ -112,7 +115,7 @@ impl Cmd {
                     valid_heartbeats,
                     seniority_updates,
                     usa_and_mexico_geofence,
-                    iceberg_writer,
+                    heartbeat_writer,
                 )
                 .await?,
             )
@@ -184,6 +187,7 @@ impl Cmd {
                     hex_boosting_client,
                     sub_dao_rewards_client,
                     speedtests_avg,
+                    reward_writers,
                 )
                 .await?,
             )

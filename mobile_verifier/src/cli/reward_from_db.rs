@@ -11,7 +11,6 @@ use crate::{
 };
 use anyhow::Result;
 use helium_crypto::PublicKey;
-use helium_proto::services::poc_mobile as proto;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{sub_dao_client::SubDaoEpochRewardInfoResolver, SubDaoClient},
@@ -83,16 +82,10 @@ impl Cmd {
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;
         for (poc_reward, radio_reward_v2) in radio_rewards {
-            if let Some(proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
-                hotspot_key,
-                ..
-            })) = radio_reward_v2.reward
-            {
-                total_rewards += poc_reward;
-                *owner_rewards
-                    .entry(PublicKey::try_from(hotspot_key)?)
-                    .or_default() += poc_reward;
-            }
+            total_rewards += poc_reward;
+            *owner_rewards
+                .entry(PublicKey::try_from(radio_reward_v2.hotspot_key)?)
+                .or_default() += poc_reward;
         }
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();
