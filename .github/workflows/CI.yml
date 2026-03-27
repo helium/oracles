@@ -221,7 +221,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres # trufflehog:ignore
-          AWSLOCAL_ENDPOINT: http://rustfs:4566
+          AWSLOCAL_ENDPOINT: http://rustfs:9000
           S3_QUALIFIED_HOST: rustfs
           S3_LOCAL_HOST: rustfs
           CATALOG_QUALIFIED_HOST: polaris
