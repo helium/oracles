@@ -177,16 +177,34 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
         let batch = records_to_batch(&table_guard, &records)?;
         drop(table_guard);
         let data_files = write_data_files(&self.table, batch).await?;
-        let table_guard = self.table.read().await;
-        crate::branch::commit_to_branch(
-            &self.catalog,
-            &table_guard,
-            &self.branch_name,
-            data_files,
-            &self.branch_name,
-        )
-        .await?;
-        drop(table_guard);
+
+        for attempt in 0..=COMMIT_MAX_RETRIES {
+            reload_table(&self.catalog, &self.table).await?;
+            let table_guard = self.table.read().await;
+            match crate::branch::commit_to_branch(
+                &self.catalog,
+                &table_guard,
+                &self.branch_name,
+                data_files.clone(),
+                &self.branch_name,
+            )
+            .await
+            {
+                Ok(()) => break,
+                Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
+                    drop(table_guard);
+                    let delay = retry_delay(attempt);
+                    tracing::warn!(
+                        attempt,
+                        branch_name = %self.branch_name,
+                        delay_ms = delay.as_millis() as u64,
+                        "commit conflict, retrying commit_to_branch"
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
 
         Ok(Box::new(IcebergBranchPublisher {
             catalog: self.catalog,
