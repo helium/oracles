@@ -8,57 +8,90 @@ use iceberg::spec::{
 use iceberg::table::Table;
 use iceberg::{TableIdent, TableRequirement, TableUpdate};
 use iceberg_catalog_rest::CommitTableRequest;
+use std::time::Duration;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub(crate) const WAP_ENABLED_PROPERTY: &str = "write.wap.enabled";
 pub(crate) const WAP_ID_KEY: &str = "wap.id";
 
+const COMMIT_MAX_RETRIES: u32 = 4;
+const COMMIT_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+const COMMIT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5);
+
+fn retry_delay(attempt: u32) -> Duration {
+    COMMIT_RETRY_BASE_DELAY
+        .saturating_mul(1 << attempt.min(10))
+        .min(COMMIT_RETRY_MAX_DELAY)
+}
+
 /// Create a branch from the current main snapshot.
 ///
 /// If the table has no snapshots yet, this is a no-op — the branch ref
 /// will be created by the first `commit_to_branch` call instead.
+///
+/// Retries with exponential backoff on commit conflicts.
 pub(crate) async fn create_branch(
     catalog: &Catalog,
-    table: &Table,
+    table: &RwLock<Table>,
     branch_name: &str,
 ) -> Result<()> {
     validate_branch_name(branch_name)?;
 
-    let metadata = table.metadata();
-    let Some(main_snapshot_id) = metadata.current_snapshot_id() else {
-        return Ok(());
-    };
+    for attempt in 0..=COMMIT_MAX_RETRIES {
+        crate::iceberg_table::reload_table(catalog, table).await?;
+        let table_guard = table.read().await;
 
-    let updates = vec![TableUpdate::SetSnapshotRef {
-        ref_name: branch_name.to_string(),
-        reference: SnapshotReference::new(
-            main_snapshot_id,
-            SnapshotRetention::branch(None, None, None),
-        ),
-    }];
+        let metadata = table_guard.metadata();
+        let Some(main_snapshot_id) = metadata.current_snapshot_id() else {
+            return Ok(());
+        };
 
-    let requirements = vec![
-        TableRequirement::UuidMatch {
-            uuid: metadata.uuid(),
-        },
-        TableRequirement::RefSnapshotIdMatch {
-            r#ref: branch_name.to_string(),
-            snapshot_id: None,
-        },
-    ];
+        let updates = vec![TableUpdate::SetSnapshotRef {
+            ref_name: branch_name.to_string(),
+            reference: SnapshotReference::new(
+                main_snapshot_id,
+                SnapshotRetention::branch(None, None, None),
+            ),
+        }];
 
-    commit(catalog, table.identifier(), updates, requirements).await
+        let requirements = vec![
+            TableRequirement::UuidMatch {
+                uuid: metadata.uuid(),
+            },
+            TableRequirement::RefSnapshotIdMatch {
+                r#ref: branch_name.to_string(),
+                snapshot_id: None,
+            },
+        ];
+
+        match commit(catalog, table_guard.identifier(), updates, requirements).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
+                drop(table_guard);
+                let delay = retry_delay(attempt);
+                tracing::warn!(
+                    attempt,
+                    branch_name,
+                    delay_ms = delay.as_millis() as u64,
+                    "commit conflict, retrying create_branch"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
 
 /// Write data files to a named branch, building the snapshot and manifest infrastructure.
 ///
-/// Retry is handled by the caller (`IcebergBranchWriter::write`). Although
-/// branches are keyed per-WAP-ID (so *ref* conflicts don't happen), the
-/// table-global sequence number can still conflict when concurrent writers
-/// commit against the same table metadata.
+/// The table-global sequence number can conflict when concurrent writers commit
+/// against the same table metadata, so this retries with exponential backoff.
+/// Each retry rebuilds manifests and snapshots from fresh metadata.
 pub(crate) async fn commit_to_branch(
     catalog: &Catalog,
-    table: &Table,
+    table: &RwLock<Table>,
     branch_name: &str,
     data_files: Vec<DataFile>,
     wap_id: &str,
@@ -69,6 +102,44 @@ pub(crate) async fn commit_to_branch(
         return Err(Error::Branch("no data files to commit".into()));
     }
 
+    for attempt in 0..=COMMIT_MAX_RETRIES {
+        crate::iceberg_table::reload_table(catalog, table).await?;
+        let table_guard = table.read().await;
+
+        match commit_to_branch_once(
+            catalog,
+            &table_guard,
+            branch_name,
+            data_files.clone(),
+            wap_id,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
+                drop(table_guard);
+                let delay = retry_delay(attempt);
+                tracing::warn!(
+                    attempt,
+                    branch_name,
+                    delay_ms = delay.as_millis() as u64,
+                    "commit conflict, retrying commit_to_branch"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
+}
+
+async fn commit_to_branch_once(
+    catalog: &Catalog,
+    table: &Table,
+    branch_name: &str,
+    data_files: Vec<DataFile>,
+    wap_id: &str,
+) -> Result<()> {
     let metadata = table.metadata();
     let branch_snapshot = metadata.snapshot_for_ref(branch_name);
     let parent_snapshot_id = branch_snapshot.map(|s| s.snapshot_id());
@@ -218,43 +289,65 @@ pub(crate) async fn commit_to_branch(
 }
 
 /// Fast-forward main to a branch's snapshot, then delete the branch.
+///
+/// Retries with exponential backoff on commit conflicts.
 pub(crate) async fn publish_branch(
     catalog: &Catalog,
-    table: &Table,
+    table: &RwLock<Table>,
     branch_name: &str,
 ) -> Result<()> {
     validate_branch_name(branch_name)?;
 
-    let metadata = table.metadata();
-    let branch_snapshot = metadata
-        .snapshot_for_ref(branch_name)
-        .ok_or_else(|| Error::Branch(format!("branch '{branch_name}' does not exist")))?;
-    let branch_snapshot_id = branch_snapshot.snapshot_id();
+    for attempt in 0..=COMMIT_MAX_RETRIES {
+        crate::iceberg_table::reload_table(catalog, table).await?;
+        let table_guard = table.read().await;
 
-    let updates = vec![
-        TableUpdate::SetSnapshotRef {
-            ref_name: MAIN_BRANCH.to_string(),
-            reference: SnapshotReference::new(
-                branch_snapshot_id,
-                SnapshotRetention::branch(None, None, None),
-            ),
-        },
-        TableUpdate::RemoveSnapshotRef {
-            ref_name: branch_name.to_string(),
-        },
-    ];
+        let metadata = table_guard.metadata();
+        let branch_snapshot = metadata
+            .snapshot_for_ref(branch_name)
+            .ok_or_else(|| Error::Branch(format!("branch '{branch_name}' does not exist")))?;
+        let branch_snapshot_id = branch_snapshot.snapshot_id();
 
-    let requirements = vec![
-        TableRequirement::UuidMatch {
-            uuid: metadata.uuid(),
-        },
-        TableRequirement::RefSnapshotIdMatch {
-            r#ref: MAIN_BRANCH.to_string(),
-            snapshot_id: metadata.current_snapshot_id(),
-        },
-    ];
+        let updates = vec![
+            TableUpdate::SetSnapshotRef {
+                ref_name: MAIN_BRANCH.to_string(),
+                reference: SnapshotReference::new(
+                    branch_snapshot_id,
+                    SnapshotRetention::branch(None, None, None),
+                ),
+            },
+            TableUpdate::RemoveSnapshotRef {
+                ref_name: branch_name.to_string(),
+            },
+        ];
 
-    commit(catalog, table.identifier(), updates, requirements).await
+        let requirements = vec![
+            TableRequirement::UuidMatch {
+                uuid: metadata.uuid(),
+            },
+            TableRequirement::RefSnapshotIdMatch {
+                r#ref: MAIN_BRANCH.to_string(),
+                snapshot_id: metadata.current_snapshot_id(),
+            },
+        ];
+
+        match commit(catalog, table_guard.identifier(), updates, requirements).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
+                drop(table_guard);
+                let delay = retry_delay(attempt);
+                tracing::warn!(
+                    attempt,
+                    branch_name,
+                    delay_ms = delay.as_millis() as u64,
+                    "commit conflict, retrying publish_branch"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
 
 /// Delete a branch.
@@ -437,6 +530,20 @@ mod tests {
             }
             _ => panic!("expected RefSnapshotIdMatch"),
         }
+    }
+
+    #[test]
+    fn test_retry_delay_exponential_backoff() {
+        assert_eq!(retry_delay(0), Duration::from_millis(100));
+        assert_eq!(retry_delay(1), Duration::from_millis(200));
+        assert_eq!(retry_delay(2), Duration::from_millis(400));
+        assert_eq!(retry_delay(3), Duration::from_millis(800));
+    }
+
+    #[test]
+    fn test_retry_delay_clamps_at_max() {
+        assert_eq!(retry_delay(20), COMMIT_RETRY_MAX_DELAY);
+        assert_eq!(retry_delay(u32::MAX), COMMIT_RETRY_MAX_DELAY);
     }
 
     #[test]

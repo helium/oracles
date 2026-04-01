@@ -20,18 +20,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
-
-const COMMIT_MAX_RETRIES: u32 = 4;
-const COMMIT_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
-const COMMIT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5);
-
-fn retry_delay(attempt: u32) -> Duration {
-    COMMIT_RETRY_BASE_DELAY
-        .saturating_mul(1 << attempt.min(10))
-        .min(COMMIT_RETRY_MAX_DELAY)
-}
 
 pub struct IcebergTable<T> {
     pub(crate) catalog: Catalog,
@@ -115,7 +104,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         match detect_wap_state(wap_id_found, branch_exists) {
             WapState::NotStarted => {
                 tracing::debug!(wap_id, "WAP not started, creating fresh branch");
-                create_branch_with_retry(&self.catalog, &self.table, wap_id).await?;
+                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
                 Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
@@ -128,7 +117,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::delete_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                create_branch_with_retry(&self.catalog, &self.table, wap_id).await?;
+                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
                 Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
@@ -177,34 +166,14 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
         let batch = records_to_batch(&table_guard, &records)?;
         drop(table_guard);
         let data_files = write_data_files(&self.table, batch).await?;
-
-        for attempt in 0..=COMMIT_MAX_RETRIES {
-            reload_table(&self.catalog, &self.table).await?;
-            let table_guard = self.table.read().await;
-            match crate::branch::commit_to_branch(
-                &self.catalog,
-                &table_guard,
-                &self.branch_name,
-                data_files.clone(),
-                &self.branch_name,
-            )
-            .await
-            {
-                Ok(()) => break,
-                Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                    drop(table_guard);
-                    let delay = retry_delay(attempt);
-                    tracing::warn!(
-                        attempt,
-                        branch_name = %self.branch_name,
-                        delay_ms = delay.as_millis() as u64,
-                        "commit conflict, retrying commit_to_branch"
-                    );
-                    tokio::time::sleep(delay).await;
-                }
-                Err(e) => return Err(e),
-            }
-        }
+        crate::branch::commit_to_branch(
+            &self.catalog,
+            &self.table,
+            &self.branch_name,
+            data_files,
+            &self.branch_name,
+        )
+        .await?;
 
         Ok(Box::new(IcebergBranchPublisher {
             catalog: self.catalog,
@@ -242,59 +211,11 @@ struct IcebergBranchPublisher {
 #[async_trait]
 impl BranchPublisher for IcebergBranchPublisher {
     async fn publish(self: Box<Self>) -> Result {
-        for attempt in 0..=COMMIT_MAX_RETRIES {
-            reload_table(&self.catalog, &self.table).await?;
-            let table_guard = self.table.read().await;
-            match crate::branch::publish_branch(&self.catalog, &table_guard, &self.branch_name)
-                .await
-            {
-                Ok(()) => return Ok(()),
-                Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                    drop(table_guard);
-                    let delay = retry_delay(attempt);
-                    tracing::warn!(
-                        attempt,
-                        branch_name = %self.branch_name,
-                        delay_ms = delay.as_millis() as u64,
-                        "commit conflict, retrying publish"
-                    );
-                    tokio::time::sleep(delay).await;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        unreachable!()
+        crate::branch::publish_branch(&self.catalog, &self.table, &self.branch_name).await
     }
 }
 
-async fn create_branch_with_retry(
-    catalog: &Catalog,
-    table: &RwLock<Table>,
-    branch_name: &str,
-) -> Result {
-    for attempt in 0..=COMMIT_MAX_RETRIES {
-        reload_table(catalog, table).await?;
-        let table_guard = table.read().await;
-        match crate::branch::create_branch(catalog, &table_guard, branch_name).await {
-            Ok(()) => return Ok(()),
-            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                drop(table_guard);
-                let delay = retry_delay(attempt);
-                tracing::warn!(
-                    attempt,
-                    branch_name,
-                    delay_ms = delay.as_millis() as u64,
-                    "commit conflict, retrying create_branch"
-                );
-                tokio::time::sleep(delay).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
-}
-
-async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Result {
+pub(crate) async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Result {
     let identifier = table.read().await.identifier().clone();
     let namespace = identifier.namespace().to_url_string();
     let table_name = identifier.name().to_string();
@@ -455,19 +376,5 @@ mod tests {
     #[test]
     fn test_detect_wap_state_already_published() {
         assert_eq!(detect_wap_state(true, false), WapState::AlreadyPublished,);
-    }
-
-    #[test]
-    fn test_retry_delay_exponential_backoff() {
-        assert_eq!(retry_delay(0), Duration::from_millis(100));
-        assert_eq!(retry_delay(1), Duration::from_millis(200));
-        assert_eq!(retry_delay(2), Duration::from_millis(400));
-        assert_eq!(retry_delay(3), Duration::from_millis(800));
-    }
-
-    #[test]
-    fn test_retry_delay_clamps_at_max() {
-        assert_eq!(retry_delay(20), COMMIT_RETRY_MAX_DELAY);
-        assert_eq!(retry_delay(u32::MAX), COMMIT_RETRY_MAX_DELAY);
     }
 }
