@@ -64,13 +64,18 @@ impl<T> IcebergTable<T> {
             return Ok(());
         }
 
-        let table = self.table.read().await;
-        let tx = IcebergTransaction::new(&table);
-        let action = tx.fast_append().add_data_files(data_files);
-        let tx = action.apply(tx).map_err(Error::Iceberg)?;
-        drop(table);
-
-        tx.commit(self.catalog.as_ref())
+        self.catalog
+            .with_auth(|| {
+                let data_files = data_files.clone();
+                async {
+                    let table = self.table.read().await;
+                    let tx = IcebergTransaction::new(&table);
+                    let action = tx.fast_append().add_data_files(data_files);
+                    let tx = action.apply(tx)?;
+                    drop(table);
+                    tx.commit(self.catalog.as_ref()).await
+                }
+            })
             .await
             .map_err(Error::Iceberg)?;
 
