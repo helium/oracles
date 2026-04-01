@@ -51,6 +51,10 @@ pub(crate) async fn create_branch(
 }
 
 /// Write data files to a named branch, building the snapshot and manifest infrastructure.
+///
+/// No retry logic is needed here: branches are keyed per-WAP-ID, so concurrent
+/// writes to the same branch do not happen. Only `publish_branch` and
+/// `create_branch` race against other writers on shared refs (main).
 pub(crate) async fn commit_to_branch(
     catalog: &Catalog,
     table: &Table,
