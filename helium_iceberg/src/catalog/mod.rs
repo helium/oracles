@@ -66,7 +66,7 @@ impl std::fmt::Debug for Catalog {
 }
 
 impl Catalog {
-    async fn with_auth<F, Fut, T>(&self, mut f: F) -> iceberg::Result<T>
+    pub(crate) async fn with_auth<F, Fut, T>(&self, mut f: F) -> iceberg::Result<T>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = iceberg::Result<T>>,
