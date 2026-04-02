@@ -12,6 +12,7 @@ test-harness = ["dep:trino-rust-client", "dep:uuid", "dep:derive_builder"]
 
 [dependencies]
 async-trait = { workspace = true }
+backon = "1"
 chrono = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }

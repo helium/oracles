@@ -1,5 +1,6 @@
 use crate::catalog::Catalog;
 use crate::{Error, Result};
+use backon::{ExponentialBuilder, Retryable};
 use iceberg::spec::{
     DataFile, DataFileFormat, FormatVersion, ManifestFile, ManifestListWriter,
     ManifestWriterBuilder, Operation, Snapshot, SnapshotReference, SnapshotRetention,
@@ -15,14 +16,12 @@ use uuid::Uuid;
 pub(crate) const WAP_ENABLED_PROPERTY: &str = "write.wap.enabled";
 pub(crate) const WAP_ID_KEY: &str = "wap.id";
 
-const COMMIT_MAX_RETRIES: u32 = 4;
-const COMMIT_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
-const COMMIT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5);
-
-fn retry_delay(attempt: u32) -> Duration {
-    COMMIT_RETRY_BASE_DELAY
-        .saturating_mul(1 << attempt.min(10))
-        .min(COMMIT_RETRY_MAX_DELAY)
+fn commit_backoff() -> ExponentialBuilder {
+    ExponentialBuilder::new()
+        .with_min_delay(Duration::from_millis(100))
+        .with_max_delay(Duration::from_secs(5))
+        .with_max_times(4)
+        .with_jitter()
 }
 
 /// Create a branch from the current main snapshot.
@@ -38,7 +37,7 @@ pub(crate) async fn create_branch(
 ) -> Result<()> {
     validate_branch_name(branch_name)?;
 
-    for attempt in 0..=COMMIT_MAX_RETRIES {
+    (|| async {
         crate::iceberg_table::reload_table(catalog, table).await?;
         let table_guard = table.read().await;
 
@@ -65,23 +64,12 @@ pub(crate) async fn create_branch(
             },
         ];
 
-        match commit(catalog, table_guard.identifier(), updates, requirements).await {
-            Ok(()) => return Ok(()),
-            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                drop(table_guard);
-                let delay = retry_delay(attempt);
-                tracing::warn!(
-                    attempt,
-                    branch_name,
-                    delay_ms = delay.as_millis() as u64,
-                    "commit conflict, retrying create_branch"
-                );
-                tokio::time::sleep(delay).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
+        commit(catalog, table_guard.identifier(), updates, requirements).await
+    })
+    .retry(commit_backoff())
+    .when(|e: &Error| e.is_commit_conflict())
+    .notify(|_err, dur| tracing::warn!(delay = ?dur, "commit conflict, retrying create_branch"))
+    .await
 }
 
 /// Write data files to a named branch, building the snapshot and manifest infrastructure.
@@ -102,11 +90,10 @@ pub(crate) async fn commit_to_branch(
         return Err(Error::Branch("no data files to commit".into()));
     }
 
-    for attempt in 0..=COMMIT_MAX_RETRIES {
+    (|| async {
         crate::iceberg_table::reload_table(catalog, table).await?;
         let table_guard = table.read().await;
-
-        match commit_to_branch_once(
+        commit_to_branch_once(
             catalog,
             &table_guard,
             branch_name,
@@ -114,23 +101,11 @@ pub(crate) async fn commit_to_branch(
             wap_id,
         )
         .await
-        {
-            Ok(()) => return Ok(()),
-            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                drop(table_guard);
-                let delay = retry_delay(attempt);
-                tracing::warn!(
-                    attempt,
-                    branch_name,
-                    delay_ms = delay.as_millis() as u64,
-                    "commit conflict, retrying commit_to_branch"
-                );
-                tokio::time::sleep(delay).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
+    })
+    .retry(commit_backoff())
+    .when(|e: &Error| e.is_commit_conflict())
+    .notify(|_err, dur| tracing::warn!(delay = ?dur, "commit conflict, retrying commit_to_branch"))
+    .await
 }
 
 async fn commit_to_branch_once(
@@ -298,7 +273,7 @@ pub(crate) async fn publish_branch(
 ) -> Result<()> {
     validate_branch_name(branch_name)?;
 
-    for attempt in 0..=COMMIT_MAX_RETRIES {
+    (|| async {
         crate::iceberg_table::reload_table(catalog, table).await?;
         let table_guard = table.read().await;
 
@@ -331,23 +306,12 @@ pub(crate) async fn publish_branch(
             },
         ];
 
-        match commit(catalog, table_guard.identifier(), updates, requirements).await {
-            Ok(()) => return Ok(()),
-            Err(e) if e.is_commit_conflict() && attempt < COMMIT_MAX_RETRIES => {
-                drop(table_guard);
-                let delay = retry_delay(attempt);
-                tracing::warn!(
-                    attempt,
-                    branch_name,
-                    delay_ms = delay.as_millis() as u64,
-                    "commit conflict, retrying publish_branch"
-                );
-                tokio::time::sleep(delay).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
+        commit(catalog, table_guard.identifier(), updates, requirements).await
+    })
+    .retry(commit_backoff())
+    .when(|e: &Error| e.is_commit_conflict())
+    .notify(|_err, dur| tracing::warn!(delay = ?dur, "commit conflict, retrying publish_branch"))
+    .await
 }
 
 /// Delete a branch.
@@ -530,20 +494,6 @@ mod tests {
             }
             _ => panic!("expected RefSnapshotIdMatch"),
         }
-    }
-
-    #[test]
-    fn test_retry_delay_exponential_backoff() {
-        assert_eq!(retry_delay(0), Duration::from_millis(100));
-        assert_eq!(retry_delay(1), Duration::from_millis(200));
-        assert_eq!(retry_delay(2), Duration::from_millis(400));
-        assert_eq!(retry_delay(3), Duration::from_millis(800));
-    }
-
-    #[test]
-    fn test_retry_delay_clamps_at_max() {
-        assert_eq!(retry_delay(20), COMMIT_RETRY_MAX_DELAY);
-        assert_eq!(retry_delay(u32::MAX), COMMIT_RETRY_MAX_DELAY);
     }
 
     #[test]
