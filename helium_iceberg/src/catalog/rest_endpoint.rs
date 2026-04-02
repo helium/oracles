@@ -200,9 +200,10 @@ impl RestEndpoint {
         let status = response.status();
         match status {
             StatusCode::OK => Ok(()),
-            StatusCode::CONFLICT => Err(Error::CommitConflict(
-                "one or more requirements failed".into(),
-            )),
+            StatusCode::CONFLICT => {
+                let body = response.text().await.unwrap_or_default();
+                Err(Error::CommitConflict(body))
+            }
             StatusCode::NOT_FOUND => Err(Error::Catalog("table not found".into())),
             _ => {
                 let body = response.text().await.unwrap_or_default();
