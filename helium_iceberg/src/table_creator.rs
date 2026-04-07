@@ -2,8 +2,8 @@ use crate::catalog::Catalog;
 use crate::iceberg_table::IcebergTable;
 use crate::{Error, Result, Settings};
 use iceberg::spec::{
-    ListType, MapType, NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema,
-    SortDirection, SortField, SortOrder, StructType, Transform, Type,
+    ListType, MapType, NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection,
+    SortField, SortOrder, StructType, Transform, Type,
 };
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
@@ -56,6 +56,12 @@ impl FieldKind {
             value_kind: Box::new(value),
             value_required,
         }
+    }
+}
+
+impl From<PrimitiveType> for FieldKind {
+    fn from(value: PrimitiveType) -> Self {
+        Self::Primitive(value)
     }
 }
 
@@ -208,19 +214,13 @@ impl FieldDefinition {
     pub fn required_map(
         name: impl Into<String>,
         key_type: PrimitiveType,
-        value_type: PrimitiveType,
+        value_type: impl Into<FieldKind>,
     ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_kind: Box::new(FieldKind::Primitive(value_type)),
-                value_required: true,
-            },
-            required: true,
-            doc: None,
-            identifier: false,
-        }
+        Self::new(
+            name,
+            FieldKind::map(key_type, value_type.into(), true),
+            ColumnType::Required,
+        )
     }
 
     /// Create an optional map field with primitive key and value types.
@@ -228,73 +228,33 @@ impl FieldDefinition {
     pub fn optional_map(
         name: impl Into<String>,
         key_type: PrimitiveType,
-        value_type: PrimitiveType,
+        value_type: impl Into<FieldKind>,
     ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_kind: Box::new(FieldKind::Primitive(value_type)),
-                value_required: false,
-            },
-            required: false,
-            doc: None,
-            identifier: false,
-        }
+        Self::new(
+            name,
+            FieldKind::map(key_type, value_type.into(), false),
+            ColumnType::Optional,
+        )
     }
 
     /// Create a required list field with primitive element type.
     /// The list column is required and the elements are required.
-    pub fn required_list(
-        name: impl Into<String>,
-        element_type: PrimitiveType,
-    ) -> Self {
-        Self::required_list_of(name, FieldKind::Primitive(element_type), true)
+    pub fn required_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::list(field_kind.into(), true),
+            ColumnType::Required,
+        )
     }
 
     /// Create an optional list field with primitive element type.
     /// The list column is optional and the elements are optional.
-    pub fn optional_list(
-        name: impl Into<String>,
-        element_type: PrimitiveType,
-    ) -> Self {
-        Self::optional_list_of(name, FieldKind::Primitive(element_type), false)
-    }
-
-    /// Create a required list field with a complex element type.
-    pub fn required_list_of(
-        name: impl Into<String>,
-        element_kind: FieldKind,
-        element_required: bool,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::List {
-                element_kind: Box::new(element_kind),
-                element_required,
-            },
-            required: true,
-            doc: None,
-            identifier: false,
-        }
-    }
-
-    /// Create an optional list field with a complex element type.
-    pub fn optional_list_of(
-        name: impl Into<String>,
-        element_kind: FieldKind,
-        element_required: bool,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::List {
-                element_kind: Box::new(element_kind),
-                element_required,
-            },
-            required: false,
-            doc: None,
-            identifier: false,
-        }
+    pub fn optional_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::list(field_kind.into(), false),
+            ColumnType::Optional,
+        )
     }
 
     /// Create a required struct field with named sub-fields.
@@ -302,15 +262,7 @@ impl FieldDefinition {
         name: impl Into<String>,
         fields: impl IntoIterator<Item = FieldDefinition>,
     ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Struct {
-                fields: fields.into_iter().collect(),
-            },
-            required: true,
-            doc: None,
-            identifier: false,
-        }
+        Self::new(name, FieldKind::struct_type(fields), ColumnType::Required)
     }
 
     /// Create an optional struct field with named sub-fields.
@@ -318,55 +270,7 @@ impl FieldDefinition {
         name: impl Into<String>,
         fields: impl IntoIterator<Item = FieldDefinition>,
     ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Struct {
-                fields: fields.into_iter().collect(),
-            },
-            required: false,
-            doc: None,
-            identifier: false,
-        }
-    }
-
-    /// Create a required map field with a complex value type.
-    pub fn required_map_of(
-        name: impl Into<String>,
-        key_type: PrimitiveType,
-        value_kind: FieldKind,
-        value_required: bool,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_kind: Box::new(value_kind),
-                value_required,
-            },
-            required: true,
-            doc: None,
-            identifier: false,
-        }
-    }
-
-    /// Create an optional map field with a complex value type.
-    pub fn optional_map_of(
-        name: impl Into<String>,
-        key_type: PrimitiveType,
-        value_kind: FieldKind,
-        value_required: bool,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_kind: Box::new(value_kind),
-                value_required,
-            },
-            required: false,
-            doc: None,
-            identifier: false,
-        }
+        Self::new(name, FieldKind::struct_type(fields), ColumnType::Optional)
     }
 }
 
@@ -1447,13 +1351,12 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::required_list_of(
+                FieldDefinition::required_list(
                     "events",
                     FieldKind::struct_type([
                         FieldDefinition::required_string("name"),
                         FieldDefinition::required_long("ts"),
                     ]),
-                    true,
                 ),
                 FieldDefinition::required_string("label"),
             ])
@@ -1498,14 +1401,13 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::required_map_of(
+                FieldDefinition::required_map(
                     "records",
                     PrimitiveType::String,
                     FieldKind::struct_type([
                         FieldDefinition::required_string("a"),
                         FieldDefinition::required_long("b"),
                     ]),
-                    true,
                 ),
                 FieldDefinition::required_string("name"),
             ])
@@ -1526,13 +1428,12 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::required_list_of(
+                FieldDefinition::required_list(
                     "outer",
                     FieldKind::struct_type([FieldDefinition::required_list(
                         "inner",
                         PrimitiveType::String,
                     )]),
-                    true,
                 ),
                 FieldDefinition::required_string("tail"),
             ])
