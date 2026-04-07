@@ -21,8 +21,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 # Iceberg dependencies
-iceberg = "0.8"
-iceberg-catalog-rest = "0.8"
+iceberg = "0.9"
+iceberg-catalog-rest = "0.9"
+iceberg-storage-opendal = "0.9"
 
 # HTTP client for direct catalog API calls (branch operations)
 reqwest = { version = "0.12", features = ["json"] }

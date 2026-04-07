@@ -21,6 +21,7 @@ use iceberg_catalog_rest::{
     CommitTableRequest, RestCatalog, RestCatalogBuilder, REST_CATALOG_PROP_URI,
     REST_CATALOG_PROP_WAREHOUSE,
 };
+use iceberg_storage_opendal::OpenDalStorageFactory;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -98,6 +99,10 @@ impl Catalog {
         config.extend(settings.properties.clone());
 
         let rest_catalog = RestCatalogBuilder::default()
+            .with_storage_factory(Arc::new(OpenDalStorageFactory::S3 {
+                configured_scheme: "s3".to_string(),
+                customized_credential_load: None,
+            }))
             .load(&settings.catalog_name, config)
             .await
             .map_err(Error::Iceberg)?;
