@@ -200,16 +200,67 @@ impl RestEndpoint {
         let status = response.status();
         match status {
             StatusCode::OK => Ok(()),
-            StatusCode::CONFLICT => Err(Error::Catalog(
-                "commit conflict: one or more requirements failed".into(),
-            )),
+            StatusCode::CONFLICT => {
+                let body = response.text().await.unwrap_or_default();
+                Err(Error::CommitConflict(body))
+            }
             StatusCode::NOT_FOUND => Err(Error::Catalog("table not found".into())),
             _ => {
                 let body = response.text().await.unwrap_or_default();
-                Err(Error::Catalog(format!(
-                    "unexpected status {status}: {body}"
-                )))
+                if status == StatusCode::BAD_REQUEST && is_conflict_body(&body) {
+                    Err(Error::CommitConflict(body))
+                } else {
+                    Err(Error::Catalog(format!(
+                        "unexpected status {status}: {body}"
+                    )))
+                }
             }
         }
+    }
+}
+
+/// Check whether a 400 response body indicates a commit conflict.
+///
+/// Some catalogs (e.g. Polaris) return 400 instead of 409 when table
+/// requirements fail. This detects those cases by looking for known
+/// conflict indicators in the response body.
+fn is_conflict_body(body: &str) -> bool {
+    let lower = body.to_lowercase();
+    lower.contains("sequence number") || lower.contains("requirement")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_conflict_body_sequence_number() {
+        assert!(is_conflict_body(
+            "Cannot add snapshot with sequence number 6520 older than last sequence number 6520"
+        ));
+    }
+
+    #[test]
+    fn test_is_conflict_body_requirement() {
+        assert!(is_conflict_body(
+            "Table requirement check failed: ref main snapshot 42 != 43"
+        ));
+    }
+
+    #[test]
+    fn test_is_conflict_body_case_insensitive() {
+        assert!(is_conflict_body("SEQUENCE NUMBER mismatch"));
+        assert!(is_conflict_body("Requirement failed"));
+    }
+
+    #[test]
+    fn test_is_conflict_body_unrelated_error() {
+        assert!(!is_conflict_body("invalid schema"));
+        assert!(!is_conflict_body("malformed request body"));
+    }
+
+    #[test]
+    fn test_is_conflict_body_empty() {
+        assert!(!is_conflict_body(""));
     }
 }

@@ -109,9 +109,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         match detect_wap_state(wap_id_found, branch_exists) {
             WapState::NotStarted => {
                 tracing::debug!(wap_id, "WAP not started, creating fresh branch");
-                let table_guard = self.table.read().await;
-                crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
-                drop(table_guard);
+                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
                 Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
@@ -124,10 +122,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
                 let table_guard = self.table.read().await;
                 crate::branch::delete_branch(&self.catalog, &table_guard, wap_id).await?;
                 drop(table_guard);
-                reload_table(&self.catalog, &self.table).await?;
-                let table_guard = self.table.read().await;
-                crate::branch::create_branch(&self.catalog, &table_guard, wap_id).await?;
-                drop(table_guard);
+                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
                 Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
                     catalog: self.catalog.clone(),
                     table: Arc::clone(&self.table),
@@ -176,16 +171,14 @@ impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
         let batch = records_to_batch(&table_guard, &records)?;
         drop(table_guard);
         let data_files = write_data_files(&self.table, batch).await?;
-        let table_guard = self.table.read().await;
         crate::branch::commit_to_branch(
             &self.catalog,
-            &table_guard,
+            &self.table,
             &self.branch_name,
             data_files,
             &self.branch_name,
         )
         .await?;
-        drop(table_guard);
 
         Ok(Box::new(IcebergBranchPublisher {
             catalog: self.catalog,
@@ -223,13 +216,11 @@ struct IcebergBranchPublisher {
 #[async_trait]
 impl BranchPublisher for IcebergBranchPublisher {
     async fn publish(self: Box<Self>) -> Result {
-        reload_table(&self.catalog, &self.table).await?;
-        let table_guard = self.table.read().await;
-        crate::branch::publish_branch(&self.catalog, &table_guard, &self.branch_name).await
+        crate::branch::publish_branch(&self.catalog, &self.table, &self.branch_name).await
     }
 }
 
-async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Result {
+pub(crate) async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Result {
     let identifier = table.read().await.identifier().clone();
     let namespace = identifier.namespace().to_url_string();
     let table_name = identifier.name().to_string();
