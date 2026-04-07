@@ -37,10 +37,10 @@ impl FieldKind {
         Self::Primitive(t)
     }
 
-    pub fn list(element: FieldKind, element_required: bool) -> Self {
+    pub fn list(element: FieldKind) -> Self {
         Self::List {
             element_kind: Box::new(element),
-            element_required,
+            element_required: true,
         }
     }
 
@@ -50,11 +50,11 @@ impl FieldKind {
         }
     }
 
-    pub fn map(key: PrimitiveType, value: FieldKind, value_required: bool) -> Self {
+    pub fn map(key: PrimitiveType, value: FieldKind) -> Self {
         Self::Map {
             key_type: key,
             value_kind: Box::new(value),
-            value_required,
+            value_required: true,
         }
     }
 }
@@ -218,7 +218,7 @@ impl FieldDefinition {
     ) -> Self {
         Self::new(
             name,
-            FieldKind::map(key_type, value_type.into(), true),
+            FieldKind::map(key_type, value_type.into()),
             ColumnType::Required,
         )
     }
@@ -232,7 +232,7 @@ impl FieldDefinition {
     ) -> Self {
         Self::new(
             name,
-            FieldKind::map(key_type, value_type.into(), false),
+            FieldKind::map(key_type, value_type.into()),
             ColumnType::Optional,
         )
     }
@@ -242,7 +242,7 @@ impl FieldDefinition {
     pub fn required_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
         Self::new(
             name,
-            FieldKind::list(field_kind.into(), true),
+            FieldKind::list(field_kind.into()),
             ColumnType::Required,
         )
     }
@@ -252,7 +252,7 @@ impl FieldDefinition {
     pub fn optional_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
         Self::new(
             name,
-            FieldKind::list(field_kind.into(), false),
+            FieldKind::list(field_kind.into()),
             ColumnType::Optional,
         )
     }
