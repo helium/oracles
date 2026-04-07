@@ -798,10 +798,14 @@ mod env_defaults {
 #[cfg(test)]
 mod tests {
 
-    use super::{IcebergTestHarness, TableDefinition};
-    use crate::{FieldDefinition, PartitionDefinition};
+    use std::collections::HashMap;
 
+    use super::{IcebergTestHarness, TableDefinition};
+    use crate::{FieldDefinition, FieldKind, PartitionDefinition};
+
+    use anyhow::Context;
     use chrono::{DateTime, Duration, DurationRound, FixedOffset, Utc};
+    use iceberg::spec::PrimitiveType;
     use serde::{Deserialize, Serialize};
     use trino_rust_client::Trino;
 
@@ -913,6 +917,69 @@ mod tests {
             .await?
             .into_vec();
         assert_eq!(queried_people, people);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nested_field_types() -> anyhow::Result<()> {
+        #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+        struct Outer {
+            id: u64,
+            tags: Option<Vec<String>>,
+            maps: HashMap<u64, String>,
+            inner: Inner,
+            list_inner: Vec<Inner>,
+            name: String,
+        }
+
+        #[derive(Default, Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+        struct Inner {
+            one: u64,
+            two: u64,
+        }
+
+        let inner_fields = [
+            FieldDefinition::required_long("one"),
+            FieldDefinition::required_long("two"),
+        ];
+        let table_def = TableDefinition::builder("default", "list_items")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_list("tags", PrimitiveType::String),
+                FieldDefinition::required_map("maps", PrimitiveType::Long, PrimitiveType::String),
+                FieldDefinition::required_struct("inner", inner_fields.clone()),
+                FieldDefinition::required_list("list_inner", FieldKind::struct_type(inner_fields)),
+                FieldDefinition::required_string("name"),
+            ])
+            .with_partition(PartitionDefinition::identity("id"))
+            .build()?;
+
+        let harness = IcebergTestHarness::new_with_tables([table_def]).await?;
+
+        let data = vec![Outer {
+            id: 1337,
+            tags: Some(vec![]),
+            maps: HashMap::from([(1, "one".to_string()), (2, "two".to_string())]),
+            inner: Inner::default(),
+            list_inner: vec![Inner::default(), Inner::default()],
+            name: "test".to_string(),
+        }];
+
+        let writer = harness
+            .get_table_writer("list_items")
+            .await
+            .context("get writer")?;
+        writer.write(data.clone()).await.context("write data")?;
+
+        let out = harness
+            .trino()
+            .get_all::<Outer>("SELECT * from default.list_items".to_string())
+            .await
+            .context("read data")?
+            .into_vec();
+
+        assert_eq!(data, out);
 
         Ok(())
     }
