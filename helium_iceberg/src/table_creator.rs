@@ -2,22 +2,69 @@ use crate::catalog::Catalog;
 use crate::iceberg_table::IcebergTable;
 use crate::{Error, Result, Settings};
 use iceberg::spec::{
-    MapType, NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection,
-    SortField, SortOrder, Transform, Type,
+    ListType, MapType, NestedField, NullOrder, PartitionSpec, PrimitiveType, Schema, SortDirection,
+    SortField, SortOrder, StructType, Transform, Type,
 };
 use iceberg::{Catalog as IcebergCatalog, NamespaceIdent, TableCreation};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+/// Describes the type of a field, supporting arbitrary nesting.
+///
+/// Use the convenience constructors ([`FieldKind::primitive`], [`FieldKind::list`],
+/// [`FieldKind::struct_type`], [`FieldKind::map`]) when building nested types
+/// for [`FieldDefinition::required_list_of`], [`FieldDefinition::required_struct`], etc.
 #[derive(Debug, Clone)]
-enum FieldKind {
-    Primitive(Type),
+pub enum FieldKind {
+    Primitive(PrimitiveType),
+    List {
+        element_kind: Box<FieldKind>,
+        element_required: bool,
+    },
+    Struct {
+        fields: Vec<FieldDefinition>,
+    },
+    /// Map keys are always `PrimitiveType::String`. Non-string keys break
+    /// deserialization through the trino-rust-client because serde's untagged
+    /// enum buffering loses the string-to-integer key coercion that serde_json
+    /// normally provides.
     Map {
-        key_type: PrimitiveType,
-        value_type: PrimitiveType,
+        value_kind: Box<FieldKind>,
         value_required: bool,
     },
+}
+
+impl FieldKind {
+    pub fn primitive(t: PrimitiveType) -> Self {
+        Self::Primitive(t)
+    }
+
+    pub fn list(element: FieldKind) -> Self {
+        Self::List {
+            element_kind: Box::new(element),
+            element_required: true,
+        }
+    }
+
+    pub fn struct_type(fields: impl IntoIterator<Item = FieldDefinition>) -> Self {
+        Self::Struct {
+            fields: fields.into_iter().collect(),
+        }
+    }
+
+    pub fn map(value: FieldKind) -> Self {
+        Self::Map {
+            value_kind: Box::new(value),
+            value_required: true,
+        }
+    }
+}
+
+impl From<PrimitiveType> for FieldKind {
+    fn from(value: PrimitiveType) -> Self {
+        Self::Primitive(value)
+    }
 }
 
 /// Defines a single field (column) in a table schema.
@@ -56,7 +103,7 @@ macro_rules! impl_field_variant {
         impl FieldDefinition {
             $(
                 pub fn $fn_name(name: impl Into<String>) -> Self {
-                    Self::new(name, FieldKind::Primitive(Type::Primitive(PrimitiveType::$field_type)), ColumnType::$column_type)
+                    Self::new(name, FieldKind::Primitive(PrimitiveType::$field_type), ColumnType::$column_type)
                 }
             )+
         }
@@ -119,7 +166,7 @@ impl FieldDefinition {
     pub fn required_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
+            FieldKind::Primitive(PrimitiveType::Decimal { precision, scale }),
             ColumnType::Required,
         )
     }
@@ -127,7 +174,7 @@ impl FieldDefinition {
     pub fn optional_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
+            FieldKind::Primitive(PrimitiveType::Decimal { precision, scale }),
             ColumnType::Optional,
         )
     }
@@ -135,7 +182,7 @@ impl FieldDefinition {
     pub fn identifier_decimal(name: impl Into<String>, precision: u32, scale: u32) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Decimal { precision, scale })),
+            FieldKind::Primitive(PrimitiveType::Decimal { precision, scale }),
             ColumnType::Identifier,
         )
     }
@@ -143,7 +190,7 @@ impl FieldDefinition {
     pub fn required_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
+            FieldKind::Primitive(PrimitiveType::Fixed(fixed)),
             ColumnType::Required,
         )
     }
@@ -151,7 +198,7 @@ impl FieldDefinition {
     pub fn optional_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
+            FieldKind::Primitive(PrimitiveType::Fixed(fixed)),
             ColumnType::Optional,
         )
     }
@@ -159,49 +206,65 @@ impl FieldDefinition {
     pub fn identifier_fixed(name: impl Into<String>, fixed: u64) -> Self {
         Self::new(
             name,
-            FieldKind::Primitive(Type::Primitive(PrimitiveType::Fixed(fixed))),
+            FieldKind::Primitive(PrimitiveType::Fixed(fixed)),
             ColumnType::Identifier,
         )
     }
 
-    /// Create a required map field with primitive key and value types.
+    /// Create a required map field with string keys.
     /// The map column is required and the value is required.
-    pub fn required_map(
-        name: impl Into<String>,
-        key_type: PrimitiveType,
-        value_type: PrimitiveType,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_type,
-                value_required: true,
-            },
-            required: true,
-            doc: None,
-            identifier: false,
-        }
+    pub fn required_map(name: impl Into<String>, value_type: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::map(value_type.into()),
+            ColumnType::Required,
+        )
     }
 
-    /// Create an optional map field with primitive key and value types.
+    /// Create an optional map field with string keys.
     /// The map column is optional and the value is optional.
-    pub fn optional_map(
+    pub fn optional_map(name: impl Into<String>, value_type: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::map(value_type.into()),
+            ColumnType::Optional,
+        )
+    }
+
+    /// Create a required list field with primitive element type.
+    /// The list column is required and the elements are required.
+    pub fn required_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::list(field_kind.into()),
+            ColumnType::Required,
+        )
+    }
+
+    /// Create an optional list field with primitive element type.
+    /// The list column is optional and the elements are optional.
+    pub fn optional_list(name: impl Into<String>, field_kind: impl Into<FieldKind>) -> Self {
+        Self::new(
+            name,
+            FieldKind::list(field_kind.into()),
+            ColumnType::Optional,
+        )
+    }
+
+    /// Create a required struct field with named sub-fields.
+    pub fn required_struct(
         name: impl Into<String>,
-        key_type: PrimitiveType,
-        value_type: PrimitiveType,
+        fields: impl IntoIterator<Item = FieldDefinition>,
     ) -> Self {
-        Self {
-            name: name.into(),
-            kind: FieldKind::Map {
-                key_type,
-                value_type,
-                value_required: false,
-            },
-            required: false,
-            doc: None,
-            identifier: false,
-        }
+        Self::new(name, FieldKind::struct_type(fields), ColumnType::Required)
+    }
+
+    /// Create an optional struct field with named sub-fields.
+    pub fn optional_struct(
+        name: impl Into<String>,
+        fields: impl IntoIterator<Item = FieldDefinition>,
+    ) -> Self {
+        Self::new(name, FieldKind::struct_type(fields), ColumnType::Optional)
     }
 }
 
@@ -382,6 +445,68 @@ pub struct TableDefinition {
     location: Option<String>,
 }
 
+/// Recursively converts a [`FieldKind`] into an iceberg [`Type`],
+/// allocating field IDs from `next_id` for each nested element.
+fn build_type(kind: &FieldKind, next_id: &mut i32) -> Type {
+    match kind {
+        FieldKind::Primitive(p) => Type::Primitive(p.clone()),
+        FieldKind::List {
+            element_kind,
+            element_required,
+        } => {
+            let element_id = *next_id;
+            *next_id += 1;
+            let element_type = build_type(element_kind, next_id);
+            Type::List(ListType::new(Arc::new(NestedField::list_element(
+                element_id,
+                element_type,
+                *element_required,
+            ))))
+        }
+        FieldKind::Struct { fields } => {
+            let nested_fields = fields
+                .iter()
+                .map(|f| {
+                    let field_id = *next_id;
+                    *next_id += 1;
+                    let field_type = build_type(&f.kind, next_id);
+                    let mut nested = if f.required {
+                        NestedField::required(field_id, &f.name, field_type)
+                    } else {
+                        NestedField::optional(field_id, &f.name, field_type)
+                    };
+                    if let Some(ref doc) = f.doc {
+                        nested = nested.with_doc(doc);
+                    }
+                    Arc::new(nested)
+                })
+                .collect();
+            Type::Struct(StructType::new(nested_fields))
+        }
+        FieldKind::Map {
+            value_kind,
+            value_required,
+        } => {
+            let key_id = *next_id;
+            *next_id += 1;
+            let value_id = *next_id;
+            *next_id += 1;
+            let value_type = build_type(value_kind, next_id);
+            Type::Map(MapType::new(
+                Arc::new(NestedField::map_key_element(
+                    key_id,
+                    Type::Primitive(PrimitiveType::String),
+                )),
+                Arc::new(NestedField::map_value_element(
+                    value_id,
+                    value_type,
+                    *value_required,
+                )),
+            ))
+        }
+    }
+}
+
 impl TableDefinition {
     /// Create a new table definition builder.
     pub fn builder(
@@ -415,30 +540,7 @@ impl TableDefinition {
                 identifier_field_ids.push(field_id);
             }
 
-            let field_type = match &field.kind {
-                FieldKind::Primitive(t) => t.clone(),
-                FieldKind::Map {
-                    key_type,
-                    value_type,
-                    value_required,
-                } => {
-                    let key_id = next_id;
-                    next_id += 1;
-                    let value_id = next_id;
-                    next_id += 1;
-                    Type::Map(MapType::new(
-                        Arc::new(NestedField::map_key_element(
-                            key_id,
-                            Type::Primitive(key_type.clone()),
-                        )),
-                        Arc::new(NestedField::map_value_element(
-                            value_id,
-                            Type::Primitive(value_type.clone()),
-                            *value_required,
-                        )),
-                    ))
-                }
-            };
+            let field_type = build_type(&field.kind, &mut next_id);
 
             let mut nested = if field.required {
                 NestedField::required(field_id, &field.name, field_type)
@@ -1074,7 +1176,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::required_map("tags", PrimitiveType::String),
                 FieldDefinition::required_string("name"),
             ])
             .build()
@@ -1103,11 +1205,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::optional_map(
-                    "metadata",
-                    PrimitiveType::String,
-                    PrimitiveType::Long,
-                ),
+                FieldDefinition::optional_map("metadata", PrimitiveType::Long),
             ])
             .build()
             .expect("should build");
@@ -1131,7 +1229,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::indentifier_long("id"),
-                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::required_map("tags", PrimitiveType::String),
                 FieldDefinition::indentifier_string("tenant_id"),
             ])
             .build()
@@ -1144,5 +1242,248 @@ mod tests {
         assert_eq!(identifier_ids.len(), 2);
         assert!(identifier_ids.contains(&1)); // id
         assert!(identifier_ids.contains(&5)); // tenant_id
+    }
+
+    #[test]
+    fn test_required_list_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_list("tags", PrimitiveType::String),
+                FieldDefinition::required_string("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id = 1, tags = 2 (element = 3), name = 4
+        let id_field = schema.field_by_name("id").expect("id field");
+        assert_eq!(id_field.id, 1);
+
+        let tags_field = schema.field_by_name("tags").expect("tags field");
+        assert_eq!(tags_field.id, 2);
+        assert!(tags_field.required);
+
+        let name_field = schema.field_by_name("name").expect("name field");
+        assert_eq!(name_field.id, 4);
+    }
+
+    #[test]
+    fn test_optional_list_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::optional_list("tags", PrimitiveType::String),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        let tags_field = schema.field_by_name("tags").expect("tags field");
+        assert_eq!(tags_field.id, 2);
+        assert!(!tags_field.required);
+    }
+
+    #[test]
+    fn test_required_struct_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_struct(
+                    "address",
+                    [
+                        FieldDefinition::required_string("street"),
+                        FieldDefinition::required_string("city"),
+                    ],
+                ),
+                FieldDefinition::required_string("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id = 1, address = 2 (street = 3, city = 4), name = 5
+        assert_eq!(schema.field_by_name("id").expect("id").id, 1);
+        assert_eq!(schema.field_by_name("address").expect("address").id, 2);
+        assert!(schema.field_by_name("address").expect("address").required);
+        assert_eq!(schema.field_by_name("name").expect("name").id, 5);
+    }
+
+    #[test]
+    fn test_optional_struct_field_ids() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::optional_struct(
+                    "address",
+                    [
+                        FieldDefinition::required_string("street"),
+                        FieldDefinition::required_string("city"),
+                    ],
+                ),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        let addr = schema.field_by_name("address").expect("address");
+        assert_eq!(addr.id, 2);
+        assert!(!addr.required);
+    }
+
+    #[test]
+    fn test_list_of_structs() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_list(
+                    "events",
+                    FieldKind::struct_type([
+                        FieldDefinition::required_string("name"),
+                        FieldDefinition::required_long("ts"),
+                    ]),
+                ),
+                FieldDefinition::required_string("label"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id=1, events=2 (element=3, struct{name=4, ts=5}), label=6
+        assert_eq!(schema.field_by_name("id").expect("id").id, 1);
+        assert_eq!(schema.field_by_name("events").expect("events").id, 2);
+        assert_eq!(schema.field_by_name("label").expect("label").id, 6);
+    }
+
+    #[test]
+    fn test_struct_containing_list() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_struct(
+                    "meta",
+                    [
+                        FieldDefinition::required_list("tags", PrimitiveType::String),
+                        FieldDefinition::required_string("label"),
+                    ],
+                ),
+                FieldDefinition::required_string("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id=1, meta=2 (tags=3 list{element=4}, label=5), name=6
+        assert_eq!(schema.field_by_name("id").expect("id").id, 1);
+        assert_eq!(schema.field_by_name("meta").expect("meta").id, 2);
+        assert_eq!(schema.field_by_name("name").expect("name").id, 6);
+    }
+
+    #[test]
+    fn test_map_with_struct_value() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_map(
+                    "records",
+                    FieldKind::struct_type([
+                        FieldDefinition::required_string("a"),
+                        FieldDefinition::required_long("b"),
+                    ]),
+                ),
+                FieldDefinition::required_string("name"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id=1, records=2 (key=3, value=4 struct{a=5, b=6}), name=7
+        assert_eq!(schema.field_by_name("id").expect("id").id, 1);
+        assert_eq!(schema.field_by_name("records").expect("records").id, 2);
+        assert_eq!(schema.field_by_name("name").expect("name").id, 7);
+    }
+
+    #[test]
+    fn test_deeply_nested() {
+        // List<Struct{ inner: List<String> }>
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::required_long("id"),
+                FieldDefinition::required_list(
+                    "outer",
+                    FieldKind::struct_type([FieldDefinition::required_list(
+                        "inner",
+                        PrimitiveType::String,
+                    )]),
+                ),
+                FieldDefinition::required_string("tail"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // id=1, outer=2 (element=3 struct{inner=4 list{element=5}}), tail=6
+        assert_eq!(schema.field_by_name("id").expect("id").id, 1);
+        assert_eq!(schema.field_by_name("outer").expect("outer").id, 2);
+        assert_eq!(schema.field_by_name("tail").expect("tail").id, 6);
+    }
+
+    #[test]
+    fn test_identifier_fields_not_affected_by_list() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([
+                FieldDefinition::indentifier_long("id"),
+                FieldDefinition::required_list("tags", PrimitiveType::String),
+                FieldDefinition::indentifier_string("tenant_id"),
+            ])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+        let identifier_ids: Vec<i32> = schema.identifier_field_ids().collect();
+
+        // id=1, tags=2 (element=3), tenant_id=4
+        assert_eq!(identifier_ids.len(), 2);
+        assert!(identifier_ids.contains(&1));
+        assert!(identifier_ids.contains(&4));
+    }
+
+    #[test]
+    fn test_struct_with_doc() {
+        let definition = TableDefinition::builder("default", "test")
+            .with_fields([FieldDefinition::required_struct(
+                "address",
+                [
+                    FieldDefinition::required_string("street").with_doc("Street name"),
+                    FieldDefinition::optional_string("apt").with_doc("Apartment number"),
+                ],
+            )])
+            .build()
+            .expect("should build");
+
+        let schema = definition.build_schema().expect("should build schema");
+
+        // Verify the struct field itself exists
+        let addr = schema.field_by_name("address").expect("address");
+        assert_eq!(addr.id, 1);
+
+        // Verify sub-field docs are preserved by inspecting the struct type
+        if let Type::Struct(st) = addr.field_type.as_ref() {
+            let street = st.field_by_name("street").expect("street sub-field");
+            assert_eq!(street.doc.as_deref(), Some("Street name"));
+            let apt = st.field_by_name("apt").expect("apt sub-field");
+            assert_eq!(apt.doc.as_deref(), Some("Apartment number"));
+            assert!(!apt.required);
+        } else {
+            panic!("expected struct type");
+        }
     }
 }
