@@ -25,8 +25,11 @@ pub enum FieldKind {
     Struct {
         fields: Vec<FieldDefinition>,
     },
+    /// Map keys are always `PrimitiveType::String`. Non-string keys break
+    /// deserialization through the trino-rust-client because serde's untagged
+    /// enum buffering loses the string-to-integer key coercion that serde_json
+    /// normally provides.
     Map {
-        key_type: PrimitiveType,
         value_kind: Box<FieldKind>,
         value_required: bool,
     },
@@ -50,9 +53,8 @@ impl FieldKind {
         }
     }
 
-    pub fn map(key: PrimitiveType, value: FieldKind) -> Self {
+    pub fn map(value: FieldKind) -> Self {
         Self::Map {
-            key_type: key,
             value_kind: Box::new(value),
             value_required: true,
         }
@@ -209,30 +211,28 @@ impl FieldDefinition {
         )
     }
 
-    /// Create a required map field with primitive key and value types.
+    /// Create a required map field with string keys.
     /// The map column is required and the value is required.
     pub fn required_map(
         name: impl Into<String>,
-        key_type: PrimitiveType,
         value_type: impl Into<FieldKind>,
     ) -> Self {
         Self::new(
             name,
-            FieldKind::map(key_type, value_type.into()),
+            FieldKind::map(value_type.into()),
             ColumnType::Required,
         )
     }
 
-    /// Create an optional map field with primitive key and value types.
+    /// Create an optional map field with string keys.
     /// The map column is optional and the value is optional.
     pub fn optional_map(
         name: impl Into<String>,
-        key_type: PrimitiveType,
         value_type: impl Into<FieldKind>,
     ) -> Self {
         Self::new(
             name,
-            FieldKind::map(key_type, value_type.into()),
+            FieldKind::map(value_type.into()),
             ColumnType::Optional,
         )
     }
@@ -490,7 +490,6 @@ fn build_type(kind: &FieldKind, next_id: &mut i32) -> Type {
             Type::Struct(StructType::new(nested_fields))
         }
         FieldKind::Map {
-            key_type,
             value_kind,
             value_required,
         } => {
@@ -502,7 +501,7 @@ fn build_type(kind: &FieldKind, next_id: &mut i32) -> Type {
             Type::Map(MapType::new(
                 Arc::new(NestedField::map_key_element(
                     key_id,
-                    Type::Primitive(key_type.clone()),
+                    Type::Primitive(PrimitiveType::String),
                 )),
                 Arc::new(NestedField::map_value_element(
                     value_id,
@@ -1183,7 +1182,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::required_map("tags", PrimitiveType::String),
                 FieldDefinition::required_string("name"),
             ])
             .build()
@@ -1212,11 +1211,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::required_long("id"),
-                FieldDefinition::optional_map(
-                    "metadata",
-                    PrimitiveType::String,
-                    PrimitiveType::Long,
-                ),
+                FieldDefinition::optional_map("metadata", PrimitiveType::Long),
             ])
             .build()
             .expect("should build");
@@ -1240,7 +1235,7 @@ mod tests {
         let definition = TableDefinition::builder("default", "test")
             .with_fields([
                 FieldDefinition::indentifier_long("id"),
-                FieldDefinition::required_map("tags", PrimitiveType::String, PrimitiveType::String),
+                FieldDefinition::required_map("tags", PrimitiveType::String),
                 FieldDefinition::indentifier_string("tenant_id"),
             ])
             .build()
@@ -1403,7 +1398,6 @@ mod tests {
                 FieldDefinition::required_long("id"),
                 FieldDefinition::required_map(
                     "records",
-                    PrimitiveType::String,
                     FieldKind::struct_type([
                         FieldDefinition::required_string("a"),
                         FieldDefinition::required_long("b"),

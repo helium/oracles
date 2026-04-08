@@ -927,7 +927,7 @@ mod tests {
         struct Outer {
             id: u64,
             tags: Option<Vec<String>>,
-            maps: HashMap<u64, String>,
+            maps: HashMap<String, String>,
             inner: Inner,
             list_inner: Vec<Inner>,
             name: String,
@@ -947,7 +947,7 @@ mod tests {
             .with_fields([
                 FieldDefinition::required_long("id"),
                 FieldDefinition::required_list("tags", PrimitiveType::String),
-                FieldDefinition::required_map("maps", PrimitiveType::Long, PrimitiveType::String),
+                FieldDefinition::required_map("maps", PrimitiveType::String),
                 FieldDefinition::required_struct("inner", inner_fields.clone()),
                 FieldDefinition::required_list("list_inner", FieldKind::struct_type(inner_fields)),
                 FieldDefinition::required_string("name"),
@@ -960,7 +960,7 @@ mod tests {
         let data = vec![Outer {
             id: 1337,
             tags: Some(vec![]),
-            maps: HashMap::from([(1, "one".to_string()), (2, "two".to_string())]),
+            maps: HashMap::from([("1".to_string(), "one".to_string()), ("2".to_string(), "two".to_string())]),
             inner: Inner::default(),
             list_inner: vec![Inner::default(), Inner::default()],
             name: "test".to_string(),
