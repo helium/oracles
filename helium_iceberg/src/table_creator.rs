@@ -213,10 +213,7 @@ impl FieldDefinition {
 
     /// Create a required map field with string keys.
     /// The map column is required and the value is required.
-    pub fn required_map(
-        name: impl Into<String>,
-        value_type: impl Into<FieldKind>,
-    ) -> Self {
+    pub fn required_map(name: impl Into<String>, value_type: impl Into<FieldKind>) -> Self {
         Self::new(
             name,
             FieldKind::map(value_type.into()),
@@ -226,10 +223,7 @@ impl FieldDefinition {
 
     /// Create an optional map field with string keys.
     /// The map column is optional and the value is optional.
-    pub fn optional_map(
-        name: impl Into<String>,
-        value_type: impl Into<FieldKind>,
-    ) -> Self {
+    pub fn optional_map(name: impl Into<String>, value_type: impl Into<FieldKind>) -> Self {
         Self::new(
             name,
             FieldKind::map(value_type.into()),

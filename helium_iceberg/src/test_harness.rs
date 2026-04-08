@@ -960,7 +960,10 @@ mod tests {
         let data = vec![Outer {
             id: 1337,
             tags: Some(vec![]),
-            maps: HashMap::from([("1".to_string(), "one".to_string()), ("2".to_string(), "two".to_string())]),
+            maps: HashMap::from([
+                ("1".to_string(), "one".to_string()),
+                ("2".to_string(), "two".to_string()),
+            ]),
             inner: Inner::default(),
             list_inner: vec![Inner::default(), Inner::default()],
             name: "test".to_string(),
