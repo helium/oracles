@@ -1,6 +1,5 @@
 use crate::{without_caching, BucketClient, GzippedFramedFile};
 use chrono::{DateTime, Utc};
-use std::env;
 use uuid::Uuid;
 
 #[derive(thiserror::Error, Debug)]
@@ -14,13 +13,6 @@ impl AwsLocalError {
 }
 
 pub type Result<T> = std::result::Result<T, AwsLocalError>;
-
-pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
-pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
-
-pub fn aws_local_default_endpoint() -> String {
-    env::var(AWSLOCAL_ENDPOINT_ENV).unwrap_or_else(|_| AWSLOCAL_DEFAULT_ENDPOINT.to_string())
-}
 
 pub fn gen_bucket_name() -> String {
     format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
@@ -164,7 +156,8 @@ impl AwsLocal {
 #[derive(Debug, Clone, Default)]
 pub struct AwsLocalBuilder {
     region: Option<String>,
-    endpoint: Option<String>,
+    host: Option<String>,
+    port: Option<u16>,
     bucket: Option<String>,
     access_key_id: Option<String>,
     secret_access_key: Option<String>,
@@ -176,8 +169,13 @@ impl AwsLocalBuilder {
         self
     }
 
-    pub fn endpoint(mut self, endpoint: String) -> Self {
-        self.endpoint = Some(endpoint);
+    pub fn host(mut self, host: String) -> Self {
+        self.host = Some(host);
+        self
+    }
+
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = Some(port);
         self
     }
 
@@ -204,7 +202,11 @@ impl AwsLocalBuilder {
     }
 
     pub async fn build(self) -> AwsLocal {
-        let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
+        let endpoint = format!(
+            "http://{}:{}",
+            self.host.unwrap_or_else(env_defaults::awslocal_host),
+            self.port.unwrap_or_else(env_defaults::awslocal_port)
+        );
 
         let client = without_caching(BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
@@ -255,5 +257,32 @@ impl AwsLocal {
     #[allow(unsafe_code)]
     pub unsafe fn drop_without_bucket_delete(mut self) {
         self.gaurd_drop = false;
+    }
+}
+
+pub mod env_defaults {
+    const AWSLOCAL_HOST_ENV: &str = "AWSLOCAL_HOST";
+    const AWSLOCAL_PORT_ENV: &str = "AWSLOCAL_PORT";
+
+    pub fn awslocal_host() -> String {
+        env_str(AWSLOCAL_HOST_ENV, "localhost")
+    }
+
+    pub fn awslocal_port() -> u16 {
+        env_port(AWSLOCAL_PORT_ENV, 4566)
+    }
+
+    // ======= Helpers ====================
+    fn to_u16(port: String, label: &str) -> u16 {
+        port.parse::<u16>()
+            .unwrap_or_else(|val| panic!("u16 parseable {label} port: {val}"))
+    }
+    fn env_str(var: &str, default: &str) -> String {
+        std::env::var(var).unwrap_or_else(|_| default.to_string())
+    }
+    fn env_port(var: &str, default: u16) -> u16 {
+        std::env::var(var)
+            .map(|port| to_u16(port, var))
+            .unwrap_or(default)
     }
 }
