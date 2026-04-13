@@ -30,7 +30,6 @@ derive_builder = { workspace = true }
 retainer = { workspace = true }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
-uuid = { workspace = true }
 tempfile = { workspace = true }
 
 aws-config = { workspace = true }

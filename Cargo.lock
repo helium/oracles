@@ -3136,7 +3136,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "triggered",
- "uuid",
 ]
 
 [[package]]

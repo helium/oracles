@@ -1,6 +1,5 @@
 use crate::{without_caching, BucketClient, GzippedFramedFile};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 
 #[derive(thiserror::Error, Debug)]
 #[error("aws local error: {0}")]
@@ -13,10 +12,6 @@ impl AwsLocalError {
 }
 
 pub type Result<T> = std::result::Result<T, AwsLocalError>;
-
-pub fn gen_bucket_name() -> String {
-    format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
-}
 
 // Interacts with an S3-compatible object storage (RustFS).
 pub struct AwsLocal {
@@ -257,6 +252,35 @@ impl AwsLocal {
     #[allow(unsafe_code)]
     pub unsafe fn drop_without_bucket_delete(mut self) {
         self.gaurd_drop = false;
+    }
+}
+
+fn gen_bucket_name() -> String {
+    // Get current timestamp in milliseconds
+    let now = chrono::Utc::now();
+    let timestamp = now.timestamp_millis();
+
+    // Extract only the function name (last part after ::) from thread name
+    let test_name = std::thread::current()
+        .name()
+        .and_then(|name| name.split("::").last())
+        .map(|name| {
+            name.chars()
+                .take(32) // Limit test name portion to 32 chars
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+        })
+        .filter(|name| !name.is_empty());
+
+    match test_name {
+        Some(name) => format!("{}-{}", name, timestamp),
+        None => format!("test-{}", timestamp),
     }
 }
 
