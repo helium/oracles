@@ -113,6 +113,7 @@ pub struct IcebergTestHarness {
     trino: trino_rust_client::Client,
     iceberg_catalog: Catalog,
     table_namespaces: Mutex<HashMap<String, String>>,
+    pub config: HarnessConfig,
 }
 
 impl IcebergTestHarness {
@@ -172,6 +173,7 @@ impl IcebergTestHarness {
             trino,
             iceberg_catalog,
             table_namespaces: Mutex::new(HashMap::default()),
+            config,
         })
     }
 
@@ -256,6 +258,28 @@ impl IcebergTestHarness {
         let creator = TableCreator::new(self.iceberg_catalog.clone());
         creator.create_table_if_not_exists::<()>(definition).await?;
         Ok(())
+    }
+
+    pub fn as_settings(&self) -> Settings {
+        Settings {
+            catalog_uri: self.config.catalog_local_url(),
+            catalog_name: self.catalog_name().to_owned(),
+            warehouse: Some(self.catalog_name().to_owned()),
+            auth: AuthConfig {
+                credential: Some(self.config.catalog_oauth2_credential.to_owned()),
+                scope: Some(self.config.catalog_oauth2_scope.to_owned()),
+                ..Default::default()
+            },
+            s3: S3Config {
+                endpoint: Some(self.config.s3_local_url()),
+                access_key_id: Some(self.config.s3_access_key.to_owned()),
+                secret_access_key: Some(self.config.s3_access_key.to_owned()),
+                region: Some(self.config.s3_region.to_owned()),
+                path_style_access: Some(true),
+                disable_config_load: Some(true),
+            },
+            properties: Default::default(),
+        }
     }
 }
 
@@ -396,27 +420,27 @@ impl HarnessConfig {
         HarnessConfigBuilder::default()
     }
 
-    fn s3_local_url(&self) -> String {
+    pub fn s3_local_url(&self) -> String {
         self.s3_host_local.with_path("")
     }
 
-    fn s3_qualified_url(&self) -> String {
+    pub fn s3_qualified_url(&self) -> String {
         self.s3_host_qualified.with_path("")
     }
 
-    fn catalog_management_local_url(&self) -> String {
+    pub fn catalog_management_local_url(&self) -> String {
         self.catalog_host_local.with_path("/api/management/v1")
     }
 
-    fn catalog_local_url(&self) -> String {
+    pub fn catalog_local_url(&self) -> String {
         self.catalog_host_local.with_path("/api/catalog")
     }
 
-    fn catalog_qualified_url(&self) -> String {
+    pub fn catalog_qualified_url(&self) -> String {
         self.catalog_host_qualified.with_path("/api/catalog")
     }
 
-    fn trino_client_builder(&self) -> ClientBuilder {
+    pub fn trino_client_builder(&self) -> ClientBuilder {
         ClientBuilder::new(&self.trino_user, &self.trino_host).port(self.trino_port)
     }
 }
@@ -680,12 +704,16 @@ impl TestHost {
         self.port = port;
     }
 
-    fn with_path(&self, path: &str) -> String {
+    pub fn with_path(&self, path: &str) -> String {
         format!("http://{}:{}{path}", self.host, self.port)
+    }
+
+    pub fn endpoint(&self) -> String {
+        format!("http://{}:{}", self.host, self.port)
     }
 }
 
-mod env_defaults {
+pub mod env_defaults {
     use crate::test_harness::TestHost;
 
     const S3_LOCAL_HOST_ENV: &str = "S3_LOCAL_HOST";
