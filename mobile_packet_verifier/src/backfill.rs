@@ -2,6 +2,7 @@ use crate::iceberg::{
     self, burned_session::IcebergBurnedDataTransferSession, session::IcebergDataTransferSession,
     BurnedDataTransferWriter, DataTransferWriter,
 };
+use helium_iceberg::BranchTransaction;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient, FileInfo};
@@ -64,7 +65,7 @@ impl Cmd {
         let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             settings.output_bucket.connect().await,
-            session_writer,
+            Some(session_writer),
             options.clone(),
         )
         .await?;
@@ -72,7 +73,7 @@ impl Cmd {
         let burned_sessions_task = BurnedSessionsBackfiller::create_managed_task(
             pool,
             settings.output_bucket.connect().await,
-            burned_session_writer,
+            Some(burned_session_writer),
             options,
         )
         .await?;
@@ -126,28 +127,45 @@ impl BackfillOptions {
 pub struct DataSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
-    writer: DataTransferWriter,
+    writer: Option<DataTransferWriter>,
+    done: bool,
 }
 
 impl DataSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
-        writer: DataTransferWriter,
+        writer: Option<DataTransferWriter>,
     ) -> Self {
+        let done = writer.is_none();
         Self {
             pool,
             reports,
             writer,
+            done,
         }
     }
 
-    pub async fn create_managed_task(
+    pub async fn recv(&mut self) -> Option<FileInfoStream<VerifiedDataTransferIngestReport>> {
+        if self.done {
+            std::future::pending().await
+        } else {
+            self.reports.recv().await
+        }
+    }
+
+    pub async fn create(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: DataTransferWriter,
+        writer: Option<DataTransferWriter>,
         options: BackfillOptions,
-    ) -> anyhow::Result<TaskManager> {
+    ) -> anyhow::Result<(
+        Self,
+        file_store::file_info_poller::FileInfoPollerServer<
+            VerifiedDataTransferIngestReport,
+            Pool<Postgres>,
+        >,
+    )> {
         let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -161,6 +179,18 @@ impl DataSessionsBackfiller {
         let (reports, reports_server) = builder.create().await?;
         let backfiller = DataSessionsBackfiller::new(pool, reports, writer);
 
+        Ok((backfiller, reports_server))
+    }
+
+    pub async fn create_managed_task(
+        pool: PgPool,
+        bucket_client: BucketClient,
+        writer: Option<DataTransferWriter>,
+        options: BackfillOptions,
+    ) -> anyhow::Result<TaskManager> {
+        let (backfiller, reports_server) =
+            Self::create(pool, bucket_client, writer, options).await?;
+
         Ok(TaskManager::builder()
             .add_task(reports_server)
             .add_task(backfiller)
@@ -170,35 +200,54 @@ impl DataSessionsBackfiller {
     async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("sessions backfiller starting");
         loop {
+            if self.done {
+                tracing::info!("sessions backfiller complete");
+                return Ok(());
+            }
             tokio::select! {
                 biased;
                 _ = &mut shutdown => {
                     tracing::info!("sessions backfiller shutting down");
                     return Ok(());
                 }
-                file = self.reports.recv() => {
-                    let Some(file_info_stream) = file else {
-                        // Channel closed - poller reached stop_after or finished
-                        tracing::info!("sessions backfiller completed");
-                        return Ok(());
-                    };
-                    let age = format_file_age(&file_info_stream.file_info);
-                    tracing::info!(
-                        file = %file_info_stream.file_info,
-                        timestamp = %file_info_stream.file_info.timestamp,
-                        age = %age,
-                        "received file"
-                    );
-                    self.handle_file(file_info_stream).await?;
+                file = self.recv() => {
+                    self.handle(file).await?;
                 }
             }
         }
     }
 
+    pub async fn handle(
+        &mut self,
+        file: Option<FileInfoStream<VerifiedDataTransferIngestReport>>,
+    ) -> anyhow::Result<()> {
+        let Some(file_info_stream) = file else {
+            // Channel closed - poller reached stop_after or finished
+            tracing::info!("session backfiller completed");
+            self.done = true;
+            return Ok(());
+        };
+        let age = format_file_age(&file_info_stream.file_info);
+        tracing::info!(
+            file = %file_info_stream.file_info,
+            timestamp = %file_info_stream.file_info.timestamp,
+            age = %age,
+            "received file"
+        );
+        if self.writer.is_some() {
+            let stop = self.handle_file(file_info_stream).await?;
+            if stop {
+                self.done = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `true` when the backfiller should stop (WAP already published).
     async fn handle_file(
         &self,
         file: FileInfoStream<VerifiedDataTransferIngestReport>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::debug!(
@@ -209,7 +258,25 @@ impl DataSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
+<<<<<<< HEAD
         let write_id = file.file_info.key.clone();
+=======
+        let mut iceberg_txn = self
+            .writer
+            .as_ref()
+            .unwrap()
+            .begin(file_info.as_ref())
+            .await
+            .context("beginning iceberg transaction")?;
+>>>>>>> cd393322 (Backfill optional)
+
+        if matches!(iceberg_txn, BranchTransaction::Complete) {
+            tracing::warn!(
+                file = %file_info,
+                "file already published to iceberg; backfill complete"
+            );
+            return Ok(true);
+        }
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -237,7 +304,7 @@ impl DataSessionsBackfiller {
             filtered_count,
             "backfilled verified sessions file"
         );
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -250,16 +317,23 @@ impl ManagedTask for DataSessionsBackfiller {
 pub struct BurnedSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
-    writer: BurnedDataTransferWriter,
+    writer: Option<BurnedDataTransferWriter>,
+    done: bool,
 }
 
 impl BurnedSessionsBackfiller {
-    pub async fn create_managed_task(
+    pub async fn create(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: BurnedDataTransferWriter,
+        writer: Option<BurnedDataTransferWriter>,
         options: BackfillOptions,
-    ) -> anyhow::Result<TaskManager> {
+    ) -> anyhow::Result<(
+        Self,
+        file_store::file_info_poller::FileInfoPollerServer<
+            ValidDataTransferSession,
+            Pool<Postgres>,
+        >,
+    )> {
         let builder = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -273,6 +347,18 @@ impl BurnedSessionsBackfiller {
         let (burned_reports, burned_reports_server) = builder.create().await?;
         let burned_backfiller = BurnedSessionsBackfiller::new(pool, burned_reports, writer);
 
+        Ok((burned_backfiller, burned_reports_server))
+    }
+
+    pub async fn create_managed_task(
+        pool: PgPool,
+        bucket_client: BucketClient,
+        writer: Option<BurnedDataTransferWriter>,
+        options: BackfillOptions,
+    ) -> anyhow::Result<TaskManager> {
+        let (burned_backfiller, burned_reports_server) =
+            Self::create(pool, bucket_client, writer, options).await?;
+
         Ok(TaskManager::builder()
             .add_task(burned_reports_server)
             .add_task(burned_backfiller)
@@ -282,44 +368,73 @@ impl BurnedSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
-        writer: BurnedDataTransferWriter,
+        writer: Option<BurnedDataTransferWriter>,
     ) -> Self {
+        let done = writer.is_none();
         Self {
             pool,
             reports,
             writer,
+            done,
         }
     }
 
     async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("burned backfiller starting");
         loop {
+            if self.done {
+                tracing::info!("burned backfiller complete");
+                return Ok(());
+            }
             tokio::select! {
                 biased;
                 _ = &mut shutdown => {
                     tracing::info!("burned backfiller shutting down");
                     return Ok(());
                 }
-                file = self.reports.recv() => {
-                    let Some(file_info_stream) = file else {
-                        // Channel closed - poller reached stop_after or finished
-                        tracing::info!("burned backfiller completed");
-                        return Ok(());
-                    };
-                    let age = format_file_age(&file_info_stream.file_info);
-                    tracing::info!(
-                        file = %file_info_stream.file_info,
-                        timestamp = %file_info_stream.file_info.timestamp,
-                        age = %age,
-                        "received file"
-                    );
-                    self.handle_file(file_info_stream).await?;
+                file = self.recv() => {
+                    self.handle(file).await?;
                 }
             }
         }
     }
 
-    async fn handle_file(&self, file: FileInfoStream<ValidDataTransferSession>) -> Result<()> {
+    pub async fn recv(&mut self) -> Option<FileInfoStream<ValidDataTransferSession>> {
+        if self.done {
+            std::future::pending().await
+        } else {
+            self.reports.recv().await
+        }
+    }
+
+    pub async fn handle(
+        &mut self,
+        file: Option<FileInfoStream<ValidDataTransferSession>>,
+    ) -> anyhow::Result<()> {
+        let Some(file_info_stream) = file else {
+            // Channel closed - poller reached stop_after or finished
+            tracing::info!("burned backfiller completed");
+            self.done = true;
+            return Ok(());
+        };
+        let age = format_file_age(&file_info_stream.file_info);
+        tracing::info!(
+            file = %file_info_stream.file_info,
+            timestamp = %file_info_stream.file_info.timestamp,
+            age = %age,
+            "received file"
+        );
+        if self.writer.is_some() {
+            let stop = self.handle_file(file_info_stream).await?;
+            if stop {
+                self.done = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `true` when the backfiller should stop (WAP already published).
+    async fn handle_file(&self, file: FileInfoStream<ValidDataTransferSession>) -> Result<bool> {
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::info!(
@@ -330,7 +445,25 @@ impl BurnedSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
+<<<<<<< HEAD
         let write_id = file.file_info.key.clone();
+=======
+        let mut iceberg_txn = self
+            .writer
+            .as_ref()
+            .unwrap()
+            .begin(file_info.as_ref())
+            .await
+            .context("beginning iceberg transaction")?;
+>>>>>>> cd393322 (Backfill optional)
+
+        if matches!(iceberg_txn, BranchTransaction::Complete) {
+            tracing::warn!(
+                file = %file_info,
+                "file already published to iceberg; backfill complete"
+            );
+            return Ok(true);
+        }
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -348,7 +481,7 @@ impl BurnedSessionsBackfiller {
         txn.commit().await.context("committing db transaction")?;
 
         tracing::info!(file = %file_info, count, "backfilled burned sessions file");
-        Ok(())
+        Ok(false)
     }
 }
 
