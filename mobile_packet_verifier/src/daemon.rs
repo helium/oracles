@@ -361,11 +361,13 @@ impl Cmd {
         //   - everything before stop_after is historical data written by the backfiller
         //   - everything from stop_after onwards is written to Iceberg in real-time
         // This boundary is deterministic and configured at deploy time — no overlap.
-        let backfill_opts = BackfillOptions::new(
-            "backfill",
-            settings.backfill.start_after,
-            settings.backfill.stop_after,
-        );
+        //
+        // When settings.backfill is None (or iceberg_settings is None so writers are None),
+        // create() returns a no-op backfiller with no poller.
+        let backfill_opts = settings
+            .backfill
+            .as_ref()
+            .map(|b| BackfillOptions::new("backfill", b.start_after, b.stop_after));
 
         let (data_session_backfill, backfill_reports_server) = DataSessionsBackfiller::create(
             pool.clone(),
@@ -405,7 +407,6 @@ impl Cmd {
             .add_task(banning)
             .add_task(event_id_purger)
             .add_task(daemon)
-            // temp backfill
             .add_task(backfill_reports_server)
             .add_task(burned_reports_server)
             .build()

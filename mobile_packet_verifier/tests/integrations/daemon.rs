@@ -279,7 +279,7 @@ async fn daemon_with_iceberg_processes_backfill(pool: PgPool) -> anyhow::Result<
         pool.clone(),
         awsl.bucket_client(),
         Some(session_writer),
-        backfill_opts,
+        Some(backfill_opts),
     )
     .await?;
 
@@ -810,7 +810,7 @@ async fn daemon_backfill_boundary(pool: PgPool) -> anyhow::Result<()> {
         pool.clone(),
         awsl.bucket_client(),
         Some(session_writer),
-        backfill_opts,
+        Some(backfill_opts),
     )
     .await?;
 
