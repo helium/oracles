@@ -261,11 +261,7 @@ pub(crate) async fn publish_branch(
     .await
 }
 
-async fn publish_branch_once(
-    catalog: &Catalog,
-    table: &Table,
-    branch_name: &str,
-) -> Result<()> {
+async fn publish_branch_once(catalog: &Catalog, table: &Table, branch_name: &str) -> Result<()> {
     let metadata = table.metadata();
     let branch_snapshot = metadata
         .snapshot_for_ref(branch_name)
@@ -477,9 +473,13 @@ async fn write_manifest_list(
         FormatVersion::V2 => {
             ManifestListWriter::v2(output, snapshot_id, parent_snapshot_id, sequence_number)
         }
-        FormatVersion::V3 => {
-            ManifestListWriter::v3(output, snapshot_id, parent_snapshot_id, sequence_number, None)
-        }
+        FormatVersion::V3 => ManifestListWriter::v3(
+            output,
+            snapshot_id,
+            parent_snapshot_id,
+            sequence_number,
+            None,
+        ),
     };
     writer
         .add_manifests(manifests.into_iter())
