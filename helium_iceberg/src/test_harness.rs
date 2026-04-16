@@ -801,7 +801,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{IcebergTestHarness, TableDefinition};
-    use crate::{FieldDefinition, FieldKind, PartitionDefinition};
+    use crate::{BoxedDataWriter, FieldDefinition, FieldKind, PartitionDefinition};
 
     use anyhow::Context;
     use chrono::{DateTime, Duration, DurationRound, FixedOffset, Utc};
@@ -836,6 +836,20 @@ mod tests {
                 FieldDefinition::required_timestamptz("inserted"),
             ])
             .with_partition(PartitionDefinition::day("inserted", "inserted_day"))
+            .build()?;
+
+        Ok(def)
+    }
+
+    fn people_wap_table_def() -> anyhow::Result<TableDefinition> {
+        let def = TableDefinition::builder("default", "people_wap")
+            .with_fields([
+                FieldDefinition::required_string("name"),
+                FieldDefinition::required_int("age"),
+                FieldDefinition::required_timestamptz("inserted"),
+            ])
+            .with_partition(PartitionDefinition::day("inserted", "inserted_day"))
+            .wap_enabled()
             .build()?;
 
         Ok(def)
@@ -917,6 +931,60 @@ mod tests {
             .await?
             .into_vec();
         assert_eq!(queried_people, people);
+
+        Ok(())
+    }
+
+    /// Verifies `publish_branch` incorporates concurrent writes to main
+    /// instead of clobbering them. Sequence:
+    ///   1. Seed main so the WAP branch has a parent to be created from.
+    ///   2. Begin a WAP transaction and write to the branch (parent = seed
+    ///      snapshot).
+    ///   3. Write directly to main (fast_append) — simulates a concurrent
+    ///      writer publishing while our branch is in-flight.
+    ///   4. Publish the branch. Branch parent no longer equals current main,
+    ///      so this exercises the rebase path.
+    ///
+    /// Correctness check: all three writes must be visible. Under the old
+    /// fast-forward logic, step 3's data would be missing after step 4.
+    #[tokio::test]
+    async fn publish_branch_rebases_when_main_moves() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([people_wap_table_def()?]).await?;
+        let writer: BoxedDataWriter<Person> = harness.get_table_writer("people_wap").await?;
+
+        let seed = vec![Person {
+            name: "Seed".to_string(),
+            age: 1,
+            inserted: utc_now(),
+        }];
+        writer.write(seed.clone()).await?;
+
+        let mut txn = writer.begin("wap-a").await?;
+        let branch_rows = vec![Person {
+            name: "Alice".to_string(),
+            age: 30,
+            inserted: utc_now(),
+        }];
+        txn.write(branch_rows.clone()).await?;
+
+        let concurrent_rows = vec![Person {
+            name: "Bob".to_string(),
+            age: 40,
+            inserted: utc_now(),
+        }];
+        writer.write(concurrent_rows.clone()).await?;
+
+        txn.publish().await?;
+
+        let rows = harness
+            .trino()
+            .get_all::<Person>("SELECT * FROM default.people_wap ORDER BY name".to_string())
+            .await?
+            .into_vec();
+
+        let mut expected = [seed, branch_rows, concurrent_rows].concat();
+        expected.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(rows, expected);
 
         Ok(())
     }
