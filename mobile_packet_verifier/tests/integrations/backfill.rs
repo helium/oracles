@@ -16,7 +16,7 @@ use helium_proto::services::{
     },
 };
 use mobile_packet_verifier::{
-    backfill::{BackfillOptions, BurnedSessionsBackfiller, DataSessionsBackfiller},
+    backfill::{BurnedSessionsBackfiller, DataSessionsBackfiller},
     iceberg,
 };
 use serde::{Deserialize, Serialize};
@@ -65,14 +65,91 @@ fn make_verified_report(
     }
 }
 
-fn test_backfill_options(
-    process_name: &str,
-    start_after: DateTime<Utc>,
-    stop_after: DateTime<Utc>,
-) -> BackfillOptions {
-    BackfillOptions::new(process_name, start_after, stop_after)
-        .poll_duration(std::time::Duration::from_millis(100))
-        .idle_timeout(std::time::Duration::from_millis(500))
+/// Verify that the backfiller stops when it encounters a WAP wap_id that is
+/// already published in Iceberg (`BranchTransaction::Complete`).
+///
+/// **Scenario**: A first backfill pass publishes two files (A, B) to Iceberg.
+/// A second pass uses a different `process_name` so the file_info_poller
+/// re-sends the same files. The second pass detects `AlreadyPublished` for
+/// the first file it encounters and sets `done = true`, exiting immediately
+/// without writing any duplicate rows.
+#[sqlx::test]
+async fn backfill_stops_on_already_published(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file1_time = base_time;
+    let file2_time = base_time + Duration::minutes(5);
+    let end_time = base_time + Duration::days(42);
+
+    awsl.put_protos_at_time(
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(file1_time, "already-published-1", ReportStatus::Valid)],
+        file1_time,
+    )
+    .await?;
+
+    awsl.put_protos_at_time(
+        FileType::VerifiedDataTransferSession.to_string(),
+        vec![make_verified_report(file2_time, "already-published-2", ReportStatus::Valid)],
+        file2_time,
+    )
+    .await?;
+
+    // First pass: publish both files to Iceberg
+    let opts_first = common::test_backfill_options("already-published-first", start_time, end_time);
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        DataSessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            Some(writer.clone()),
+            opts_first,
+        )
+        .await?
+        .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("first pass timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows_after_first = iceberg::session::get_all(harness.trino()).await?;
+    assert_eq!(rows_after_first.len(), 2, "first pass should write 2 rows");
+
+    // Second pass: different process_name so file_info_poller re-sends both files.
+    // The first file encountered is AlreadyPublished → backfiller sets done=true
+    // and exits, writing no duplicate rows.
+    let opts_second =
+        common::test_backfill_options("already-published-second", start_time, end_time);
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        DataSessionsBackfiller::create_managed_task(
+            pool.clone(),
+            awsl.bucket_client(),
+            Some(writer),
+            opts_second,
+        )
+        .await?
+        .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("second pass timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows_after_second = iceberg::session::get_all(harness.trino()).await?;
+    assert_eq!(
+        rows_after_second.len(),
+        2,
+        "second pass must not write duplicates; AlreadyPublished detection should stop it"
+    );
+
+    awsl.cleanup().await?;
+    Ok(())
 }
 
 #[sqlx::test]
@@ -115,14 +192,14 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     .await?;
 
     // Run backfill - poller will exit via idle_timeout after processing all files
-    let options = test_backfill_options("test-backfill", start_time, end_time);
+    let options = common::test_backfill_options("test-backfill", start_time, end_time);
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await?
@@ -193,13 +270,13 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 
     // Run backfill with stop_after = file3_time (should process only first 2 files)
     // Poller exits via stop_after before reaching file3, then idle_timeout triggers exit
-    let options = test_backfill_options("test-backfill-stop", start_time, stop_time);
+    let options = common::test_backfill_options("test-backfill-stop", start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await?
@@ -276,13 +353,13 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     let process_name = "test-backfill-resume";
 
     // First run: process only first 2 files (stop before file3_time)
-    let options = test_backfill_options(process_name, start_time, stop_time);
+    let options = common::test_backfill_options(process_name, start_time, stop_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer.clone(),
+            Some(writer.clone()),
             options,
         )
         .await?
@@ -301,13 +378,13 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     // Second run: resume and process remaining files (same process_name)
     // The FileInfoPoller should skip already-processed files
     // Poller exits via idle_timeout after processing file3
-    let options = test_backfill_options(process_name, start_time, end_time);
+    let options = common::test_backfill_options(process_name, start_time, end_time);
     tokio::time::timeout(
         TEST_TIMEOUT,
         DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await?
@@ -361,14 +438,14 @@ async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    let options = test_backfill_options("test-backfill-filter", start_time, end_time);
+    let options = common::test_backfill_options("test-backfill-filter", start_time, end_time);
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await?
@@ -432,14 +509,14 @@ async fn burned_backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Res
     )
     .await?;
 
-    let options = test_backfill_options("test-burned-backfill", start_time, end_time);
+    let options = common::test_backfill_options("test-burned-backfill", start_time, end_time);
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         BurnedSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await?
@@ -486,14 +563,14 @@ async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
     )
     .await?;
 
-    let options = test_backfill_options("test-burned-backfill-epoch", start_time, end_time);
+    let options = common::test_backfill_options("test-burned-backfill-epoch", start_time, end_time);
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         BurnedSessionsBackfiller::create_managed_task(
             pool.clone(),
             awsl.bucket_client(),
-            writer,
+            Some(writer),
             options,
         )
         .await
