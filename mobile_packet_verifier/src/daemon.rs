@@ -1,5 +1,6 @@
 use crate::{
     accumulate::{accumulate_sessions, AccumulatedSessions},
+    backfill::{BackfillOptions, BurnedSessionsBackfiller, DataSessionsBackfiller},
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
@@ -30,36 +31,64 @@ use tokio::{
     time::{sleep_until, Duration, Instant},
 };
 
+// This enum exists to help with testing the Daemon.
+//
+// Normal setup for this service is for burned sessions to be part of a
+// FileSinkClient that commits itself automatically. The timing for that commit
+// is far beyond what we want in testing. We can allow tests to hook into the
+// runtime of Daemon by providing Events that is has done, and make decisions
+// based off those events. The easiest example of that is waiting for a
+// DaemonEvent::BurnSuccess and manually calling sink.commit() in a test to
+// ensure the correct items were written to s3.
+#[derive(Debug, Clone, Copy)]
+pub enum DaemonEvent {
+    BurnSuccess,
+    BurnFailure,
+    ReportHandle,
+    BackfillDataSession,
+    BackfillBurnedSession,
+}
+
 pub struct Daemon<S, MCR> {
     pool: Pool<Postgres>,
     burner: Burner<S>,
-    reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
     min_burn_period: Duration,
+    initial_burn_delay: Duration,
     mobile_config_resolver: MCR,
-    verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    iceberg_writer: Option<DataTransferWriter>,
+    ingest_reports: IngestReports,
+    event_tx: tokio::sync::broadcast::Sender<DaemonEvent>,
+    // backfill temp
+    session_backfill: DataSessionsBackfiller,
+    burned_backfill: BurnedSessionsBackfiller,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
-        settings: &Settings,
         pool: Pool<Postgres>,
-        reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+        burn_period: Duration,
+        min_burn_period: Duration,
+        initial_burn_delay: Duration,
+        ingest_reports: IngestReports,
         burner: Burner<S>,
         mobile_config_resolver: MCR,
-        verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-        iceberg_writer: Option<DataTransferWriter>,
+        // backfill temp
+        session_backfill: DataSessionsBackfiller,
+        burned_backfill: BurnedSessionsBackfiller,
     ) -> Self {
+        let (event_tx, _event_rx) = tokio::sync::broadcast::channel(100);
         Self {
             pool,
             burner,
-            reports,
-            burn_period: settings.burn_period,
-            min_burn_period: settings.min_burn_period,
+            burn_period,
+            min_burn_period,
+            initial_burn_delay,
             mobile_config_resolver,
-            verified_data_session_report_sink,
-            iceberg_writer,
+            ingest_reports,
+            session_backfill,
+            burned_backfill,
+            event_tx,
         }
     }
 }
@@ -79,64 +108,47 @@ where
     S: SolanaNetwork,
     MCR: MobileConfigResolverExt,
 {
+    pub fn event_rx(&self) -> tokio::sync::broadcast::Receiver<DaemonEvent> {
+        self.event_tx.subscribe()
+    }
+
     pub async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        // Set the initial burn period to one minute
-        let mut burn_time = Instant::now() + Duration::from_secs(60);
+        let mut burn_time = Instant::now() + self.initial_burn_delay;
         loop {
             tokio::select! {
                 biased;
                 _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
-                    // It's time to burn
                     match self.burner.confirm_and_burn(&self.pool).await {
                         Ok(_) => {
+                            let _ = self.event_tx.send(DaemonEvent::BurnSuccess);
                             burn_time = Instant::now() + self.burn_period;
                         }
                         Err(e) => {
+                            let _ = self.event_tx.send(DaemonEvent::BurnFailure);
                             burn_time = Instant::now() + self.min_burn_period;
-                            tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
+                            tracing::warn!("failed to burn {e:?}, retrying in {:?}", self.min_burn_period);
                         }
                     }
                 }
-                file = self.reports.recv() => {
-                    let Some(file_info_stream) = file else {
-                        anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
-                    };
-                    self.handle_file(file_info_stream).await?;
+                file = self.ingest_reports.recv() => {
+                    self.ingest_reports.handle(file, &self.mobile_config_resolver).await?;
+                    let _ = self.event_tx.send(DaemonEvent::ReportHandle);
                 }
-
+                // Backfill runs at lowest priority — only fires when burn and
+                // ingest have nothing ready. When iceberg is not configured,
+                // the backfillers set done=true on construction and recv()
+                // returns pending() immediately, so these arms never fire.
+                file = self.session_backfill.recv() => {
+                    self.session_backfill.handle(file).await?;
+                    let _ = self.event_tx.send(DaemonEvent::BackfillDataSession);
+                }
+                file = self.burned_backfill.recv() => {
+                    self.burned_backfill.handle(file).await?;
+                    let _ = self.event_tx.send(DaemonEvent::BackfillBurnedSession);
+                }
             }
         }
-    }
-
-    async fn handle_file(
-        &self,
-        file: FileInfoStream<DataTransferSessionIngestReport>,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Verifying file: {}", file.file_info);
-        let ts = file.file_info.timestamp;
-        let write_id = file.file_info.key.clone();
-        let mut transaction = self.pool.begin().await?;
-
-        let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
-        let reports = file.into_stream(&mut transaction).await?;
-
-        handle_data_transfer_session_file(
-            &mut transaction,
-            self.iceberg_writer.as_ref(),
-            &write_id,
-            banned_radios,
-            &self.mobile_config_resolver,
-            &self.verified_data_session_report_sink,
-            ts,
-            reports,
-        )
-        .await?;
-
-        transaction.commit().await?;
-        self.verified_data_session_report_sink.commit().await?;
-
-        Ok(())
     }
 }
 
@@ -178,6 +190,90 @@ pub async fn handle_data_transfer_session_file(
     Ok(())
 }
 
+/// Handles the real-time `DataTransferSessionIngestReport` stream for the daemon.
+///
+/// Mirrors the shape of [`DataSessionsBackfiller`] and [`BurnedSessionsBackfiller`]:
+/// the Daemon holds one of these, calls `recv()` in its `select!`, and forwards the
+/// result to `handle(file, mobile_config)`.  Unlike the backfillers, the channel is
+/// never expected to close while the daemon is running — a dropped sender is an error.
+///
+/// The `mobile_config_resolver` is intentionally **not** stored here; the Daemon
+/// passes `&self.mobile_config_resolver` at each call site so ownership stays in one place.
+pub struct IngestReports {
+    pool: Pool<Postgres>,
+    reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+    verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    iceberg_writer: Option<DataTransferWriter>,
+}
+
+impl IngestReports {
+    pub fn new(
+        pool: Pool<Postgres>,
+        reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+        verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+        iceberg_writer: Option<DataTransferWriter>,
+    ) -> Self {
+        Self {
+            pool,
+            reports,
+            verified_sink,
+            iceberg_writer,
+        }
+    }
+
+    pub async fn recv(&mut self) -> Option<FileInfoStream<DataTransferSessionIngestReport>> {
+        self.reports.recv().await
+    }
+
+    /// Process one file from the ingest stream.
+    ///
+    /// Returns `Err` if `file` is `None`, which means the upstream sender was dropped
+    /// — an unexpected condition that should propagate as a task failure.
+    pub async fn handle(
+        &self,
+        file: Option<FileInfoStream<DataTransferSessionIngestReport>>,
+        mobile_config: &impl MobileConfigResolverExt,
+    ) -> anyhow::Result<()> {
+        let Some(file_info_stream) = file else {
+            anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
+        };
+        self.handle_file(file_info_stream, mobile_config).await
+    }
+
+    async fn handle_file(
+        &self,
+        file: FileInfoStream<DataTransferSessionIngestReport>,
+        mobile_config: &impl MobileConfigResolverExt,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Verifying file: {}", file.file_info);
+        let ts = file.file_info.timestamp;
+        let mut transaction = self.pool.begin().await?;
+
+        let mut iceberg_txn =
+            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
+
+        let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        handle_data_transfer_session_file(
+            &mut transaction,
+            iceberg_txn.as_mut(),
+            banned_radios,
+            mobile_config,
+            &self.verified_sink,
+            ts,
+            reports,
+        )
+        .await?;
+
+        iceberg::maybe_publish(iceberg_txn).await?;
+        transaction.commit().await?;
+        self.verified_sink.commit().await?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
 
@@ -215,7 +311,7 @@ impl Cmd {
         )
         .await?;
 
-        let (invalid_sessions, invalid_sessions_server) =
+        let (verified_sessions, verified_sessions_server) =
             VerifiedDataTransferIngestReportV1::file_sink(
                 &settings.cache,
                 file_upload.clone(),
@@ -240,7 +336,7 @@ impl Cmd {
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
-            burned_session_writer,
+            burned_session_writer.clone(),
         );
 
         let (reports, reports_server) = file_source::continuous_source()
@@ -253,14 +349,49 @@ impl Cmd {
 
         let resolver = MobileConfigClients::new(&settings.config_client)?;
 
-        let daemon = Daemon::new(
-            settings,
+        let ingest_reports = IngestReports::new(
             pool.clone(),
             reports,
+            verified_sessions,
+            session_writer.clone(),
+        );
+
+        // Backfill covers [backfill.start_after, backfill.stop_after):
+        //   - backfill.stop_after is the Iceberg deployment date (set at deploy time)
+        //   - everything before stop_after is historical data written by the backfiller
+        //   - everything from stop_after onwards is written to Iceberg in real-time
+        // This boundary is deterministic and configured at deploy time — no overlap.
+        let backfill_opts = BackfillOptions::new(
+            "backfill",
+            settings.backfill.start_after,
+            settings.backfill.stop_after,
+        );
+
+        let (data_session_backfill, backfill_reports_server) = DataSessionsBackfiller::create(
+            pool.clone(),
+            settings.output_bucket.connect().await,
+            session_writer,
+            backfill_opts.clone(),
+        )
+        .await?;
+        let (burned_session_backfill, burned_reports_server) = BurnedSessionsBackfiller::create(
+            pool.clone(),
+            settings.output_bucket.connect().await,
+            burned_session_writer.clone(),
+            backfill_opts,
+        )
+        .await?;
+
+        let daemon = Daemon::new(
+            pool.clone(),
+            settings.burn_period,
+            settings.min_burn_period,
+            Duration::from_secs(60),
+            ingest_reports,
             burner,
             resolver,
-            invalid_sessions,
-            session_writer,
+            data_session_backfill,
+            burned_session_backfill,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
@@ -269,11 +400,14 @@ impl Cmd {
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_sessions_server)
-            .add_task(invalid_sessions_server)
+            .add_task(verified_sessions_server)
             .add_task(reports_server)
             .add_task(banning)
             .add_task(event_id_purger)
             .add_task(daemon)
+            // temp backfill
+            .add_task(backfill_reports_server)
+            .add_task(burned_reports_server)
             .build()
             .start()
             .await?;
