@@ -5,3 +5,4 @@ pub mod backfill;
 pub mod banning;
 pub mod burn_metric;
 pub mod burner;
+pub mod daemon;
