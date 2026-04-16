@@ -57,6 +57,47 @@ pub struct Settings {
     pub banning: banning::BanSettings,
 
     pub iceberg_settings: Option<helium_iceberg::Settings>,
+
+    /// Settings for Iceberg backfill. Only used when iceberg_settings is configured.
+    /// Backfill processes VerifiedDataTransferSession and ValidDataTransferSession files
+    /// from `backfill.start_after` up to `backfill.stop_after` (the Iceberg deployment date).
+    #[serde(default)]
+    pub backfill: BackfillSettings,
+}
+
+/// Settings controlling the Iceberg backfill window.
+///
+/// Backfill covers [`start_after`, `stop_after`). Set `stop_after` to the date
+/// Iceberg was first enabled in production. Files before that date are written by
+/// the backfiller; files on or after are written by the daemon's real-time path.
+/// Defaults to `DateTime::<Utc>::MAX_UTC` (no upper bound) when not configured.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BackfillSettings {
+    /// Start of the backfill window. Defaults to UNIX_EPOCH (backfill all available history).
+    #[serde(default = "default_backfill_start_after")]
+    pub start_after: DateTime<Utc>,
+    /// End of the backfill window (exclusive). Set to the Iceberg deployment date to prevent
+    /// the backfiller from overlapping with the daemon's real-time Iceberg writes.
+    /// Defaults to MAX (no upper bound).
+    #[serde(default = "default_backfill_stop_after")]
+    pub stop_after: DateTime<Utc>,
+}
+
+impl Default for BackfillSettings {
+    fn default() -> Self {
+        Self {
+            start_after: default_backfill_start_after(),
+            stop_after: default_backfill_stop_after(),
+        }
+    }
+}
+
+fn default_backfill_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
+}
+
+fn default_backfill_stop_after() -> DateTime<Utc> {
+    DateTime::<Utc>::MAX_UTC
 }
 
 fn default_purger_interval() -> Duration {
