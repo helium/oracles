@@ -61,7 +61,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 
@@ -141,7 +141,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 
@@ -208,7 +208,7 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 
@@ -262,7 +262,7 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 

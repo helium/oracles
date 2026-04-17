@@ -718,16 +718,6 @@ impl TableDefinitionBuilder {
         )
     }
 
-    /// Enable Write-Audit-Publish (WAP) for this table.
-    pub fn wap_enabled(self) -> Self {
-        self.with_wap_enabled(true)
-    }
-
-    /// Enable or disable Write-Audit-Publish (WAP) for this table.
-    pub fn with_wap_enabled(self, enabled: bool) -> Self {
-        self.with_property(crate::branch::WAP_ENABLED_PROPERTY, enabled.to_string())
-    }
-
     /// Set the maximum age of snapshot references to keep when expiring.
     pub fn with_max_ref_age(self, duration: std::time::Duration) -> Self {
         self.with_property(

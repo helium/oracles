@@ -530,8 +530,6 @@ async fn run_accumulate_sessions(
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
 
-    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
-
     let ts = Utc::now();
 
     let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(10);
@@ -541,7 +539,8 @@ async fn run_accumulate_sessions(
 
     handle_data_transfer_session_file(
         &mut txn,
-        iceberg_txn.as_mut(),
+        iceberg_writer.as_ref(),
+        "test_write_id",
         banned_radios,
         &mobile_config,
         &verified_sessions,
@@ -551,8 +550,6 @@ async fn run_accumulate_sessions(
     .await?;
 
     txn.commit().await?;
-
-    iceberg::maybe_publish(iceberg_txn).await?;
 
     Ok(verified_sessions_rx)
 }

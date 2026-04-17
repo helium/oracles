@@ -209,11 +209,7 @@ impl DataSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-        let mut iceberg_txn = self
-            .writer
-            .begin(file.file_info.as_ref())
-            .await
-            .context("beginning iceberg transaction")?;
+        let write_id = file.file_info.key.clone();
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -228,15 +224,11 @@ impl DataSessionsBackfiller {
 
         let valid_count = iceberg_sessions.len();
         let filtered_count = total - valid_count;
-        iceberg_txn
-            .write(iceberg_sessions)
+        self.writer
+            .write_idempotent(&write_id, iceberg_sessions)
             .await
-            .context("writing to iceberg")?;
+            .context("writing sessions to iceberg")?;
 
-        iceberg_txn
-            .publish()
-            .await
-            .context("publishing to iceberg")?;
         txn.commit().await.context("committing db transaction")?;
 
         tracing::info!(
@@ -338,11 +330,7 @@ impl BurnedSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-        let mut iceberg_txn = self
-            .writer
-            .begin(file.file_info.as_ref())
-            .await
-            .context("beginning iceberg transaction")?;
+        let write_id = file.file_info.key.clone();
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -352,15 +340,11 @@ impl BurnedSessionsBackfiller {
             .await;
 
         let count = iceberg_sessions.len();
-        iceberg_txn
-            .write(iceberg_sessions)
+        self.writer
+            .write_idempotent(&write_id, iceberg_sessions)
             .await
-            .context("writing to iceberg")?;
+            .context("writing burned sessions to iceberg")?;
 
-        iceberg_txn
-            .publish()
-            .await
-            .context("publishing to iceberg")?;
         txn.commit().await.context("committing db transaction")?;
 
         tracing::info!(file = %file_info, count, "backfilled burned sessions file");

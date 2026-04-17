@@ -1,11 +1,31 @@
+//! Iceberg table wrapper with idempotent writes.
+//!
+//! Idempotency is keyed by an application-provided `id` that gets stamped
+//! onto the snapshot summary under the `helium.write_id` property. Before a
+//! write, if any snapshot on main already carries that id, the write is a
+//! no-op.
+//!
+//! Caveats:
+//! 1. Snapshot expiration invalidates idempotency. If `expire_snapshots`
+//!    removes the snapshot carrying a given `helium.write_id`, a replay
+//!    re-commits. For retention longer than your snapshot history, track
+//!    processed ids externally.
+//! 2. Cross-table atomicity is not provided — partial failure across
+//!    multiple writes leaves some tables committed and others not; retry
+//!    completes the rest.
+//! 3. Orphaned parquet files if concurrent `write_idempotent` calls race
+//!    on the same id. Iceberg's orphan-file cleanup handles these.
+//! 4. The legacy `wap.id` property is still read during the idempotency
+//!    check for a migration window. Safe to remove once all in-flight
+//!    snapshots carrying the old property have expired.
+
 use crate::catalog::Catalog;
-use crate::writer::{BranchPublisher, BranchTransaction, BranchWriter, DataWriter};
+use crate::writer::DataWriter;
 use crate::{Error, Result};
 use arrow_array::RecordBatch;
 use arrow_json::reader::ReaderBuilder;
 use async_trait::async_trait;
 use iceberg::arrow::{schema_to_arrow_schema, RecordBatchPartitionSplitter};
-use iceberg::spec::MAIN_BRANCH;
 use iceberg::table::Table;
 use iceberg::transaction::{ApplyTransactionAction, Transaction as IcebergTransaction};
 use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
@@ -21,6 +41,15 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Snapshot summary property used to key idempotent writes.
+pub(crate) const WRITE_ID_PROPERTY: &str = "helium.write_id";
+
+/// Legacy property name from the previous branch-based WAP workflow. Read
+/// during the idempotency check so in-flight files written before this
+/// module was refactored aren't reprocessed. Safe to remove once all
+/// snapshots carrying this property have expired.
+const LEGACY_WAP_ID_PROPERTY: &str = "wap.id";
 
 pub struct IcebergTable<T> {
     pub(crate) catalog: Catalog,
@@ -43,23 +72,20 @@ impl<T> IcebergTable<T> {
         })
     }
 
-    /// Returns the `additional_properties` from the latest snapshot on the
-    /// main branch, or an empty map when no snapshot exists yet.
-    pub async fn snapshot_properties(&self) -> HashMap<String, String> {
-        let table = self.table.read().await;
-        table
-            .metadata()
-            .snapshot_for_ref(MAIN_BRANCH)
-            .map(|s| s.summary().additional_properties.clone())
-            .unwrap_or_default()
-    }
-
-    async fn write_and_commit(&self, batch: RecordBatch) -> Result {
+    async fn write_and_commit(
+        &self,
+        batch: RecordBatch,
+        snapshot_properties: HashMap<String, String>,
+    ) -> Result {
         let data_files = write_data_files(&self.table, batch).await?;
-        self.commit_files(data_files).await
+        self.commit_files(data_files, snapshot_properties).await
     }
 
-    async fn commit_files(&self, data_files: Vec<iceberg::spec::DataFile>) -> Result {
+    async fn commit_files(
+        &self,
+        data_files: Vec<iceberg::spec::DataFile>,
+        snapshot_properties: HashMap<String, String>,
+    ) -> Result {
         if data_files.is_empty() {
             return Ok(());
         }
@@ -67,10 +93,14 @@ impl<T> IcebergTable<T> {
         self.catalog
             .with_auth(|| {
                 let data_files = data_files.clone();
+                let snapshot_properties = snapshot_properties.clone();
                 async {
                     let table = self.table.read().await;
                     let tx = IcebergTransaction::new(&table);
-                    let action = tx.fast_append().add_data_files(data_files);
+                    let action = tx
+                        .fast_append()
+                        .set_snapshot_properties(snapshot_properties)
+                        .add_data_files(data_files);
                     let tx = action.apply(tx)?;
                     drop(table);
                     tx.commit(self.catalog.as_ref()).await
@@ -94,129 +124,27 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         let table = self.table.read().await;
         let batch = records_to_batch(&table, &records)?;
         drop(table);
-        self.write_and_commit(batch).await
+        self.write_and_commit(batch, HashMap::new()).await
     }
 
-    async fn begin(&self, wap_id: &str) -> Result<BranchTransaction<T>> {
+    async fn write_idempotent(&self, id: &str, records: Vec<T>) -> Result {
         reload_table(&self.catalog, &self.table).await?;
+
+        if has_write_id(&*self.table.read().await, id) {
+            tracing::debug!(id, "write_id already present, skipping");
+            return Ok(());
+        }
+
+        if records.is_empty() {
+            return Ok(());
+        }
 
         let table = self.table.read().await;
-
-        let wap_id_found = has_wap_id(&table, wap_id)?;
-        let branch_exists = table.metadata().snapshot_for_ref(wap_id).is_some();
+        let batch = records_to_batch(&table, &records)?;
         drop(table);
 
-        match detect_wap_state(wap_id_found, branch_exists) {
-            WapState::NotStarted => {
-                tracing::debug!(wap_id, "WAP not started, creating fresh branch");
-                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
-                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
-                    catalog: self.catalog.clone(),
-                    table: Arc::clone(&self.table),
-                    branch_name: wap_id.to_string(),
-                    _phantom: PhantomData,
-                })))
-            }
-            WapState::StaleBranch => {
-                tracing::debug!(wap_id, "stale branch detected, deleting and recreating");
-                let table_guard = self.table.read().await;
-                crate::branch::delete_branch(&self.catalog, &table_guard, wap_id).await?;
-                drop(table_guard);
-                crate::branch::create_branch(&self.catalog, &self.table, wap_id).await?;
-                Ok(BranchTransaction::Writer(Box::new(IcebergBranchWriter {
-                    catalog: self.catalog.clone(),
-                    table: Arc::clone(&self.table),
-                    branch_name: wap_id.to_string(),
-                    _phantom: PhantomData,
-                })))
-            }
-            WapState::WrittenNotPublished => {
-                tracing::debug!(wap_id, "written but not published");
-                Ok(BranchTransaction::Publisher(Box::new(
-                    IcebergBranchPublisher {
-                        catalog: self.catalog.clone(),
-                        table: Arc::clone(&self.table),
-                        branch_name: wap_id.to_string(),
-                    },
-                )))
-            }
-            WapState::AlreadyPublished => {
-                tracing::debug!(wap_id, "already published, nothing to do");
-                Ok(BranchTransaction::Complete)
-            }
-        }
-    }
-}
-
-struct IcebergBranchWriter<T> {
-    catalog: Catalog,
-    table: Arc<RwLock<Table>>,
-    branch_name: String,
-    _phantom: PhantomData<T>,
-}
-
-#[async_trait]
-impl<T: Serialize + Send + 'static> BranchWriter<T> for IcebergBranchWriter<T> {
-    async fn write(self: Box<Self>, records: Vec<T>) -> Result<Box<dyn BranchPublisher>> {
-        if records.is_empty() {
-            return Ok(Box::new(EmptyIcebergBranchPublisher {
-                catalog: self.catalog,
-                table: self.table,
-                branch_name: self.branch_name,
-            }));
-        }
-
-        reload_table(&self.catalog, &self.table).await?;
-        let table_guard = self.table.read().await;
-        let batch = records_to_batch(&table_guard, &records)?;
-        drop(table_guard);
-        let data_files = write_data_files(&self.table, batch).await?;
-        crate::branch::commit_to_branch(
-            &self.catalog,
-            &self.table,
-            &self.branch_name,
-            data_files,
-            &self.branch_name,
-        )
-        .await?;
-
-        Ok(Box::new(IcebergBranchPublisher {
-            catalog: self.catalog,
-            table: self.table,
-            branch_name: self.branch_name,
-        }))
-    }
-}
-
-/// When no records are passed to an [IcebergBranchWriter], the branch created
-/// by [`begin()`] has no data. Publishing this struct deletes the empty branch
-/// to avoid leaving orphaned refs in the catalog.
-struct EmptyIcebergBranchPublisher {
-    catalog: Catalog,
-    table: Arc<RwLock<Table>>,
-    branch_name: String,
-}
-
-#[async_trait]
-impl BranchPublisher for EmptyIcebergBranchPublisher {
-    async fn publish(self: Box<Self>) -> Result {
-        tracing::debug!("Deleting empty branch");
-        reload_table(&self.catalog, &self.table).await?;
-        let table_guard = self.table.read().await;
-        crate::branch::delete_branch(&self.catalog, &table_guard, &self.branch_name).await
-    }
-}
-
-struct IcebergBranchPublisher {
-    catalog: Catalog,
-    table: Arc<RwLock<Table>>,
-    branch_name: String,
-}
-
-#[async_trait]
-impl BranchPublisher for IcebergBranchPublisher {
-    async fn publish(self: Box<Self>) -> Result {
-        crate::branch::publish_branch(&self.catalog, &self.table, &self.branch_name).await
+        let props = HashMap::from([(WRITE_ID_PROPERTY.to_string(), id.to_string())]);
+        self.write_and_commit(batch, props).await
     }
 }
 
@@ -225,7 +153,6 @@ pub(crate) async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Re
     let namespace = identifier.namespace().to_url_string();
     let table_name = identifier.name().to_string();
 
-    // Use Catalog::load_table which has 401 retry logic
     let new_table = catalog.load_table(namespace, table_name).await?;
     *table.write().await = new_table;
     Ok(())
@@ -262,12 +189,13 @@ async fn write_data_files(
     let location_generator =
         DefaultLocationGenerator::new(table_guard.metadata().clone()).map_err(Error::Iceberg)?;
     drop(table_guard);
-    let timestamp_millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .map_err(|e| Error::Writer(format!("failed to get system time: {e}")))?;
+    // Use a v7 UUID (time-ordered + random) so concurrent writers never
+    // collide on file paths, even with sub-millisecond-close timestamps.
+    // A plain wall-clock prefix would let two writers generate the same
+    // path, trip `fast_append`'s duplicate-file check, and fail the second
+    // commit.
     let file_name_generator = DefaultFileNameGenerator::new(
-        format!("{timestamp_millis}"),
+        uuid::Uuid::now_v7().to_string(),
         None,
         iceberg::spec::DataFileFormat::Parquet,
     );
@@ -318,68 +246,10 @@ fn build_writer_properties(
         .build()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WapState {
-    NotStarted,
-    StaleBranch,
-    WrittenNotPublished,
-    AlreadyPublished,
-}
-
-fn detect_wap_state(wap_id_found: bool, branch_exists: bool) -> WapState {
-    match (wap_id_found, branch_exists) {
-        (false, false) => WapState::NotStarted,
-        (false, true) => WapState::StaleBranch,
-        (true, true) => WapState::WrittenNotPublished,
-        (true, false) => WapState::AlreadyPublished,
-    }
-}
-
-fn has_wap_id(table: &Table, wap_id: &str) -> Result<bool> {
-    let meta = table.metadata();
-
-    let wap_enabled = meta
-        .properties()
-        .get(crate::branch::WAP_ENABLED_PROPERTY)
-        .map(|x| x.as_str());
-
-    if wap_enabled != Some("true") {
-        return Err(Error::Branch(format!(
-            "WAP not enabled for table {}. Add TableDefinition.wap_enabled()",
-            table.identifier()
-        )));
-    }
-
-    Ok(meta.snapshots().any(|snapshot| {
-        snapshot
-            .summary()
-            .additional_properties
-            .get(crate::branch::WAP_ID_KEY)
-            .is_some_and(|v| v == wap_id)
-    }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_detect_wap_state_not_started() {
-        assert_eq!(detect_wap_state(false, false), WapState::NotStarted,);
-    }
-
-    #[test]
-    fn test_detect_wap_state_stale_branch() {
-        assert_eq!(detect_wap_state(false, true), WapState::StaleBranch,);
-    }
-
-    #[test]
-    fn test_detect_wap_state_written_not_published() {
-        assert_eq!(detect_wap_state(true, true), WapState::WrittenNotPublished,);
-    }
-
-    #[test]
-    fn test_detect_wap_state_already_published() {
-        assert_eq!(detect_wap_state(true, false), WapState::AlreadyPublished,);
-    }
+fn has_write_id(table: &Table, id: &str) -> bool {
+    table.metadata().snapshots().any(|snapshot| {
+        let props = &snapshot.summary().additional_properties;
+        props.get(WRITE_ID_PROPERTY).is_some_and(|v| v == id)
+            || props.get(LEGACY_WAP_ID_PROPERTY).is_some_and(|v| v == id)
+    })
 }

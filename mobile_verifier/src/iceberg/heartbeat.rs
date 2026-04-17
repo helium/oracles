@@ -51,7 +51,6 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             SortFieldDefinition::ascending("hotspot_pubkey"),
             SortFieldDefinition::ascending("received_timestamp"),
         ])
-        .wap_enabled()
         .build()
 }
 

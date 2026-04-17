@@ -90,7 +90,6 @@ async fn run_accumulate_sessions(
     iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
-    let mut iceberg_txn = iceberg::maybe_begin(iceberg_writer.as_ref(), "test_wap").await?;
 
     let ts = Utc::now();
 
@@ -100,7 +99,8 @@ async fn run_accumulate_sessions(
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
     handle_data_transfer_session_file(
         &mut txn,
-        iceberg_txn.as_mut(),
+        iceberg_writer.as_ref(),
+        "test_write_id",
         banned_radios,
         &mobile_config,
         &verified_sessions,
@@ -110,7 +110,6 @@ async fn run_accumulate_sessions(
     .await?;
 
     txn.commit().await?;
-    iceberg::maybe_publish(iceberg_txn).await?;
 
     Ok(verified_sessions_rx)
 }

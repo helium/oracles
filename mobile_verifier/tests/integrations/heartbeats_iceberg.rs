@@ -57,9 +57,9 @@ async fn write_single_heartbeat_with_all_fields() -> anyhow::Result<()> {
     let vhb = make_validated_heartbeat(1);
     let iceberg_hb = IcebergHeartbeat::from(&vhb);
 
-    let mut txn = writer.begin("test_single").await?;
-    txn.write(vec![iceberg_hb.clone()]).await?;
-    txn.publish().await?;
+    writer
+        .write_idempotent("test_single", vec![iceberg_hb.clone()])
+        .await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
@@ -101,9 +101,9 @@ async fn write_heartbeat_with_no_optional_fields() -> anyhow::Result<()> {
 
     let iceberg_hb = IcebergHeartbeat::from(&vhb);
 
-    let mut txn = writer.begin("test_no_optionals").await?;
-    txn.write(vec![iceberg_hb.clone()]).await?;
-    txn.publish().await?;
+    writer
+        .write_idempotent("test_no_optionals", vec![iceberg_hb.clone()])
+        .await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
@@ -125,9 +125,7 @@ async fn write_multiple_heartbeats() -> anyhow::Result<()> {
         .map(|i| IcebergHeartbeat::from(&make_validated_heartbeat(i)))
         .collect();
 
-    let mut txn = writer.begin("test_multiple").await?;
-    txn.write(heartbeats).await?;
-    txn.publish().await?;
+    writer.write_idempotent("test_multiple", heartbeats).await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
@@ -181,9 +179,9 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
         })
         .collect();
 
-    let mut txn = writer.begin("test_device_types").await?;
-    txn.write(heartbeats).await?;
-    txn.publish().await?;
+    writer
+        .write_idempotent("test_device_types", heartbeats)
+        .await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
@@ -207,7 +205,7 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn write_heartbeats_via_maybe_begin_maybe_publish() -> anyhow::Result<()> {
+async fn maybe_write_idempotent_handles_some_and_none() -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer::<IcebergHeartbeat>(iceberg::heartbeat::TABLE_NAME)
@@ -216,24 +214,15 @@ async fn write_heartbeats_via_maybe_begin_maybe_publish() -> anyhow::Result<()> 
     let vhb = make_validated_heartbeat(2);
     let iceberg_hb = IcebergHeartbeat::from(&vhb);
 
-    // Test with Some(writer) path
-    let mut txn = iceberg::maybe_begin(Some(&writer), "test_maybe").await?;
-    assert!(txn.is_some());
-    txn.as_mut()
-        .unwrap()
-        .write(vec![iceberg_hb.clone()])
-        .await?;
-    iceberg::maybe_publish(txn).await?;
+    iceberg::maybe_write_idempotent(Some(&writer), "test_maybe", vec![iceberg_hb.clone()]).await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;
     assert_eq!(all.len(), 1);
     assert_eq!(all[0], iceberg_hb);
 
-    // Test with None path — should produce no error and no additional rows
-    let txn_none = iceberg::maybe_begin::<IcebergHeartbeat>(None, "test_maybe_none").await?;
-    assert!(txn_none.is_none());
-    iceberg::maybe_publish(txn_none).await?;
+    // None path — should produce no error and no additional rows
+    iceberg::maybe_write_idempotent::<IcebergHeartbeat>(None, "test_maybe_none", vec![]).await?;
 
     let all_after = iceberg::heartbeat::get_all(trino).await?;
     assert_eq!(all_after.len(), 1);
@@ -248,9 +237,7 @@ async fn empty_write_produces_no_rows() -> anyhow::Result<()> {
         .get_table_writer::<IcebergHeartbeat>(iceberg::heartbeat::TABLE_NAME)
         .await?;
 
-    let mut txn = writer.begin("test_empty").await?;
-    txn.write(vec![]).await?;
-    txn.publish().await?;
+    writer.write_idempotent("test_empty", vec![]).await?;
 
     let trino = harness.trino();
     let all = iceberg::heartbeat::get_all(trino).await?;

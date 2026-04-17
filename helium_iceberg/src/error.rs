@@ -18,18 +18,6 @@ pub enum Error {
 
     #[error("writer error: {0}")]
     Writer(String),
-
-    #[error("branch error: {0}")]
-    Branch(String),
-
-    #[error("commit conflict: {0}")]
-    CommitConflict(String),
-}
-
-impl Error {
-    pub fn is_commit_conflict(&self) -> bool {
-        matches!(self, Error::CommitConflict(_))
-    }
 }
 
 pub trait IntoHeliumIcebergError<T> {
@@ -42,18 +30,5 @@ where
 {
     fn err_into(self) -> Result<T> {
         self.map_err(|e| e.into())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_commit_conflict() {
-        assert!(Error::CommitConflict("conflict".into()).is_commit_conflict());
-        assert!(!Error::Catalog("not a conflict".into()).is_commit_conflict());
-        assert!(!Error::Branch("not a conflict".into()).is_commit_conflict());
-        assert!(!Error::Writer("not a conflict".into()).is_commit_conflict());
     }
 }
