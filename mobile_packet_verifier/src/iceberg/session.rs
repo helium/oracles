@@ -46,7 +46,6 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             "report_received_timestamp",
             "report_received_timestamp_day",
         ))
-        .wap_enabled()
         .build()
 }
 

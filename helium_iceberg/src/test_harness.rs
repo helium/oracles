@@ -950,6 +950,138 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn write_idempotent_skips_duplicate_id() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
+        let writer = harness.get_table_writer::<Person>("people").await?;
+
+        let rows = vec![Person {
+            name: "Alice".to_string(),
+            age: 30,
+            inserted: utc_now(),
+        }];
+
+        writer.write_idempotent("dup-id", rows.clone()).await?;
+        // Second call with the same id must be a no-op — no new snapshot, no
+        // duplicate rows.
+        writer.write_idempotent("dup-id", rows.clone()).await?;
+
+        let queried = harness
+            .trino()
+            .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
+            .await?
+            .into_vec();
+        assert_eq!(queried, rows);
+
+        // Exactly one snapshot should carry the write_id in its summary.
+        #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+        struct Count {
+            c: i64,
+        }
+        let counts = harness
+            .trino()
+            .get_all::<Count>(
+                "SELECT count(*) AS c FROM default.\"people$snapshots\"
+                 WHERE summary['helium.write_id'] = 'dup-id'"
+                    .to_string(),
+            )
+            .await?
+            .into_vec();
+        assert_eq!(counts, vec![Count { c: 1 }]);
+
+        Ok(())
+    }
+
+    /// Concurrent writes to the same table must compose via `fast_append`:
+    /// neither writer should clobber the other. Exercises the scenario that
+    /// broke under the old branch-based WAP `publish_branch`.
+    #[tokio::test]
+    async fn concurrent_writes_dont_clobber() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
+        let writer = harness.get_table_writer::<Person>("people").await?;
+
+        let seed = vec![Person {
+            name: "Seed".to_string(),
+            age: 1,
+            inserted: utc_now(),
+        }];
+        writer.write(seed.clone()).await?;
+
+        // Kick off an idempotent write and a plain write concurrently.
+        let writer_a = writer.clone();
+        let rows_a = vec![Person {
+            name: "Alice".to_string(),
+            age: 30,
+            inserted: utc_now(),
+        }];
+        let rows_a_clone = rows_a.clone();
+        let task_a =
+            tokio::spawn(async move { writer_a.write_idempotent("a", rows_a_clone.clone()).await });
+
+        let writer_b = writer.clone();
+        let rows_b = vec![Person {
+            name: "Bob".to_string(),
+            age: 40,
+            inserted: utc_now(),
+        }];
+        let rows_b_clone = rows_b.clone();
+        let task_b = tokio::spawn(async move { writer_b.write(rows_b_clone.clone()).await });
+
+        task_a.await??;
+        task_b.await??;
+
+        let mut expected = [seed, rows_a, rows_b].concat();
+        expected.sort_by(|a, b| a.name.cmp(&b.name));
+        let queried = harness
+            .trino()
+            .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
+            .await?
+            .into_vec();
+        assert_eq!(queried, expected);
+
+        Ok(())
+    }
+
+    /// A Trino DELETE that commits between two idempotent writes must be
+    /// preserved — this is the end-to-end reproduction of the bug the user
+    /// hit where a DELETE on `mobile.data_transfer.session` "came back"
+    /// after a WAP publish.
+    #[tokio::test]
+    async fn delete_between_writes_is_preserved() -> anyhow::Result<()> {
+        let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
+        let writer = harness.get_table_writer::<Person>("people").await?;
+
+        let alice = Person {
+            name: "Alice".to_string(),
+            age: 30,
+            inserted: utc_now(),
+        };
+        let bob = Person {
+            name: "Bob".to_string(),
+            age: 40,
+            inserted: utc_now(),
+        };
+
+        writer.write_idempotent("a", vec![alice.clone()]).await?;
+
+        // External DELETE lands on main between our two writes.
+        harness
+            .trino()
+            .execute("DELETE FROM default.people WHERE name = 'Alice'".to_string())
+            .await?;
+
+        writer.write_idempotent("b", vec![bob.clone()]).await?;
+
+        let queried = harness
+            .trino()
+            .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
+            .await?
+            .into_vec();
+        assert_eq!(queried, vec![bob]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_nested_field_types() -> anyhow::Result<()> {
         #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
         struct Outer {

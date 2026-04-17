@@ -150,8 +150,8 @@ where
             "Processing WIFI heartbeat file"
         );
         let mut transaction = self.pool.begin().await?;
-        let mut iceberg_txn =
-            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
+        let write_id = file.file_info.key.clone();
+        let iceberg_ctx = self.iceberg_writer.as_ref().map(|w| (w, write_id.as_str()));
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let heartbeats = file
@@ -173,10 +173,9 @@ where
             &self.heartbeat_sink,
             &self.seniority_sink,
             &mut transaction,
-            iceberg_txn.as_mut(),
+            iceberg_ctx,
         )
         .await?;
-        iceberg::maybe_publish(iceberg_txn).await?;
         self.heartbeat_sink.commit().await?;
         self.seniority_sink.commit().await?;
         transaction.commit().await?;

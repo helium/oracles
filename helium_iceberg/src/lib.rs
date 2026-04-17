@@ -1,6 +1,5 @@
 extern crate tls_init;
 
-mod branch;
 mod catalog;
 mod error;
 mod iceberg_table;
@@ -19,10 +18,7 @@ pub use table_creator::{
     FieldDefinition, FieldKind, ParquetCompression, PartitionDefinition, SortFieldDefinition,
     TableCreator, TableDefinition, TableDefinitionBuilder, PARQUET_COMPRESSION_CODEC,
 };
-pub use writer::{
-    BoxedDataWriter, BranchPublisher, BranchTransaction, BranchWriter, DataWriter,
-    IntoBoxedDataWriter,
-};
+pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
 // Re-export iceberg types for ergonomic API usage
 pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};

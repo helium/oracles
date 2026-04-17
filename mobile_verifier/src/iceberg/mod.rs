@@ -1,5 +1,5 @@
 use anyhow::Context;
-use helium_iceberg::{BoxedDataWriter, BranchTransaction, IntoBoxedDataWriter};
+use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
 pub mod gateway_reward;
@@ -15,7 +15,6 @@ pub const NAMESPACE: &str = "poc";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
-pub type HeartbeatTransaction = BranchTransaction<IcebergHeartbeat>;
 
 pub async fn get_writer(settings: &helium_iceberg::Settings) -> anyhow::Result<HeartbeatWriter> {
     let catalog = settings.connect().await.context("connecting to catalog")?;
@@ -37,49 +36,60 @@ pub struct RewardWriters {
     unallocated: BoxedDataWriter<unallocated_reward::IcebergUnallocatedReward>,
 }
 
-pub struct RewardTransactions {
-    pub proof_of_coverage: BranchTransaction<radio_reward::IcebergRadioReward>,
-    pub covered_hexes: BranchTransaction<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
-    pub data_transfer: BranchTransaction<gateway_reward::IcebergGatewayReward>,
-    pub service_provider: BranchTransaction<service_provider_reward::IcebergServiceProviderReward>,
-    pub unallocated: BranchTransaction<unallocated_reward::IcebergUnallocatedReward>,
-}
-
 impl RewardWriters {
-    pub async fn begin(&self, wap_id: &str) -> anyhow::Result<RewardTransactions> {
-        Ok(RewardTransactions {
-            proof_of_coverage: self.proof_of_coverage.begin(wap_id).await?,
-            covered_hexes: self.covered_hexes.begin(wap_id).await?,
-            data_transfer: self.data_transfer.begin(wap_id).await?,
-            service_provider: self.service_provider.begin(wap_id).await?,
-            unallocated: self.unallocated.begin(wap_id).await?,
-        })
-    }
-}
-
-impl RewardTransactions {
-    pub async fn publish(self) -> anyhow::Result<()> {
+    pub async fn write_proof_of_coverage(
+        &self,
+        id: &str,
+        rows: Vec<radio_reward::IcebergRadioReward>,
+    ) -> anyhow::Result<()> {
         self.proof_of_coverage
-            .publish()
+            .write_idempotent(id, rows)
             .await
-            .context("publishing proof_of_coverage")?;
+            .context("writing proof_of_coverage")
+    }
+
+    pub async fn write_covered_hexes(
+        &self,
+        id: &str,
+        rows: Vec<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
+    ) -> anyhow::Result<()> {
         self.covered_hexes
-            .publish()
+            .write_idempotent(id, rows)
             .await
-            .context("publishing covered_hexes")?;
+            .context("writing covered_hexes")
+    }
+
+    pub async fn write_data_transfer(
+        &self,
+        id: &str,
+        rows: Vec<gateway_reward::IcebergGatewayReward>,
+    ) -> anyhow::Result<()> {
         self.data_transfer
-            .publish()
+            .write_idempotent(id, rows)
             .await
-            .context("publishing data_transfer")?;
+            .context("writing data_transfer")
+    }
+
+    pub async fn write_service_provider(
+        &self,
+        id: &str,
+        rows: Vec<service_provider_reward::IcebergServiceProviderReward>,
+    ) -> anyhow::Result<()> {
         self.service_provider
-            .publish()
+            .write_idempotent(id, rows)
             .await
-            .context("publishing service_provider")?;
+            .context("writing service_provider")
+    }
+
+    pub async fn write_unallocated(
+        &self,
+        id: &str,
+        rows: Vec<unallocated_reward::IcebergUnallocatedReward>,
+    ) -> anyhow::Result<()> {
         self.unallocated
-            .publish()
+            .write_idempotent(id, rows)
             .await
-            .context("publishing unallocated")?;
-        Ok(())
+            .context("writing unallocated")
     }
 }
 
@@ -117,23 +127,16 @@ pub async fn get_reward_writers(
     })
 }
 
-pub async fn maybe_begin<T: Serialize + Send + 'static>(
+pub async fn maybe_write_idempotent<T: Serialize + Send + 'static>(
     writer: Option<&BoxedDataWriter<T>>,
-    wap_id: &str,
-) -> anyhow::Result<Option<BranchTransaction<T>>> {
-    let Some(data_writer) = writer else {
-        return Ok(None);
-    };
-
-    let txn = data_writer.begin(wap_id).await?;
-    Ok(Some(txn))
-}
-
-pub async fn maybe_publish<T: Serialize + Send + 'static>(
-    txn: Option<BranchTransaction<T>>,
+    id: &str,
+    records: Vec<T>,
 ) -> anyhow::Result<()> {
-    if let Some(txn) = txn {
-        txn.publish().await.context("publishing")?;
+    if let Some(data_writer) = writer {
+        data_writer
+            .write_idempotent(id, records)
+            .await
+            .context("writing idempotent")?;
     }
     Ok(())
 }

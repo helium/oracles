@@ -8,7 +8,7 @@ use crate::{
     seniority::{Seniority, SeniorityUpdate},
     GatewayResolution, GatewayResolver,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store_oracles::wifi_heartbeat::WifiHeartbeatIngestReport;
@@ -623,7 +623,7 @@ pub(crate) async fn process_validated_heartbeats(
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
     seniority_sink: &FileSinkClient<proto::SeniorityUpdate>,
     transaction: &mut Transaction<'_, Postgres>,
-    iceberg_txn: Option<&mut crate::iceberg::HeartbeatTransaction>,
+    iceberg_ctx: Option<(&crate::iceberg::HeartbeatWriter, &str)>,
 ) -> anyhow::Result<()> {
     let mut iceberg_records = Vec::new();
     let mut validated_heartbeats = pin!(validated_heartbeats);
@@ -634,7 +634,7 @@ pub(crate) async fn process_validated_heartbeats(
             continue;
         }
 
-        if iceberg_txn.is_some() {
+        if iceberg_ctx.is_some() {
             iceberg_records.push(crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat));
         }
 
@@ -667,8 +667,11 @@ pub(crate) async fn process_validated_heartbeats(
         }
     }
 
-    if let Some(txn) = iceberg_txn {
-        txn.write(iceberg_records).await?;
+    if let Some((writer, id)) = iceberg_ctx {
+        writer
+            .write_idempotent(id, iceberg_records)
+            .await
+            .context("writing heartbeats idempotently")?;
     }
 
     Ok(())

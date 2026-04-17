@@ -42,7 +42,6 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             "burn_timestamp",
             "burn_timestamp_day",
         ))
-        .wap_enabled()
         .build()
 }
 

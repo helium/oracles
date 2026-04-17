@@ -115,17 +115,16 @@ where
     ) -> anyhow::Result<()> {
         tracing::info!("Verifying file: {}", file.file_info);
         let ts = file.file_info.timestamp;
+        let write_id = file.file_info.key.clone();
         let mut transaction = self.pool.begin().await?;
-
-        let mut iceberg_txn =
-            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
 
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
             &mut transaction,
-            iceberg_txn.as_mut(),
+            self.iceberg_writer.as_ref(),
+            &write_id,
             banned_radios,
             &self.mobile_config_resolver,
             &self.verified_data_session_report_sink,
@@ -134,7 +133,6 @@ where
         )
         .await?;
 
-        iceberg::maybe_publish(iceberg_txn).await?;
         transaction.commit().await?;
         self.verified_data_session_report_sink.commit().await?;
 
@@ -142,9 +140,11 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_data_transfer_session_file(
     txn: &mut Transaction<'_, Postgres>,
-    iceberg_txn: Option<&mut iceberg::DataTransferTransaction>,
+    iceberg_writer: Option<&iceberg::DataTransferWriter>,
+    write_id: &str,
     banned_radios: BannedRadios,
     mobile_config: &impl MobileConfigResolverExt,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
@@ -173,9 +173,7 @@ pub async fn handle_data_transfer_session_file(
             .context("writing to file-store")?;
     }
 
-    if let Some(txn) = iceberg_txn {
-        txn.write(iceberg_sessions).await?;
-    }
+    iceberg::maybe_write_idempotent(iceberg_writer, write_id, iceberg_sessions).await?;
 
     Ok(())
 }

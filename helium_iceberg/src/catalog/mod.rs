@@ -18,8 +18,7 @@ use crate::{Error, IcebergTable, Result, Settings, TableCreator, TableDefinition
 use iceberg::table::Table;
 use iceberg::{Catalog as IcebergCatalog, CatalogBuilder, NamespaceIdent, TableIdent};
 use iceberg_catalog_rest::{
-    CommitTableRequest, RestCatalog, RestCatalogBuilder, REST_CATALOG_PROP_URI,
-    REST_CATALOG_PROP_WAREHOUSE,
+    RestCatalog, RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
 };
 use iceberg_storage_opendal::OpenDalStorageFactory;
 use std::collections::HashMap;
@@ -178,14 +177,6 @@ impl Catalog {
         TableCreator::new(self.clone())
             .create_table_if_not_exists(table_def)
             .await
-    }
-
-    /// Send a commit table request directly to the REST catalog API.
-    ///
-    /// This bypasses `TableCommit` (whose builder is `pub(crate)` in iceberg 0.8)
-    /// by constructing and sending a `CommitTableRequest` via HTTP POST.
-    pub(crate) async fn commit_table_request(&self, request: &CommitTableRequest) -> Result<()> {
-        self.endpoint.commit_table(request).await
     }
 
     /// List all namespaces in the catalog.

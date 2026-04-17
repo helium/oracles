@@ -1,5 +1,5 @@
 use anyhow::Context;
-use helium_iceberg::{BoxedDataWriter, BranchTransaction, IntoBoxedDataWriter};
+use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
 pub mod burned_session;
@@ -11,11 +11,6 @@ pub use session::IcebergDataTransferSession;
 pub const NAMESPACE: &str = "data_transfer";
 
 pub type DataTransferWriter = BoxedDataWriter<IcebergDataTransferSession>;
-pub type DataTransferTransaction = BranchTransaction<IcebergDataTransferSession>;
-
-// BurnedDataSessions are not written in transactions (yet (maybe)), so they
-// don't have the associated BurnedDataTransferTransaction type alias like
-// above.
 pub type BurnedDataTransferWriter = BoxedDataWriter<IcebergBurnedDataTransferSession>;
 
 pub async fn get_writers(
@@ -35,25 +30,18 @@ pub async fn get_writers(
     Ok((session_writer.boxed(), burned_session_writer.boxed()))
 }
 
-// NOTE(mj): Helpers for dealing with Optional Iceberg writes. These should go
-// away when writing to iceberg becomes standard.
-pub async fn maybe_begin<T: Serialize + Send + 'static>(
+/// Optional idempotent append — no-op when `writer` is `None` (iceberg
+/// writes are optional in some deployments).
+pub async fn maybe_write_idempotent<T: Serialize + Send + 'static>(
     writer: Option<&BoxedDataWriter<T>>,
-    wap_id: &str,
-) -> anyhow::Result<Option<BranchTransaction<T>>> {
-    let Some(data_writer) = writer else {
-        return Ok(None);
-    };
-
-    let txn = data_writer.begin(wap_id).await?;
-    Ok(Some(txn))
-}
-
-pub async fn maybe_publish<T: Serialize + Send + 'static>(
-    txn: Option<BranchTransaction<T>>,
+    id: &str,
+    records: Vec<T>,
 ) -> anyhow::Result<()> {
-    if let Some(txn) = txn {
-        txn.publish().await.context("publishing")?;
+    if let Some(data_writer) = writer {
+        data_writer
+            .write_idempotent(id, records)
+            .await
+            .context("writing idempotent")?;
     }
     Ok(())
 }

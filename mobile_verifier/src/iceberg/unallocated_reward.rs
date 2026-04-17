@@ -29,7 +29,6 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
         ])
         .with_partition(PartitionDefinition::day("start_period", "start_period_day"))
         .with_sort_fields([SortFieldDefinition::ascending("start_period")])
-        .wap_enabled()
         .build()
 }
 

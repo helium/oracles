@@ -55,7 +55,6 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             SortFieldDefinition::ascending("hotspot_key"),
             SortFieldDefinition::ascending("location"),
         ])
-        .wap_enabled()
         .build()
 }
 

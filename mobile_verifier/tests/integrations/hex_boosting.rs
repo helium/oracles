@@ -140,7 +140,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 
@@ -295,7 +295,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
         mobile_rewards_client,
         &reward_info,
         price_info,
-        &mut None,
+        None,
     )
     .await?;
 
@@ -425,7 +425,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        &mut None,
+        None,
     )
     .await?;
 
@@ -561,7 +561,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        &mut None,
+        None,
     )
     .await?;
 
@@ -664,7 +664,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        &mut None,
+        None,
     )
     .await?;
 
@@ -802,7 +802,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        &mut None,
+        None,
     )
     .await?;
 
@@ -966,7 +966,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        &mut None,
+        None,
     )
     .await?;
 
