@@ -140,7 +140,7 @@ where
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn handle_data_transfer_session_file(
     txn: &mut Transaction<'_, Postgres>,
     iceberg_writer: Option<&iceberg::DataTransferWriter>,
