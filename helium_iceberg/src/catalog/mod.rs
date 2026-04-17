@@ -1,17 +1,13 @@
-//! Iceberg REST catalog client with automatic authentication and retry handling.
+//! Iceberg REST catalog client with automatic retry on 401 auth errors.
 //!
-//! This module provides the [`Catalog`] type, a shareable wrapper around the
-//! Iceberg REST catalog that handles:
+//! OAuth2 token management is delegated to the underlying `RestCatalog` from
+//! iceberg-rust (configured via the `config` map passed to
+//! `RestCatalogBuilder::load`). The wrapper here adds two things:
 //!
-//! - OAuth2 token acquisition and caching
-//! - Proactive token refresh before expiration
-//! - Automatic retry on 401 authentication errors
-//! - Direct REST API access for operations not supported by the iceberg crate
-
-mod auth;
-mod rest_endpoint;
-
-use rest_endpoint::RestEndpoint;
+//! - `Clone` — wraps `RestCatalog` (non-`Clone`) in an `Arc` so the catalog
+//!   can be shared across `IcebergTable` / `TableCreator` / callers.
+//! - 401 retry — if an operation fails with an auth error, invalidate the
+//!   cached token and retry once.
 
 use crate::error::IntoHeliumIcebergError;
 use crate::{Error, IcebergTable, Result, Settings, TableCreator, TableDefinition};
@@ -40,14 +36,9 @@ fn is_iceberg_auth_error(error: &iceberg::Error) -> bool {
 /// Implements `iceberg::Catalog` with automatic 401 retry logic - when an operation
 /// fails with an authentication error, the cached token is invalidated and the
 /// operation is retried once.
-///
-/// Also provides direct REST API access for branch operations that cannot go
-/// through the `Transaction` API due to `TableCommit::builder().build()` being
-/// `pub(crate)` in iceberg 0.8.
 #[derive(Clone)]
 pub struct Catalog {
     inner: Arc<RestCatalog>,
-    endpoint: RestEndpoint,
 }
 
 impl AsRef<RestCatalog> for Catalog {
@@ -60,7 +51,6 @@ impl std::fmt::Debug for Catalog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Catalog")
             .field("inner", &self.inner)
-            .field("endpoint", &self.endpoint)
             .finish()
     }
 }
@@ -74,8 +64,7 @@ impl Catalog {
         match f().await {
             Ok(result) => Ok(result),
             Err(e) if is_iceberg_auth_error(&e) => {
-                tracing::warn!("auth error, invaliding token and retrying");
-                self.endpoint.auth.invalidate().await;
+                tracing::warn!("auth error, invalidating token and retrying");
                 self.inner.invalidate_token().await?;
                 f().await
             }
@@ -106,11 +95,8 @@ impl Catalog {
             .await
             .map_err(Error::Iceberg)?;
 
-        let endpoint = RestEndpoint::resolve(settings).await?;
-
         Ok(Self {
             inner: Arc::new(rest_catalog),
-            endpoint,
         })
     }
 

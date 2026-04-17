@@ -253,28 +253,3 @@ fn has_write_id(table: &Table, id: &str) -> bool {
             || props.get(LEGACY_WAP_ID_PROPERTY).is_some_and(|v| v == id)
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn has_write_id_detects_new_property() {
-        let props = HashMap::from([(WRITE_ID_PROPERTY.to_string(), "abc".to_string())]);
-        assert!(
-            props.get(WRITE_ID_PROPERTY).is_some_and(|v| v == "abc"),
-            "sanity — new property present"
-        );
-    }
-
-    #[test]
-    fn has_write_id_detects_legacy_property() {
-        let props = HashMap::from([(LEGACY_WAP_ID_PROPERTY.to_string(), "abc".to_string())]);
-        assert!(
-            props
-                .get(LEGACY_WAP_ID_PROPERTY)
-                .is_some_and(|v| v == "abc"),
-            "sanity — legacy property present"
-        );
-    }
-}
