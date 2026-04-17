@@ -261,9 +261,9 @@ impl DataSessionsBackfiller {
             age = %age,
             "received file"
         );
-        if self.writer.is_some() {
-            self.handle_file(file_info_stream).await?;
-        }
+
+        self.handle_file(file_info_stream).await?;
+
         Ok(())
     }
 
@@ -271,6 +271,10 @@ impl DataSessionsBackfiller {
         &self,
         file: FileInfoStream<VerifiedDataTransferIngestReport>,
     ) -> Result<()> {
+        let Some(ref writer) = self.writer else {
+            return Ok(());
+        };
+
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::debug!(
@@ -281,17 +285,7 @@ impl DataSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-<<<<<<< HEAD
         let write_id = file.file_info.key.clone();
-=======
-        let mut iceberg_txn = self
-            .writer
-            .as_ref()
-            .unwrap()
-            .begin(file_info.as_ref())
-            .await
-            .context("beginning iceberg transaction")?;
->>>>>>> cd393322 (Backfill optional)
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -306,7 +300,8 @@ impl DataSessionsBackfiller {
 
         let valid_count = iceberg_sessions.len();
         let filtered_count = total - valid_count;
-        self.writer
+
+        writer
             .write_idempotent(&write_id, iceberg_sessions)
             .await
             .context("writing sessions to iceberg")?;
@@ -444,13 +439,17 @@ impl BurnedSessionsBackfiller {
             age = %age,
             "received file"
         );
-        if self.writer.is_some() {
-            self.handle_file(file_info_stream).await?;
-        }
+
+        self.handle_file(file_info_stream).await?;
+
         Ok(())
     }
 
     async fn handle_file(&self, file: FileInfoStream<ValidDataTransferSession>) -> Result<()> {
+        let Some(ref writer) = self.writer else {
+            return Ok(());
+        };
+
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::info!(
@@ -461,17 +460,7 @@ impl BurnedSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-<<<<<<< HEAD
         let write_id = file.file_info.key.clone();
-=======
-        let mut iceberg_txn = self
-            .writer
-            .as_ref()
-            .unwrap()
-            .begin(file_info.as_ref())
-            .await
-            .context("beginning iceberg transaction")?;
->>>>>>> cd393322 (Backfill optional)
 
         let reports = file.into_stream(&mut txn).await?;
 
@@ -481,7 +470,7 @@ impl BurnedSessionsBackfiller {
             .await;
 
         let count = iceberg_sessions.len();
-        self.writer
+        writer
             .write_idempotent(&write_id, iceberg_sessions)
             .await
             .context("writing burned sessions to iceberg")?;

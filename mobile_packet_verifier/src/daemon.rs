@@ -247,17 +247,16 @@ impl IngestReports {
     ) -> anyhow::Result<()> {
         tracing::info!("Verifying file: {}", file.file_info);
         let ts = file.file_info.timestamp;
+        let write_id = file.file_info.key.clone();
         let mut transaction = self.pool.begin().await?;
-
-        let mut iceberg_txn =
-            iceberg::maybe_begin(self.iceberg_writer.as_ref(), file.file_info.as_ref()).await?;
 
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
             &mut transaction,
-            iceberg_txn.as_mut(),
+            self.iceberg_writer.as_ref(),
+            &write_id,
             banned_radios,
             mobile_config,
             &self.verified_sink,
@@ -266,7 +265,6 @@ impl IngestReports {
         )
         .await?;
 
-        iceberg::maybe_publish(iceberg_txn).await?;
         transaction.commit().await?;
         self.verified_sink.commit().await?;
 
