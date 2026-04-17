@@ -189,12 +189,13 @@ async fn write_data_files(
     let location_generator =
         DefaultLocationGenerator::new(table_guard.metadata().clone()).map_err(Error::Iceberg)?;
     drop(table_guard);
-    let timestamp_millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .map_err(|e| Error::Writer(format!("failed to get system time: {e}")))?;
+    // Use a v7 UUID (time-ordered + random) so concurrent writers never
+    // collide on file paths, even with sub-millisecond-close timestamps.
+    // A plain wall-clock prefix would let two writers generate the same
+    // path, trip `fast_append`'s duplicate-file check, and fail the second
+    // commit.
     let file_name_generator = DefaultFileNameGenerator::new(
-        format!("{timestamp_millis}"),
+        uuid::Uuid::now_v7().to_string(),
         None,
         iceberg::spec::DataFileFormat::Parquet,
     );
