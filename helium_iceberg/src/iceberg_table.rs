@@ -130,7 +130,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
     async fn write_idempotent(&self, id: &str, records: Vec<T>) -> Result {
         reload_table(&self.catalog, &self.table).await?;
 
-        if has_write_id(&*self.table.read().await, id)? {
+        if has_write_id(&*self.table.read().await, id) {
             tracing::debug!(id, "write_id already present, skipping");
             return Ok(());
         }
@@ -246,12 +246,12 @@ fn build_writer_properties(
         .build()
 }
 
-fn has_write_id(table: &Table, id: &str) -> Result<bool> {
-    Ok(table.metadata().snapshots().any(|snapshot| {
+fn has_write_id(table: &Table, id: &str) -> bool {
+    table.metadata().snapshots().any(|snapshot| {
         let props = &snapshot.summary().additional_properties;
         props.get(WRITE_ID_PROPERTY).is_some_and(|v| v == id)
             || props.get(LEGACY_WAP_ID_PROPERTY).is_some_and(|v| v == id)
-    }))
+    })
 }
 
 #[cfg(test)]
