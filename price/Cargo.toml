@@ -10,22 +10,16 @@ license.workspace = true
 anyhow = { workspace = true }
 config = { workspace = true }
 clap = { workspace = true }
-thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
-futures-util = { workspace = true }
-prost = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
-metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 triggered = { workspace = true }
 humantime-serde = { workspace = true }
 
@@ -33,7 +27,6 @@ custom-tracing = { path = "../custom_tracing" }
 file-store = { path = "../file_store" }
 file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
-solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
 

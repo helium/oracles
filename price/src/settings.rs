@@ -1,18 +1,11 @@
 use anyhow::Result;
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
-use solana::Token;
+use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct TokenSetting {
-    pub token: Token,
-    pub default_price: Option<u64>,
-}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Settings {
@@ -22,8 +15,9 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
-    /// Source URL for price data. Required
-    #[serde(default = "default_source", skip_serializing)]
+    /// Full Hermes price update URL including the `ids[]=<feed_id>` query
+    /// parameter for the HNT feed. Required.
+    #[serde(default = "default_source")]
     pub source: String,
     #[serde(default)]
     pub file_store: file_store::Settings,
@@ -37,15 +31,17 @@ pub struct Settings {
     /// Tick interval (secs). Default = 60s.
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub interval: Duration,
-    #[serde(default, deserialize_with = "from_json_or_struct")]
-    pub tokens: Vec<TokenSetting>,
+    /// Optional static price override for testing. When set, the service
+    /// emits this value every tick instead of calling the Hermes API.
+    #[serde(default)]
+    pub default_price: Option<u64>,
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
 }
 
 fn default_source() -> String {
-    "https://api.devnet.solana.com".to_string()
+    "https://hermes.pyth.network/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756".to_string()
 }
 
 fn default_log() -> String {
@@ -92,184 +88,40 @@ impl Settings {
     }
 }
 
-fn from_json_or_struct<'de, D, T>(de: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let v = serde_json::Value::deserialize(de)?;
-    match v {
-        // Environment source provides a *string*; parse that string as JSON
-        serde_json::Value::String(s) => serde_json::from_str(&s).map_err(serde::de::Error::custom),
-
-        // Already a map/array/etc.; just deserialize it normally
-        other => serde_json::from_value(other).map_err(serde::de::Error::custom),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::*;
 
-    impl Settings {
-        // Use Settings::new() constructor while injecting some env variables
-        // that will be cleaned up when the test is done.
-        fn test_with_token_env(token_setting: String) -> anyhow::Result<Self> {
-            let settings = temp_env::with_vars(
-                [
-                    ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
-                    (
-                        "PRICE__TOKENS",
-                        Some(token_setting).filter(|s| !s.is_empty()),
-                    ),
-                ],
-                || Self::new::<PathBuf>(None),
-            )?;
-
-            Ok(settings)
-        }
-    }
-
     #[test]
-    fn test_tokens_with_valid_json_strings_env() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([
-                {"token": "hnt"},
-                {"token": "mobile", "default_price": 1000000},
-                {"token": "iot"}
-            ])
-            .to_string(),
+    fn test_default_price_override() -> anyhow::Result<()> {
+        let settings = temp_env::with_vars(
+            [
+                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__DEFAULT_PRICE", Some("100000000".to_string())),
+            ],
+            || Settings::new::<PathBuf>(None),
         )?;
 
-        assert_eq!(
-            settings.tokens,
-            vec![
-                TokenSetting {
-                    token: Token::Hnt,
-                    default_price: None
-                },
-                TokenSetting {
-                    token: Token::Mobile,
-                    default_price: Some(1000000)
-                },
-                TokenSetting {
-                    token: Token::Iot,
-                    default_price: None
-                }
-            ]
-        );
-
+        assert_eq!(settings.default_price, Some(100_000_000));
+        assert_eq!(settings.output_bucket, "test-bucket");
         Ok(())
     }
 
     #[test]
-    fn test_tokens_with_default_price_only() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env(
-            r#"[{"token": "hnt", "default_price": 5000000}]"#.to_string(),
+    fn test_source_override() -> anyhow::Result<()> {
+        let url = "https://example.test/v2/updates/price/latest?ids[]=abc";
+        let settings = temp_env::with_vars(
+            [
+                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__SOURCE", Some(url.to_string())),
+            ],
+            || Settings::new::<PathBuf>(None),
         )?;
 
-        assert_eq!(
-            settings.tokens,
-            vec![TokenSetting {
-                token: Token::Hnt,
-                default_price: Some(5000000)
-            }]
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokens_with_empty_tokens_list() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env("".to_string())?;
-        assert!(settings.tokens.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokens_with_invalid_json() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([
-                {"token": "hnt"},
-                "invalid json",
-                {"token": "mobile"},
-            ])
-            .to_string(),
-        );
-
-        let error = settings.unwrap_err().to_string();
-        assert!(error.contains("expected struct TokenSetting"));
-        assert!(error.contains("invalid json"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokens_with_missing_token_field() {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([{"default_price": 1000000}]).to_string(),
-        );
-
-        let error = settings.unwrap_err().to_string();
-        assert!(error.contains("missing field `token`"));
-    }
-
-    #[test]
-    fn test_tokens_with_invalid_token_type() {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([{"token": "invalid_token"}]).to_string(),
-        );
-
-        let error = settings.unwrap_err().to_string();
-        assert!(error.contains("unknown variant `invalid_token`"));
-        assert!(error.contains("expected one of `sol`, `hnt`, `mobile`, `iot`, `dc`"));
-    }
-
-    #[test]
-    fn test_tokens_with_malformed_json() {
-        let settings = Settings::test_with_token_env(r#"{"token": "hnt"#.to_string());
-
-        let error = settings.unwrap_err().to_string();
-        assert!(error.contains("invalid type: map"));
-    }
-
-    #[test]
-    fn test_tokens_with_extra_fields() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([{
-                "token": "hnt",
-                "default_price": 1000000,
-                "extra_field": "ignored"
-            }])
-            .to_string(),
-        )?;
-
-        assert_eq!(
-            settings.tokens,
-            vec![TokenSetting {
-                token: Token::Hnt,
-                default_price: Some(1000000)
-            }]
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokens_with_null_default_price() -> anyhow::Result<()> {
-        let settings = Settings::test_with_token_env(
-            serde_json::json!([{"token": "hnt", "default_price": null}]).to_string(),
-        )?;
-
-        assert_eq!(
-            settings.tokens,
-            vec![TokenSetting {
-                token: Token::Hnt,
-                default_price: None
-            }]
-        );
-
+        assert_eq!(settings.source, url);
+        assert!(settings.default_price.is_none());
         Ok(())
     }
 }

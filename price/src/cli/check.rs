@@ -1,69 +1,63 @@
-use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
-use solana::{
-    helium_lib::{
-        anchor_lang::AccountDeserialize, programs::price_oracle::accounts::PriceOracleV0,
-    },
-    RpcClient, SolPubkey,
-};
-use std::str::FromStr;
+use anyhow::{anyhow, Result};
+use chrono::{TimeZone, Utc};
+use rust_decimal::Decimal;
+use serde::Deserialize;
 
-const SECONDS_PER_DAY: i64 = 24 * 60 * 60;
+const HNT_DECIMALS: i32 = 8;
 
-#[derive(Debug)]
-pub enum Mode {
-    Iot,
-    Mobile,
+#[derive(Debug, Deserialize)]
+struct HermesResponse {
+    parsed: Vec<HermesParsedPrice>,
 }
 
-pub async fn run(mode: Mode) -> Result<()> {
-    let client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
+#[derive(Debug, Deserialize)]
+struct HermesParsedPrice {
+    id: String,
+    price: HermesPrice,
+}
 
-    let pubkey = match mode {
-        Mode::Iot => SolPubkey::from_str("iortGU2NMgWc256XDBz2mQnmjPfKUMezJ4BWfayEZY3")?,
-        Mode::Mobile => SolPubkey::from_str("moraMdsjyPFz8Lp1RJGoW4bQriSF5mHE7Evxt7hytSF")?,
-    };
+#[derive(Debug, Deserialize)]
+struct HermesPrice {
+    price: String,
+    conf: String,
+    expo: i32,
+    publish_time: i64,
+}
 
-    let price_oracle_v0_data = client.get_account_data(&pubkey).await?;
-    let mut price_oracle_v0_data = price_oracle_v0_data.as_ref();
-    let price_oracle_v0 = PriceOracleV0::try_deserialize(&mut price_oracle_v0_data)?;
+pub async fn run(url: String) -> Result<()> {
+    let response: HermesResponse = reqwest::get(&url).await?.error_for_status()?.json().await?;
 
-    let curr_ts = Utc::now().timestamp();
-    let total_length = price_oracle_v0.oracles.len();
-    let required_valid = total_length / 2 + 1;
-
-    let prices: Vec<(DateTime<Utc>, u64)> = price_oracle_v0
-        .oracles
+    let parsed = response
+        .parsed
         .into_iter()
-        .filter(|oracle| {
-            oracle.last_submitted_price.is_some()
-                && oracle.last_submitted_timestamp.is_some()
-                && curr_ts - oracle.last_submitted_timestamp.unwrap() <= SECONDS_PER_DAY
-        })
-        .map(|oracle| {
-            (
-                Utc.timestamp_opt(oracle.last_submitted_timestamp.unwrap(), 0)
-                    .single()
-                    .unwrap(),
-                oracle.last_submitted_price.unwrap(),
-            )
-        })
-        .collect();
+        .next()
+        .ok_or_else(|| anyhow!("hermes response had no parsed price entries"))?;
 
-    println!("Total number of prices: {total_length}");
-    println!("Number of valid prices: {}", prices.len());
-
-    if prices.len() >= required_valid {
-        println!("\nPrice is currently VALID");
+    let raw = parsed
+        .price
+        .price
+        .parse::<Decimal>()
+        .map_err(|err| anyhow!("failed to parse price {:?}: {err}", parsed.price.price))?;
+    let scale = HNT_DECIMALS + parsed.price.expo;
+    let scaled = if scale >= 0 {
+        raw * Decimal::from(10_u64.pow(scale as u32))
     } else {
-        println!("\nPrice is currently INVALID");
-    }
+        raw / Decimal::from(10_u64.pow((-scale) as u32))
+    };
+    let scaled_u64: u64 = scaled.try_into()?;
+    let timestamp = Utc
+        .timestamp_opt(parsed.price.publish_time, 0)
+        .single()
+        .ok_or_else(|| anyhow!("invalid publish_time {}", parsed.price.publish_time))?;
 
-    println!("\nValid prices");
-    println!("----------------------------");
-    for (ts, price) in prices {
-        println!("{ts}\t {price}");
-    }
+    println!("URL: {url}");
+    println!("Feed ID: {}", parsed.id);
+    println!("Raw price: {}", parsed.price.price);
+    println!("Confidence: {}", parsed.price.conf);
+    println!("Exponent: {}", parsed.price.expo);
+    println!("Publish time: {timestamp} ({})", parsed.price.publish_time);
+    println!();
+    println!("Scaled integer price (as emitted to S3): {scaled_u64}");
 
     Ok(())
 }

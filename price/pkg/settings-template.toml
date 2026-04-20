@@ -1,31 +1,21 @@
 # log settings for the application (RUST_LOG format). Default below
-# 
+#
 # log = "price=debug"
 
-# RPC Endpoint for price oracles. Required.
-source = "https://api.devnet.solana.com"
+# Hermes price update URL including the HNT feed id query parameter. Required.
+source = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756"
 
 # Price tick interval (secs). Default = 60s. Optional.
 interval = "60 seconds"
 
-# Cache folder to use. Default blow
+# Static HNT price override (8-decimal integer, e.g. $1 = 100000000). When set,
+# the service emits this value every tick instead of calling the Hermes API.
+# Intended for testing. Optional.
+# default_price =
+
+# Cache folder to use. Default below
 #
 # cache = "/var/data/price"
-
-[cluster]
-name = "devnet"
-hnt_price_key = "6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6"
-# mobile_price_key =
-# hst_price_key =
-# iot_price_key =
-# HNT price has 8 exponent. i.e. $1 = 100000000. Set it to some number for testing. Optional.
-# hnt_price =
-# MOBILE price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# mobile_price =
-# IOT price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# iot_price =
-# HST price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# hst_price =
 
 [output]
 # Output bucket for price
