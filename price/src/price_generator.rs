@@ -13,6 +13,7 @@ use tokio::{fs, time};
 const HNT_DECIMALS: i32 = 8;
 const LATEST_PRICE_FILE: &str = "hnt.latest";
 const TOKEN: &str = "hnt";
+const MAX_PRICE_AGE: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Price {
@@ -211,6 +212,15 @@ impl PriceGenerator {
             .timestamp_opt(parsed.price.publish_time, 0)
             .single()
             .ok_or_else(|| anyhow!("invalid publish_time {}", parsed.price.publish_time))?;
+
+        let age = Utc::now() - timestamp;
+        if age > chrono::Duration::from_std(MAX_PRICE_AGE)? {
+            anyhow::bail!(
+                "hermes price is {}s old, exceeds max age of {}s",
+                age.num_seconds(),
+                MAX_PRICE_AGE.as_secs()
+            );
+        }
 
         tracing::debug!(token = TOKEN, price, "retrieved price from hermes");
         Ok(Price::new(timestamp, price))
