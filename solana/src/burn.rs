@@ -511,6 +511,16 @@ impl Default for TestSolanaClientMap {
 }
 
 impl TestSolanaClientMap {
+    pub async fn with(items: &[(&PublicKeyBinary, u64)]) -> Self {
+        let me = Self::default();
+
+        for (payer, amount) in items {
+            me.insert(payer, *amount).await;
+        }
+
+        me
+    }
+
     pub async fn insert(&self, payer: &PublicKeyBinary, amount: u64) {
         self.payer_balances
             .lock()

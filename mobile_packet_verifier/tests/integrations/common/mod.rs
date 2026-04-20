@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
-use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
+use mobile_packet_verifier::{backfill::BackfillOptions, iceberg, MobileConfigResolverExt};
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
@@ -68,6 +68,16 @@ impl TestMobileConfig {
             valid_routing_keys: ValidKeys::Only(valid),
         }
     }
+}
+
+pub fn test_backfill_options(
+    process_name: &str,
+    start_after: DateTime<Utc>,
+    stop_after: DateTime<Utc>,
+) -> BackfillOptions {
+    BackfillOptions::new(process_name, start_after, stop_after)
+        .poll_duration(std::time::Duration::from_millis(100))
+        .idle_timeout(std::time::Duration::from_millis(500))
 }
 
 pub trait TestChannelExt {
