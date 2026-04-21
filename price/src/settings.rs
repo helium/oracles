@@ -110,6 +110,21 @@ mod tests {
     }
 
     #[test]
+    fn test_settings_template_parses() -> anyhow::Result<()> {
+        let template = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pkg/settings-template.toml");
+        // The template intentionally leaves output_bucket populated; no env
+        // overrides so we exercise pure file parsing.
+        let settings = temp_env::with_vars(Vec::<(&str, Option<String>)>::new(), || {
+            Settings::new(Some(&template))
+        })?;
+
+        assert!(settings.source.contains("hermes.pyth.network"));
+        assert_eq!(settings.output_bucket, "price");
+        assert_eq!(settings.interval, Duration::from_secs(60));
+        Ok(())
+    }
+
+    #[test]
     fn test_source_override() -> anyhow::Result<()> {
         let url = "https://example.test/v2/updates/price/latest?ids[]=abc";
         let settings = temp_env::with_vars(
