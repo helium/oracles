@@ -11,7 +11,7 @@ use tokio::{fs, time};
 
 const LATEST_PRICE_FILE: &str = "hnt.latest";
 const TOKEN: &str = "hnt";
-const MAX_PRICE_AGE: Duration = Duration::from_secs(10 * 60);
+const MAX_PRICE_AGE: chrono::Duration = chrono::Duration::minutes(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Price {
@@ -150,11 +150,11 @@ impl PriceGenerator {
             .ok_or_else(|| anyhow!("invalid publish_time {}", parsed.price.publish_time))?;
 
         let age = Utc::now() - timestamp;
-        if age > chrono::Duration::from_std(MAX_PRICE_AGE)? {
+        if age > MAX_PRICE_AGE {
             anyhow::bail!(
                 "hermes price is {}s old, exceeds max age of {}s",
                 age.num_seconds(),
-                MAX_PRICE_AGE.as_secs()
+                MAX_PRICE_AGE.as_seconds_f32()
             );
         }
 
