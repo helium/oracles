@@ -48,8 +48,11 @@ impl Cmd {
                 cmd.run(&settings).await
             }
             Self::Check(options) => {
-                let settings = Settings::new(config)?;
-                check::run(options.url.clone().unwrap_or(settings.source)).await
+                let url = match &options.url {
+                    Some(url) => url.clone(),
+                    None => Settings::new(config)?.source,
+                };
+                check::run(url).await
             }
         }
     }
