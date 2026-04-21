@@ -1,5 +1,5 @@
 use crate::{hermes, metrics::Metrics, Settings};
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::TryFutureExt;
@@ -49,25 +49,6 @@ impl From<&Price> for PriceReportV1 {
             price: value.price,
             token_type: BlockchainTokenTypeV1::Hnt.into(),
         }
-    }
-}
-
-impl TryFrom<PriceReportV1> for Price {
-    type Error = Error;
-
-    fn try_from(value: PriceReportV1) -> Result<Self, Self::Error> {
-        let tt: BlockchainTokenTypeV1 = BlockchainTokenTypeV1::try_from(value.token_type)
-            .map_err(|_| anyhow!("unsupported token type: {:?}", value.token_type))?;
-        if tt != BlockchainTokenTypeV1::Hnt {
-            anyhow::bail!("expected HNT price report, got {tt:?}");
-        }
-        Ok(Self {
-            timestamp: Utc
-                .timestamp_opt(value.timestamp as i64, 0)
-                .single()
-                .ok_or_else(|| anyhow!("invalid timestamp"))?,
-            price: value.price,
-        })
     }
 }
 
