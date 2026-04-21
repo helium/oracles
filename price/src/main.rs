@@ -47,27 +47,22 @@ impl Cmd {
                 tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
                 cmd.run(&settings).await
             }
-            Self::Check(options) => check::run(options.into()).await,
+            Self::Check(options) => {
+                let url = match &options.url {
+                    Some(url) => url.clone(),
+                    None => Settings::new(config)?.source,
+                };
+                check::run(url).await
+            }
         }
     }
 }
 
 #[derive(Debug, clap::Args)]
 pub struct Check {
+    /// Optional Hermes URL override. Defaults to the `source` setting.
     #[clap(short, long)]
-    iot: bool,
-    #[clap(short, long)]
-    mobile: bool,
-}
-
-impl From<&Check> for check::Mode {
-    fn from(value: &Check) -> Self {
-        if value.mobile {
-            check::Mode::Mobile
-        } else {
-            check::Mode::Iot
-        }
-    }
+    url: Option<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -97,18 +92,7 @@ impl Server {
         let mut task_manager = TaskManager::new();
         task_manager.add(file_upload_server);
         task_manager.add(price_sink_server);
-
-        for token_setting in settings.tokens.iter() {
-            task_manager.add(
-                PriceGenerator::new(
-                    settings,
-                    token_setting.token,
-                    token_setting.default_price,
-                    price_sink.clone(),
-                )
-                .await?,
-            );
-        }
+        task_manager.add(PriceGenerator::new(settings, price_sink.clone()).await?);
 
         task_manager.start().await?;
         Ok(())

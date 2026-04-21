@@ -1,51 +1,58 @@
-# log settings for the application (RUST_LOG format). Default below
-# 
-# log = "price=debug"
+# RUST_LOG compatible settings string. Default below
+#
+# log = "price=info,file_store=info"
 
-# RPC Endpoint for price oracles. Required.
-source = "https://api.devnet.solana.com"
+# Hermes price update URL including the HNT feed id query parameter. Default
+# below.
+#
+# source = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756"
 
-# Price tick interval (secs). Default = 60s. Optional.
+# S3 bucket to write price reports to. Required.
+output_bucket = "price"
+
+# Folder for the local on-disk price cache / file sink staging area.
+# Default below.
+#
+# cache = "/opt/price/data"
+
+# Price tick interval. Default = 60s. Optional.
 interval = "60 seconds"
 
-# Cache folder to use. Default blow
+# How long to keep using the last successfully-fetched price after Hermes
+# fetches start failing. Default = 12 hours. Optional.
 #
-# cache = "/var/data/price"
+# stale_price_duration = "12 hours"
 
-[cluster]
-name = "devnet"
-hnt_price_key = "6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6"
-# mobile_price_key =
-# hst_price_key =
-# iot_price_key =
-# HNT price has 8 exponent. i.e. $1 = 100000000. Set it to some number for testing. Optional.
-# hnt_price =
-# MOBILE price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# mobile_price =
-# IOT price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# iot_price =
-# HST price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
-# hst_price =
-
-[output]
-# Output bucket for price
-
-# Name of bucket to write details to. Required
+# Static HNT price override (8-decimal integer, e.g. $1 = 100000000). When set,
+# the service emits this value every tick instead of calling the Hermes API.
+# Intended for testing. Optional.
 #
-bucket = "price"
+# default_price =
 
-# Region for bucket. Defaults to below
+
+[custom_tracing]
+# File watched for runtime tracing-config reloads. Default below.
+#
+# tracing_cfg_file = "tracing.cfg"
+
+
+[file_store]
+# AWS region for the output bucket. Inferred from the AWS config / IAM context
+# by default.
 #
 # region = "us-west-2"
 
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
+# Optional AWS S3 endpoint override. Defaults to the standard AWS endpoint.
 #
 # endpoint = "https://aws-s3-bucket.aws.com"
 
+# Static AWS credentials. Only for local testing — prefer IAM in production.
+#
+# access_key_id = "..."
+# secret_access_key = "..."
+
 
 [metrics]
-
-# Endpoint for metrics. Default below
+# Prometheus scrape endpoint. Default below.
 #
 # endpoint = "127.0.0.1:19000"
