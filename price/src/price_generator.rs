@@ -1,16 +1,14 @@
-use crate::{metrics::Metrics, Settings};
+use crate::{hermes, metrics::Metrics, Settings};
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::TryFutureExt;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
 
-const HNT_DECIMALS: i32 = 8;
 const LATEST_PRICE_FILE: &str = "hnt.latest";
 const TOKEN: &str = "hnt";
 const MAX_PRICE_AGE: Duration = Duration::from_secs(10 * 60);
@@ -71,23 +69,6 @@ impl TryFrom<PriceReportV1> for Price {
             price: value.price,
         })
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct HermesResponse {
-    parsed: Vec<HermesParsedPrice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HermesParsedPrice {
-    price: HermesPrice,
-}
-
-#[derive(Debug, Deserialize)]
-struct HermesPrice {
-    price: String,
-    expo: i32,
-    publish_time: i64,
 }
 
 impl PriceGenerator {
@@ -180,34 +161,8 @@ impl PriceGenerator {
     }
 
     async fn fetch_hermes_price(&self) -> Result<Price> {
-        let response: HermesResponse = self
-            .http
-            .get(&self.source_url)
-            .send()
-            .and_then(|r| async { r.error_for_status() })
-            .and_then(|r| r.json::<HermesResponse>())
-            .await?;
-
-        let parsed = response
-            .parsed
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("hermes response had no parsed price entries"))?;
-
-        let raw_price = parsed
-            .price
-            .price
-            .parse::<Decimal>()
-            .map_err(|err| anyhow!("failed to parse price {:?}: {err}", parsed.price.price))?;
-
-        let scale = HNT_DECIMALS + parsed.price.expo;
-        let scaled = if scale >= 0 {
-            raw_price * Decimal::from(10_u64.pow(scale as u32))
-        } else {
-            raw_price / Decimal::from(10_u64.pow((-scale) as u32))
-        };
-        let price: u64 = scaled.try_into()?;
-
+        let parsed = hermes::fetch(&self.http, &self.source_url).await?;
+        let price = parsed.price.scaled_u64()?;
         let timestamp = Utc
             .timestamp_opt(parsed.price.publish_time, 0)
             .single()

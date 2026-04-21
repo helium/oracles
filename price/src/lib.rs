@@ -1,6 +1,7 @@
 extern crate tls_init;
 
 pub mod cli;
+pub mod hermes;
 pub mod metrics;
 pub mod price_generator;
 pub mod settings;
