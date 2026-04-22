@@ -1,10 +1,9 @@
 use crate::{
+    backfill::{Backfiller, BackfillOptions, IcebergBackfill},
     iceberg,
-    settings::BackfillSettings,
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
 };
-use anyhow::Context;
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
@@ -59,206 +58,22 @@ impl FromRow<'_, PgRow> for Speedtest {
     }
 }
 
-// ── Backfill support types ────────────────────────────────────────────────────
+// ── Speedtest backfill ────────────────────────────────────────────────────────
 
-pub struct BackfillOptions {
-    pub process_name: String,
-    pub start_after: DateTime<Utc>,
-    pub stop_after: DateTime<Utc>,
-    pub poll_duration: Option<Duration>,
-    pub idle_timeout: Option<Duration>,
-}
+pub struct SpeedtestConverter;
 
-impl BackfillOptions {
-    pub fn from_settings(settings: &BackfillSettings) -> Self {
-        Self {
-            process_name: "speedtest-backfill".to_string(),
-            start_after: settings.start_after,
-            stop_after: settings.stop_after,
-            poll_duration: None,
-            idle_timeout: None,
-        }
-    }
+impl IcebergBackfill for SpeedtestConverter {
+    type FileRecord = VerifiedSpeedtest;
+    type IcebergRow = iceberg::IcebergSpeedtest;
+    const FILE_TYPE: FileType = FileType::VerifiedSpeedtest;
 
-    pub fn poll_duration(mut self, d: Duration) -> Self {
-        self.poll_duration = Some(d);
-        self
-    }
-
-    pub fn idle_timeout(mut self, d: Duration) -> Self {
-        self.idle_timeout = Some(d);
-        self
+    fn convert(record: VerifiedSpeedtest) -> Option<iceberg::IcebergSpeedtest> {
+        (record.result == SpeedtestResult::SpeedtestValid)
+            .then(|| iceberg::IcebergSpeedtest::from(&record.report))
     }
 }
 
-/// Wraps a file-source poller server that may or may not exist.
-/// Always implements `ManagedTask` — returns immediately when there is nothing to do.
-pub struct BackfillPollerServer(Option<Box<dyn ManagedTask>>);
-
-impl BackfillPollerServer {
-    fn noop() -> Self {
-        Self(None)
-    }
-
-    fn active(server: impl ManagedTask + 'static) -> Self {
-        Self(Some(Box::new(server)))
-    }
-}
-
-impl ManagedTask for BackfillPollerServer {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        match (*self).0 {
-            Some(task) => task.start_task(shutdown),
-            None => task_manager::spawn(async { anyhow::Ok(()) }),
-        }
-    }
-}
-
-// ── SpeedtestBackfiller ───────────────────────────────────────────────────────
-
-/// Reads historical `VerifiedSpeedtest` files from the output bucket and writes
-/// valid speedtests to the `poc.speedtests` iceberg table. When no writer or
-/// options are configured it becomes a no-op whose `recv()` never returns.
-pub struct SpeedtestBackfiller {
-    pool: PgPool,
-    reports: Receiver<FileInfoStream<VerifiedSpeedtest>>,
-    writer: Option<iceberg::SpeedtestWriter>,
-    done: bool,
-}
-
-impl SpeedtestBackfiller {
-    pub fn new(
-        pool: PgPool,
-        reports: Receiver<FileInfoStream<VerifiedSpeedtest>>,
-        writer: Option<iceberg::SpeedtestWriter>,
-    ) -> Self {
-        let done = writer.is_none();
-        Self {
-            pool,
-            reports,
-            writer,
-            done,
-        }
-    }
-
-    pub async fn recv(&mut self) -> Option<FileInfoStream<VerifiedSpeedtest>> {
-        if self.done {
-            std::future::pending().await
-        } else {
-            self.reports.recv().await
-        }
-    }
-
-    pub async fn create(
-        pool: PgPool,
-        bucket_client: BucketClient,
-        writer: Option<iceberg::SpeedtestWriter>,
-        options: Option<BackfillOptions>,
-    ) -> anyhow::Result<(Self, BackfillPollerServer)> {
-        let (Some(writer), Some(options)) = (writer, options) else {
-            let (_, rx) = tokio::sync::mpsc::channel(1);
-            return Ok((
-                SpeedtestBackfiller::new(pool, rx, None),
-                BackfillPollerServer::noop(),
-            ));
-        };
-
-        let (reports, reports_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(bucket_client)
-            .prefix(FileType::VerifiedSpeedtest.to_string())
-            .lookback_start_after(options.start_after)
-            .stop_after(options.stop_after)
-            .process_name(options.process_name)
-            .poll_duration_opt(options.poll_duration)
-            .idle_timeout_opt(options.idle_timeout)
-            .create()
-            .await?;
-
-        Ok((
-            SpeedtestBackfiller::new(pool, reports, Some(writer)),
-            BackfillPollerServer::active(reports_server),
-        ))
-    }
-
-    pub async fn handle(
-        &mut self,
-        file: Option<FileInfoStream<VerifiedSpeedtest>>,
-    ) -> anyhow::Result<()> {
-        let Some(file_info_stream) = file else {
-            tracing::info!("speedtest backfiller completed");
-            self.done = true;
-            return Ok(());
-        };
-        tracing::info!(
-            file = %file_info_stream.file_info,
-            timestamp = %file_info_stream.file_info.timestamp,
-            "backfilling speedtest file"
-        );
-        self.handle_file(file_info_stream).await
-    }
-
-    async fn handle_file(&self, file: FileInfoStream<VerifiedSpeedtest>) -> anyhow::Result<()> {
-        let Some(ref writer) = self.writer else {
-            return Ok(());
-        };
-
-        let file_info = file.file_info.clone();
-        let write_id = file_info.key.clone();
-        let mut txn = self.pool.begin().await?;
-
-        let records = file.into_stream(&mut txn).await?;
-        let all: Vec<_> = records.collect().await;
-        let total = all.len();
-
-        let iceberg_rows: Vec<_> = all
-            .into_iter()
-            .filter(|v| v.result == SpeedtestResult::SpeedtestValid)
-            .map(|v| iceberg::IcebergSpeedtest::from(&v.report))
-            .collect();
-
-        let valid_count = iceberg_rows.len();
-        writer
-            .write_idempotent(&write_id, iceberg_rows)
-            .await
-            .context("writing speedtests to iceberg")?;
-
-        txn.commit().await?;
-        tracing::info!(
-            file = %file_info,
-            valid_count,
-            filtered_count = total - valid_count,
-            "backfilled speedtest file"
-        );
-        Ok(())
-    }
-
-    async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("speedtest backfiller starting");
-        loop {
-            if self.done {
-                tracing::info!("speedtest backfiller complete");
-                return Ok(());
-            }
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => {
-                    tracing::info!("speedtest backfiller shutting down");
-                    return Ok(());
-                }
-                file = self.recv() => {
-                    self.handle(file).await?;
-                }
-            }
-        }
-    }
-}
-
-impl ManagedTask for SpeedtestBackfiller {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
-    }
-}
+pub type SpeedtestBackfiller = Backfiller<SpeedtestConverter>;
 
 // ── SpeedtestDaemon ───────────────────────────────────────────────────────────
 
@@ -310,10 +125,13 @@ where
             .create()
             .await?;
 
-        let backfill_opts = settings
-            .speedtest_backfill
-            .as_ref()
-            .map(BackfillOptions::from_settings);
+        let backfill_opts = settings.speedtest_backfill.as_ref().map(|b| BackfillOptions {
+            process_name: "speedtest-backfill".to_string(),
+            start_after: b.start_after,
+            stop_after: b.stop_after,
+            poll_duration: None,
+            idle_timeout: None,
+        });
 
         let (speedtest_backfill, backfill_server) = SpeedtestBackfiller::create(
             pool.clone(),

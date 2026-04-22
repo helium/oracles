@@ -1,6 +1,7 @@
 use crate::{
+    backfill::BackfillOptions,
     iceberg,
-    speedtests::{BackfillOptions, SpeedtestBackfiller},
+    speedtests::SpeedtestBackfiller,
     Settings,
 };
 use anyhow::Result;

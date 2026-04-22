@@ -7,8 +7,9 @@ use helium_proto::services::poc_mobile::{
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_verifier::{
+    backfill::BackfillOptions,
     iceberg::{self, speedtest::IcebergSpeedtest},
-    speedtests::{BackfillOptions, SpeedtestBackfiller},
+    speedtests::SpeedtestBackfiller,
 };
 use sqlx::PgPool;
 
