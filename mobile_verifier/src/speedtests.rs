@@ -1,7 +1,10 @@
 use crate::{
+    iceberg,
+    settings::BackfillSettings,
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
 };
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
@@ -9,7 +12,7 @@ use file_store::{
     file_upload::FileUpload, BucketClient,
 };
 use file_store_oracles::{
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport, VerifiedSpeedtest},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
@@ -20,7 +23,7 @@ use helium_proto::services::poc_mobile::{
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::gateway::client::GatewayInfoResolver;
-use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
+use sqlx::{postgres::PgRow, FromRow, PgPool, PgTransaction, Row};
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
@@ -56,12 +59,217 @@ impl FromRow<'_, PgRow> for Speedtest {
     }
 }
 
+// ── Backfill support types ────────────────────────────────────────────────────
+
+pub struct BackfillOptions {
+    pub process_name: String,
+    pub start_after: DateTime<Utc>,
+    pub stop_after: DateTime<Utc>,
+    pub poll_duration: Option<Duration>,
+    pub idle_timeout: Option<Duration>,
+}
+
+impl BackfillOptions {
+    pub fn from_settings(settings: &BackfillSettings) -> Self {
+        Self {
+            process_name: "speedtest-backfill".to_string(),
+            start_after: settings.start_after,
+            stop_after: settings.stop_after,
+            poll_duration: None,
+            idle_timeout: None,
+        }
+    }
+
+    pub fn poll_duration(mut self, d: Duration) -> Self {
+        self.poll_duration = Some(d);
+        self
+    }
+
+    pub fn idle_timeout(mut self, d: Duration) -> Self {
+        self.idle_timeout = Some(d);
+        self
+    }
+}
+
+/// Wraps a file-source poller server that may or may not exist.
+/// Always implements `ManagedTask` — returns immediately when there is nothing to do.
+pub struct BackfillPollerServer(Option<Box<dyn ManagedTask>>);
+
+impl BackfillPollerServer {
+    fn noop() -> Self {
+        Self(None)
+    }
+
+    fn active(server: impl ManagedTask + 'static) -> Self {
+        Self(Some(Box::new(server)))
+    }
+}
+
+impl ManagedTask for BackfillPollerServer {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
+        match (*self).0 {
+            Some(task) => task.start_task(shutdown),
+            None => task_manager::spawn(async { anyhow::Ok(()) }),
+        }
+    }
+}
+
+// ── SpeedtestBackfiller ───────────────────────────────────────────────────────
+
+/// Reads historical `VerifiedSpeedtest` files from the output bucket and writes
+/// valid speedtests to the `poc.speedtests` iceberg table. When no writer or
+/// options are configured it becomes a no-op whose `recv()` never returns.
+pub struct SpeedtestBackfiller {
+    pool: PgPool,
+    reports: Receiver<FileInfoStream<VerifiedSpeedtest>>,
+    writer: Option<iceberg::SpeedtestWriter>,
+    done: bool,
+}
+
+impl SpeedtestBackfiller {
+    pub fn new(
+        pool: PgPool,
+        reports: Receiver<FileInfoStream<VerifiedSpeedtest>>,
+        writer: Option<iceberg::SpeedtestWriter>,
+    ) -> Self {
+        let done = writer.is_none();
+        Self {
+            pool,
+            reports,
+            writer,
+            done,
+        }
+    }
+
+    pub async fn recv(&mut self) -> Option<FileInfoStream<VerifiedSpeedtest>> {
+        if self.done {
+            std::future::pending().await
+        } else {
+            self.reports.recv().await
+        }
+    }
+
+    pub async fn create(
+        pool: PgPool,
+        bucket_client: BucketClient,
+        writer: Option<iceberg::SpeedtestWriter>,
+        options: Option<BackfillOptions>,
+    ) -> anyhow::Result<(Self, BackfillPollerServer)> {
+        let (Some(writer), Some(options)) = (writer, options) else {
+            let (_, rx) = tokio::sync::mpsc::channel(1);
+            return Ok((
+                SpeedtestBackfiller::new(pool, rx, None),
+                BackfillPollerServer::noop(),
+            ));
+        };
+
+        let (reports, reports_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .bucket_client(bucket_client)
+            .prefix(FileType::VerifiedSpeedtest.to_string())
+            .lookback_start_after(options.start_after)
+            .stop_after(options.stop_after)
+            .process_name(options.process_name)
+            .poll_duration_opt(options.poll_duration)
+            .idle_timeout_opt(options.idle_timeout)
+            .create()
+            .await?;
+
+        Ok((
+            SpeedtestBackfiller::new(pool, reports, Some(writer)),
+            BackfillPollerServer::active(reports_server),
+        ))
+    }
+
+    pub async fn handle(
+        &mut self,
+        file: Option<FileInfoStream<VerifiedSpeedtest>>,
+    ) -> anyhow::Result<()> {
+        let Some(file_info_stream) = file else {
+            tracing::info!("speedtest backfiller completed");
+            self.done = true;
+            return Ok(());
+        };
+        tracing::info!(
+            file = %file_info_stream.file_info,
+            timestamp = %file_info_stream.file_info.timestamp,
+            "backfilling speedtest file"
+        );
+        self.handle_file(file_info_stream).await
+    }
+
+    async fn handle_file(&self, file: FileInfoStream<VerifiedSpeedtest>) -> anyhow::Result<()> {
+        let Some(ref writer) = self.writer else {
+            return Ok(());
+        };
+
+        let file_info = file.file_info.clone();
+        let write_id = file_info.key.clone();
+        let mut txn = self.pool.begin().await?;
+
+        let records = file.into_stream(&mut txn).await?;
+        let all: Vec<_> = records.collect().await;
+        let total = all.len();
+
+        let iceberg_rows: Vec<_> = all
+            .into_iter()
+            .filter(|v| v.result == SpeedtestResult::SpeedtestValid)
+            .map(|v| iceberg::IcebergSpeedtest::from(&v.report))
+            .collect();
+
+        let valid_count = iceberg_rows.len();
+        writer
+            .write_idempotent(&write_id, iceberg_rows)
+            .await
+            .context("writing speedtests to iceberg")?;
+
+        txn.commit().await?;
+        tracing::info!(
+            file = %file_info,
+            valid_count,
+            filtered_count = total - valid_count,
+            "backfilled speedtest file"
+        );
+        Ok(())
+    }
+
+    async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("speedtest backfiller starting");
+        loop {
+            if self.done {
+                tracing::info!("speedtest backfiller complete");
+                return Ok(());
+            }
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => {
+                    tracing::info!("speedtest backfiller shutting down");
+                    return Ok(());
+                }
+                file = self.recv() => {
+                    self.handle(file).await?;
+                }
+            }
+        }
+    }
+}
+
+impl ManagedTask for SpeedtestBackfiller {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
+        task_manager::spawn(self.run(shutdown))
+    }
+}
+
+// ── SpeedtestDaemon ───────────────────────────────────────────────────────────
+
 pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
     verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
+    iceberg_writer: Option<iceberg::SpeedtestWriter>,
+    speedtest_backfill: SpeedtestBackfiller,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
@@ -69,11 +277,12 @@ where
     GIR: GatewayInfoResolver,
 {
     pub async fn create_managed_task(
-        pool: Pool<Postgres>,
+        pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
         bucket_client: BucketClient,
         gateway_resolver: GIR,
+        iceberg_writer: Option<iceberg::SpeedtestWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
             &settings.cache,
@@ -101,18 +310,34 @@ where
             .create()
             .await?;
 
+        let backfill_opts = settings
+            .speedtest_backfill
+            .as_ref()
+            .map(BackfillOptions::from_settings);
+
+        let (speedtest_backfill, backfill_server) = SpeedtestBackfiller::create(
+            pool.clone(),
+            settings.buckets.output.connect().await,
+            iceberg_writer.clone(),
+            backfill_opts,
+        )
+        .await?;
+
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
             gateway_resolver,
             speedtests,
             speedtests_avg,
             speedtests_validity,
+            iceberg_writer,
+            speedtest_backfill,
         );
 
         Ok(TaskManager::builder()
             .add_task(speedtests_validity_server)
             .add_task(speedtests_avg_server)
             .add_task(speedtests_server)
+            .add_task(backfill_server)
             .add_task(speedtest_daemon)
             .build())
     }
@@ -123,6 +348,8 @@ where
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
         verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
+        iceberg_writer: Option<iceberg::SpeedtestWriter>,
+        speedtest_backfill: SpeedtestBackfiller,
     ) -> Self {
         Self {
             pool,
@@ -130,6 +357,8 @@ where
             speedtests,
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
+            iceberg_writer,
+            speedtest_backfill,
         }
     }
 
@@ -147,6 +376,11 @@ where
                     metrics::histogram!("speedtest_processing_time")
                         .record(start.elapsed());
                 }
+                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
+                // When iceberg is not configured, recv() returns pending() immediately.
+                file = self.speedtest_backfill.recv() => {
+                    self.speedtest_backfill.handle(file).await?;
+                }
             }
         }
 
@@ -158,8 +392,11 @@ where
         file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing speedtest file {}", file.file_info.key);
+        let write_id = file.file_info.key.clone();
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
+
+        let mut iceberg_records = Vec::new();
 
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
@@ -173,11 +410,19 @@ where
                 .await?;
                 let average = SpeedtestAverage::from(latest_speedtests);
                 average.write(&self.speedtest_avg_file_sink).await?;
+
+                if self.iceberg_writer.is_some() {
+                    iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
+                }
             }
             // write out paper trail of speedtest validity
             self.write_verified_speedtest(speedtest_report, result)
                 .await?;
         }
+
+        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
+            .await?;
+
         self.speedtest_avg_file_sink.commit().await?;
         self.verified_speedtest_file_sink.commit().await?;
         transaction.commit().await?;
@@ -238,7 +483,7 @@ where
 
 pub async fn save_speedtest(
     speedtest: &CellSpeedtest,
-    exec: &mut Transaction<'_, Postgres>,
+    exec: &mut PgTransaction<'_>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
@@ -261,7 +506,7 @@ pub async fn save_speedtest(
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
     timestamp: DateTime<Utc>,
-    exec: &mut Transaction<'_, Postgres>,
+    exec: &mut PgTransaction<'_>,
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
         r#"
@@ -285,7 +530,7 @@ pub async fn get_latest_speedtests_for_pubkey(
 
 pub async fn aggregate_epoch_speedtests(
     epoch_end: DateTime<Utc>,
-    exec: &sqlx::Pool<sqlx::Postgres>,
+    exec: &PgPool,
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
     // use latest speedtest which are no older than N hours, defined by SPEEDTEST_LAPSE
@@ -313,7 +558,7 @@ pub async fn aggregate_epoch_speedtests(
 }
 
 pub async fn clear_speedtests(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut PgTransaction<'_>,
     epoch_end: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let oldest_ts = *epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);

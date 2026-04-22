@@ -81,15 +81,20 @@ impl Cmd {
 
         let ingest_bucket_client = settings.buckets.ingest.connect().await;
 
-        let (heartbeat_writer, reward_writers) =
+        let (heartbeat_writer, speedtest_writer, reward_writers) =
             if let Some(ref iceberg_settings) = settings.iceberg_settings {
                 tracing::info!("iceberg settings provided, connecting...");
-                let writer = iceberg::get_writer(iceberg_settings).await?;
+                let (heartbeat_writer, speedtest_writer) =
+                    iceberg::get_poc_writers(iceberg_settings).await?;
                 let reward_writers = iceberg::get_reward_writers(iceberg_settings).await?;
-                (Some(writer), Some(reward_writers))
+                (
+                    Some(heartbeat_writer),
+                    Some(speedtest_writer),
+                    Some(reward_writers),
+                )
             } else {
                 tracing::info!("no iceberg settings provided");
-                (None, None)
+                (None, None, None)
             };
 
         TaskManager::builder()
@@ -116,6 +121,7 @@ impl Cmd {
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
                     gateway_client.clone(),
+                    speedtest_writer,
                 )
                 .await?,
             )

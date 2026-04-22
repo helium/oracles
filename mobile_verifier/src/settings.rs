@@ -50,11 +50,36 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
     pub data_sets_poll_duration: Duration,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Settings for speedtest Iceberg backfill. Only used when iceberg_settings is configured.
+    /// Backfill processes VerifiedSpeedtest files from `speedtest_backfill.start_after` up to
+    /// `speedtest_backfill.stop_after` (the Iceberg deployment date). When absent, the backfiller
+    /// is a no-op and no file poller is started.
+    #[serde(default)]
+    pub speedtest_backfill: Option<BackfillSettings>,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
+}
+
+/// Settings controlling the Iceberg backfill window.
+///
+/// Backfill covers [start_after, stop_after). Set stop_after to the date Iceberg
+/// was first enabled in production. Files before that date are written by the
+/// backfiller; files on or after are written by the daemon's real-time path.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BackfillSettings {
+    /// Start of the backfill window. Defaults to UNIX_EPOCH (backfill all available history).
+    #[serde(default = "default_backfill_start_after")]
+    pub start_after: DateTime<Utc>,
+    /// End of the backfill window (exclusive). Must be set to the Iceberg deployment date
+    /// to prevent the backfiller from overlapping with the daemon's real-time Iceberg writes.
+    pub stop_after: DateTime<Utc>,
+}
+
+fn default_backfill_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_fencing_resolution() -> u8 {
