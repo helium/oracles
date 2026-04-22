@@ -73,9 +73,17 @@ where
         settings: &Settings,
         file_upload: FileUpload,
         bucket_client: BucketClient,
-        speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
+        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
+            &settings.cache,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
         let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
             settings.store_base_path(),
             file_upload,
@@ -103,6 +111,7 @@ where
 
         Ok(TaskManager::builder()
             .add_task(speedtests_validity_server)
+            .add_task(speedtests_avg_server)
             .add_task(speedtests_server)
             .add_task(speedtest_daemon)
             .build())
