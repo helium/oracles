@@ -17,7 +17,7 @@ use crate::{
 use anyhow::Result;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
-use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
+use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate};
 use mobile_config::client::{
     hex_boosting_client::HexBoostingClient, sub_dao_client::SubDaoClient, AuthorizationClient,
     GatewayClient,
@@ -65,15 +65,6 @@ impl Cmd {
         )
         .await?;
 
-        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink(
-            &settings.cache,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
         tracing::info!(
             ?usa_and_mexico_region_paths,
@@ -105,7 +96,6 @@ impl Cmd {
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
             .add_task(seniority_updates_server)
-            .add_task(speedtests_avg_server)
             .add_task(
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
@@ -125,7 +115,6 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
-                    speedtests_avg.clone(),
                     gateway_client.clone(),
                 )
                 .await?,
@@ -186,7 +175,6 @@ impl Cmd {
                     file_upload,
                     hex_boosting_client,
                     sub_dao_rewards_client,
-                    speedtests_avg,
                     reward_writers,
                 )
                 .await?,
