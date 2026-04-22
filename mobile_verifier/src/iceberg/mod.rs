@@ -7,25 +7,34 @@ pub mod heartbeat;
 pub mod radio_reward;
 pub mod radio_reward_covered_hex;
 pub mod service_provider_reward;
+pub mod speedtest;
 pub mod unallocated_reward;
 
 pub use heartbeat::IcebergHeartbeat;
+pub use speedtest::IcebergSpeedtest;
 
 pub const NAMESPACE: &str = "poc";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
+pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
 
-pub async fn get_writer(settings: &helium_iceberg::Settings) -> anyhow::Result<HeartbeatWriter> {
+pub async fn get_poc_writers(
+    settings: &helium_iceberg::Settings,
+) -> anyhow::Result<(HeartbeatWriter, SpeedtestWriter)> {
     let catalog = settings.connect().await.context("connecting to catalog")?;
 
     catalog.create_namespace_if_not_exists(NAMESPACE).await?;
 
-    let writer = catalog
+    let heartbeat_writer = catalog
         .create_table_if_not_exists(heartbeat::table_definition()?)
         .await?;
 
-    Ok(writer.boxed())
+    let speedtest_writer = catalog
+        .create_table_if_not_exists(speedtest::table_definition()?)
+        .await?;
+
+    Ok((heartbeat_writer.boxed(), speedtest_writer.boxed()))
 }
 
 pub struct RewardWriters {

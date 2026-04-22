@@ -12,3 +12,4 @@ mod rewarder_poc_dc;
 mod rewarder_sp_rewards;
 mod seniority;
 mod speedtests;
+mod speedtests_iceberg;
