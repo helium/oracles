@@ -69,7 +69,6 @@ where
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
-    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
@@ -118,7 +117,7 @@ where
             .build())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         hex_service_client: B,
