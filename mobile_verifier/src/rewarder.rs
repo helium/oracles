@@ -61,7 +61,6 @@ pub struct Rewarder<B, C> {
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
-    speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
     reward_writers: Option<iceberg::RewardWriters>,
 }
 
@@ -77,7 +76,6 @@ where
         file_upload: FileUpload,
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
-        speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
         reward_writers: Option<iceberg::RewardWriters>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
@@ -109,7 +107,6 @@ where
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            speedtests_avg,
             reward_writers,
         )?;
 
@@ -131,7 +128,6 @@ where
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
-        speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
         reward_writers: Option<iceberg::RewardWriters>,
     ) -> anyhow::Result<Self> {
         // get the subdao address
@@ -148,7 +144,6 @@ where
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            speedtest_averages,
             reward_writers,
         })
     }
@@ -296,7 +291,6 @@ where
         // process rewards for service providers
         reward_service_providers(self.mobile_rewards.clone(), &reward_info, reward_ctx).await?;
 
-        self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
