@@ -84,7 +84,7 @@ pub struct BackfillSettings {
 }
 
 impl BackfillSettings {
-    pub fn into_options(&self, default_name: impl Into<String>) -> crate::backfill::BackfillOptions {
+    pub fn as_options(&self, default_name: impl Into<String>) -> crate::backfill::BackfillOptions {
         crate::backfill::BackfillOptions {
             process_name: self
                 .process_name

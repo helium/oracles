@@ -128,7 +128,7 @@ where
         let backfill_opts = settings
             .speedtest_backfill
             .as_ref()
-            .map(|b| b.into_options("speedtest-backfill"));
+            .map(|b| b.as_options("speedtest-backfill"));
 
         let (speedtest_backfill, backfill_server) = SpeedtestBackfiller::create(
             pool.clone(),
