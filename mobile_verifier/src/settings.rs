@@ -78,6 +78,18 @@ pub struct BackfillSettings {
     pub stop_after: DateTime<Utc>,
 }
 
+impl BackfillSettings {
+    pub fn into_options(&self, process_name: impl Into<String>) -> crate::backfill::BackfillOptions {
+        crate::backfill::BackfillOptions {
+            process_name: process_name.into(),
+            start_after: self.start_after,
+            stop_after: self.stop_after,
+            poll_duration: None,
+            idle_timeout: None,
+        }
+    }
+}
+
 fn default_backfill_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
 }

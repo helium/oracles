@@ -1,9 +1,4 @@
-use crate::{
-    backfill::BackfillOptions,
-    iceberg,
-    speedtests::SpeedtestBackfiller,
-    Settings,
-};
+use crate::{iceberg, speedtests::SpeedtestBackfiller, Settings};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use task_manager::TaskManager;
@@ -28,19 +23,21 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
-        let iceberg_settings = settings
-            .iceberg_settings
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for speedtest backfill"))?;
-
         let pool = settings
             .database
             .connect("mobile-verifier-speedtest-backfill")
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let (_heartbeat_writer, speedtest_writer) =
-            iceberg::get_poc_writers(iceberg_settings).await?;
+        let iceberg_settings = settings
+            .iceberg_settings
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for speedtest backfill"))?;
+
+        let speedtest_writer = iceberg::PocWriters::from_settings(iceberg_settings)
+            .await?
+            .speedtest
+            .expect("iceberg writer");
 
         tracing::info!(
             process_name = %self.process_name,
@@ -49,7 +46,7 @@ impl Cmd {
             "starting speedtest backfill"
         );
 
-        let opts = BackfillOptions {
+        let opts = crate::backfill::BackfillOptions {
             process_name: self.process_name,
             start_after: self.start_after,
             stop_after: self.stop_after,

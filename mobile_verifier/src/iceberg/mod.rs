@@ -19,22 +19,38 @@ pub const REWARDS_NAMESPACE: &str = "rewards";
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
 
-pub async fn get_poc_writers(
-    settings: &helium_iceberg::Settings,
-) -> anyhow::Result<(HeartbeatWriter, SpeedtestWriter)> {
-    let catalog = settings.connect().await.context("connecting to catalog")?;
+pub struct PocWriters {
+    pub heartbeat: Option<HeartbeatWriter>,
+    pub speedtest: Option<SpeedtestWriter>,
+}
 
-    catalog.create_namespace_if_not_exists(NAMESPACE).await?;
+impl PocWriters {
+    pub fn noop() -> Self {
+        Self {
+            heartbeat: None,
+            speedtest: None,
+        }
+    }
 
-    let heartbeat_writer = catalog
-        .create_table_if_not_exists(heartbeat::table_definition()?)
-        .await?;
+    pub async fn from_settings(settings: &helium_iceberg::Settings) -> anyhow::Result<Self> {
+        tracing::info!("iceberg settings provided, connecting...");
+        let catalog = settings.connect().await.context("connecting to catalog")?;
+        catalog.create_namespace_if_not_exists(NAMESPACE).await?;
 
-    let speedtest_writer = catalog
-        .create_table_if_not_exists(speedtest::table_definition()?)
-        .await?;
+        let heartbeat = catalog
+            .create_table_if_not_exists(heartbeat::table_definition()?)
+            .await?
+            .boxed();
+        let speedtest = catalog
+            .create_table_if_not_exists(speedtest::table_definition()?)
+            .await?
+            .boxed();
 
-    Ok((heartbeat_writer.boxed(), speedtest_writer.boxed()))
+        Ok(Self {
+            heartbeat: Some(heartbeat),
+            speedtest: Some(speedtest),
+        })
+    }
 }
 
 pub struct RewardWriters {

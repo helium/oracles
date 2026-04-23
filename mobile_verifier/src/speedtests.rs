@@ -1,5 +1,5 @@
 use crate::{
-    backfill::{Backfiller, BackfillOptions, IcebergBackfill},
+    backfill::{Backfiller, IcebergBackfill},
     iceberg,
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
@@ -125,13 +125,10 @@ where
             .create()
             .await?;
 
-        let backfill_opts = settings.speedtest_backfill.as_ref().map(|b| BackfillOptions {
-            process_name: "speedtest-backfill".to_string(),
-            start_after: b.start_after,
-            stop_after: b.stop_after,
-            poll_duration: None,
-            idle_timeout: None,
-        });
+        let backfill_opts = settings
+            .speedtest_backfill
+            .as_ref()
+            .map(|b| b.into_options("speedtest-backfill"));
 
         let (speedtest_backfill, backfill_server) = SpeedtestBackfiller::create(
             pool.clone(),
