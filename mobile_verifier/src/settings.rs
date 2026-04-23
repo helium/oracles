@@ -76,12 +76,20 @@ pub struct BackfillSettings {
     /// End of the backfill window (exclusive). Must be set to the Iceberg deployment date
     /// to prevent the backfiller from overlapping with the daemon's real-time Iceberg writes.
     pub stop_after: DateTime<Utc>,
+    /// Override the process name used to track backfill position in the database.
+    /// Change this to force a full re-backfill without touching the database directly.
+    /// When absent, each backfiller uses its own default name.
+    #[serde(default)]
+    pub process_name: Option<String>,
 }
 
 impl BackfillSettings {
-    pub fn into_options(&self, process_name: impl Into<String>) -> crate::backfill::BackfillOptions {
+    pub fn into_options(&self, default_name: impl Into<String>) -> crate::backfill::BackfillOptions {
         crate::backfill::BackfillOptions {
-            process_name: process_name.into(),
+            process_name: self
+                .process_name
+                .clone()
+                .unwrap_or_else(|| default_name.into()),
             start_after: self.start_after,
             stop_after: self.stop_after,
             poll_duration: None,
