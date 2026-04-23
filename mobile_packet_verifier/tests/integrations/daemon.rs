@@ -28,7 +28,7 @@ use solana::{self, burn::TestSolanaClientMap};
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 
-use crate::common;
+use crate::{common, daemon::trigger::TriggerExt};
 
 const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Burn period much longer than the test timeout — ensures burn never fires during tests.
@@ -163,6 +163,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     let cache_dir = tempfile::tempdir()?;
     let (file_upload_client, file_upload_server) =
         file_upload::FileUpload::from_bucket_client(awsl.bucket_client()).await;
+    let file_upload_watcher = file_upload_client.clone();
     let (verified_sessions_sink, verified_sessions_server) =
         VerifiedDataTransferIngestReportV1::file_sink(
             cache_dir.path(),
@@ -208,26 +209,31 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
     );
 
-    // Shutdown signal: poll pending_burns every 50ms. When a burn appears the
-    // entire handle_file() call has completed — Iceberg is published, DB is
-    // committed, and FileSink.commit() has been called. The select! biased loop
-    // cannot interrupt an in-progress .await, so shutdown only fires at the next
-    // loop iteration after handle_file returns.
     let (trigger, listener) = triggered::trigger();
-    tokio::spawn(trigger_shutdown_when_pending_burns_exist(
-        pool.clone(),
-        trigger.clone(),
-    ));
+    let events = daemon.event_rx();
 
     let job = TaskManager::builder()
         .add_task(file_upload_server)
         .add_task(verified_sessions_server)
         .add_task(reports_server)
         .add_task(daemon)
+        .add_task(|_| async {
+            // Shutdown on ReportHandle + upload completion: ReportHandle fires
+            // after the FileSink commit is enqueued. We then wait for the
+            // FileUploadServer to finish the upload (via the shared completion
+            // counter on file_upload_watcher) before triggering shutdown,
+            // ensuring the verified session file is in S3.
+            trigger
+                .when_uploads_completed_at_least(1, events, file_upload_watcher)
+                .await
+                .expect("uploads completed");
+            Ok(())
+        })
         .build();
+
     tokio::time::timeout(TEST_TIMEOUT, Box::new(job).start_task(listener))
         .await
-        .map_err(|_| anyhow::anyhow!("daemon timed out after {:?}", TEST_TIMEOUT))??;
+        .map_err(|err| anyhow::anyhow!("daemon failed {err:?}"))??;
 
     let burns = pending_burns::get_all(&pool).await?;
     assert_eq!(burns.len(), 1, "expected 1 pending burn from ingest");
@@ -235,8 +241,6 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     let rows = iceberg::session::get_all(harness.trino()).await?;
     assert_eq!(rows.len(), 1, "expected 1 session in iceberg");
 
-    // After TaskManager exits all tasks have flushed: FileSink committed the file
-    // and file_upload_server uploaded it to S3.
     let verified_files = verified_data_transfer_files(&awsl.bucket_client()).await?;
     assert!(
         !verified_files.is_empty(),
@@ -314,24 +318,23 @@ async fn daemon_with_iceberg_processes_backfill(pool: PgPool) -> anyhow::Result<
     // When the Iceberg write is committed the backfiller has finished its work.
     let (trigger, listener) = triggered::trigger();
 
+    let trino_client = harness.owned_trino().await?;
     let job = TaskManager::builder()
         .add_task(session_backfill_server)
         .add_task(daemon)
+        .add_task(|_| async {
+            trigger
+                .when_iceberg_sessions_exist(trino_client)
+                .await
+                .expect("iceberg sessions exist");
+            Ok(())
+        })
         .build();
 
     // Spawn the TaskManager separately so we can borrow `harness` in this task.
-    let job_handle = tokio::spawn(Box::new(job).start_task(listener));
-
-    tokio::time::timeout(
-        TEST_TIMEOUT,
-        trigger_shutdown_when_iceberg_sessions_exist(harness.trino(), trigger),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("daemon timed out after {:?}", TEST_TIMEOUT))??;
-
-    job_handle
+    tokio::time::timeout(TEST_TIMEOUT, Box::new(job).start_task(listener))
         .await
-        .map_err(|e| anyhow::anyhow!("job panicked: {e}"))??;
+        .map_err(|err| anyhow::anyhow!("deamon failed {:?}", err))??;
 
     let rows = iceberg::session::get_all(harness.trino()).await?;
     assert_eq!(rows.len(), 1, "expected 1 backfilled session in iceberg");
@@ -377,17 +380,20 @@ async fn daemon_without_iceberg_skips_backfill(pool: PgPool) -> anyhow::Result<(
         BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
     );
 
-    // Trigger shutdown after a short delay — enough to confirm the daemon starts
-    // without panicking and idles cleanly.
     let (trigger, listener) = triggered::trigger();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        trigger.trigger();
-    });
+    let job = TaskManager::builder()
+        .add_task(daemon)
+        .add_task(|_| async {
+            // Trigger shutdown after a short delay — enough to confirm the
+            // daemon starts without panicking and idles cleanly.
+            trigger.after_sleep(300).await;
+            Ok(())
+        })
+        .build();
 
-    tokio::time::timeout(TEST_TIMEOUT, Box::new(daemon).start_task(listener))
+    tokio::time::timeout(TEST_TIMEOUT, Box::new(job).start_task(listener))
         .await
-        .map_err(|_| anyhow::anyhow!("daemon timed out after {:?}", TEST_TIMEOUT))??;
+        .map_err(|err| anyhow::anyhow!("daemon failed {err:?}"))??;
 
     // No files were processed; pending burns table should be empty.
     let burns = pending_burns::get_all(&pool).await?;
@@ -919,31 +925,6 @@ async fn valid_data_transfer_files(bucket_client: &BucketClient) -> anyhow::Resu
     Ok(files)
 }
 
-async fn trigger_shutdown_when_pending_burns_exist(pool: PgPool, trigger: triggered::Trigger) {
-    loop {
-        let pending = pending_burns::get_all(&pool).await.unwrap_or_default();
-        if !pending.is_empty() {
-            trigger.trigger();
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-}
-
-async fn trigger_shutdown_when_iceberg_sessions_exist(
-    trino: &trino_rust_client::Client,
-    trigger: triggered::Trigger,
-) -> anyhow::Result<()> {
-    loop {
-        let rows = iceberg::session::get_all(trino).await.unwrap_or_default();
-        if !rows.is_empty() {
-            trigger.trigger();
-            return Ok(());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-}
-
 async fn commit_valid_session_sink_on_burn(
     mut events: tokio::sync::broadcast::Receiver<mobile_packet_verifier::daemon::DaemonEvent>,
     valid_sessions_sink: FileSinkClient<ValidDataTransferSession>,
@@ -959,6 +940,69 @@ async fn commit_valid_session_sink_on_burn(
                 .expect("commit sent")
                 .await
                 .expect("commit oneshot");
+        }
+    }
+}
+
+mod trigger {
+    use file_store::file_upload::FileUpload;
+    use mobile_packet_verifier::daemon::DaemonEvent;
+    use mobile_packet_verifier::iceberg;
+    use std::time::Duration;
+    use tokio::sync::broadcast::Receiver;
+    use tokio::time::sleep;
+
+    pub trait TriggerExt {
+        async fn when_iceberg_sessions_exist(
+            self,
+            trino: trino_rust_client::Client,
+        ) -> anyhow::Result<()>;
+        async fn when_uploads_completed_at_least(
+            self,
+            n_uploads: u64,
+            events: Receiver<DaemonEvent>,
+            file_upload_watcher: FileUpload,
+        ) -> anyhow::Result<()>;
+
+        async fn after_sleep(self, ms: u64);
+    }
+
+    impl TriggerExt for triggered::Trigger {
+        async fn when_iceberg_sessions_exist(
+            self,
+            trino: trino_rust_client::Client,
+        ) -> anyhow::Result<()> {
+            loop {
+                let rows = iceberg::session::get_all(&trino).await.unwrap_or_default();
+                if !rows.is_empty() {
+                    self.trigger();
+                    return Ok(());
+                }
+                sleep(Duration::from_millis(100)).await;
+            }
+        }
+
+        async fn when_uploads_completed_at_least(
+            self,
+            n_uploads: u64,
+            mut events: Receiver<DaemonEvent>,
+            file_upload_watcher: FileUpload,
+        ) -> anyhow::Result<()> {
+            while let Ok(event) = events.recv().await {
+                if matches!(event, DaemonEvent::ReportHandle) {
+                    file_upload_watcher
+                        .wait_for_uploads_at_least(n_uploads)
+                        .await;
+                    self.trigger();
+                    return Ok(());
+                }
+            }
+            anyhow::bail!("no report handle event received");
+        }
+
+        async fn after_sleep(self, ms: u64) {
+            sleep(Duration::from_millis(ms)).await;
+            self.trigger();
         }
     }
 }
