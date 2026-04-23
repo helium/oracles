@@ -347,7 +347,7 @@ mod tests {
     struct TestMsg {}
 
     #[tokio::test]
-    async fn list_files_respects_start_after_with_dotted_prefix() -> TestResult {
+    async fn list_files_with_dotted_prefix_respects_start_after() -> TestResult {
         let file_prefix = "file_prefix.";
 
         let awsl = create_aws_local_with_timestamped_files(
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_files_respects_start_after_without_dotted_prefix() -> TestResult {
+    async fn list_files_without_dotted_prefix_respects_start_after() -> TestResult {
         let file_prefix = "file_prefix";
 
         let awsl = create_aws_local_with_timestamped_files(
