@@ -470,9 +470,7 @@ mod tests {
         let tmp_dir = TempDir::new()?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload {
-            sender: file_upload_tx,
-        };
+        let file_upload = FileUpload::from_sender(file_upload_tx);
 
         let msg = "hello".to_string();
         let msg_size = FileSink::encode_msg(msg.clone()).len();
@@ -504,9 +502,7 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload {
-            sender: file_upload_tx,
-        };
+        let file_upload = FileUpload::from_sender(file_upload_tx);
 
         let file_prefix = "entropy_report";
         let (file_sink_client, file_sink_server) =
@@ -546,9 +542,7 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload {
-            sender: file_upload_tx,
-        };
+        let file_upload = FileUpload::from_sender(file_upload_tx);
 
         let file_prefix = "entropy_report";
 
@@ -579,10 +573,10 @@ mod tests {
         tokio::time::sleep(time::Duration::from_millis(200)).await;
 
         assert!(get_entropy_file(&tmp_dir, file_prefix).await.is_err());
-        assert_eq!(
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty),
-            file_upload_rx.try_recv()
-        );
+        assert!(matches!(
+            file_upload_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
 
         let receiver = file_sink_client.commit().await.expect("commit failed");
         let _ = receiver.await.expect("commit didn't complete completed");

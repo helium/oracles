@@ -234,6 +234,10 @@ impl IcebergTestHarness {
         &self.trino
     }
 
+    pub async fn owned_trino(&self) -> Result<trino_rust_client::Client> {
+        create_trino_client(&self.config, &self.catalog_name).await
+    }
+
     /// Get the Iceberg catalog for direct catalog operations.
     pub fn iceberg_catalog(&self) -> &Catalog {
         &self.iceberg_catalog
