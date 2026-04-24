@@ -19,16 +19,22 @@ metrics = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
+prost = { workspace = true }
 rust_decimal = { workspace = true }
+sqlx = { workspace = true }
 triggered = { workspace = true }
 humantime-serde = { workspace = true }
 
 custom-tracing = { path = "../custom_tracing" }
+db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
+
+helium-iceberg = { path = "../helium_iceberg", features = ["test-harness"] }
+trino-rust-client = { version = "0.9" }
 
 [dev-dependencies]
 temp-env = "0.3.6"

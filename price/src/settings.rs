@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,32 @@ pub struct Settings {
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
+    /// Database settings. Required when running `backfill`; unused by the
+    /// server path.
+    #[serde(default)]
+    pub database: Option<db_store::Settings>,
+    /// Iceberg catalog settings. When provided, live ticks also write to
+    /// the `rewards.price` Iceberg table. Required by `backfill`.
+    #[serde(default)]
+    pub iceberg_settings: Option<helium_iceberg::Settings>,
+}
+
+/// Settings controlling the Iceberg backfill window.
+///
+/// Backfill covers [`start_after`, `stop_after`). Set `stop_after` to the date
+/// Iceberg was first enabled in production so the backfiller does not overlap
+/// with the daemon's real-time Iceberg writes.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BackfillSettings {
+    /// Start of the backfill window. Defaults to UNIX_EPOCH (all available history).
+    #[serde(default = "default_backfill_start_after")]
+    pub start_after: DateTime<Utc>,
+    /// End of the backfill window (exclusive).
+    pub stop_after: DateTime<Utc>,
+}
+
+fn default_backfill_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_source() -> String {
@@ -61,6 +88,19 @@ fn default_cache() -> PathBuf {
 }
 
 impl Settings {
+    /// Build a `BucketClient` for the output bucket using the shared
+    /// `file_store` credentials.
+    pub async fn output_bucket_client(&self) -> file_store::BucketClient {
+        file_store::BucketClient::new(
+            self.output_bucket.clone(),
+            self.file_store.region.clone(),
+            self.file_store.endpoint.clone(),
+            self.file_store.access_key_id.clone(),
+            self.file_store.secret_access_key.clone(),
+        )
+        .await
+    }
+
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overridden with environment variables.
     ///
