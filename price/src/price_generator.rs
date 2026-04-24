@@ -1,4 +1,9 @@
-use crate::{hermes, metrics::Metrics, Settings};
+use crate::{
+    hermes,
+    iceberg::{self, IcebergPriceReport, PriceWriter},
+    metrics::Metrics,
+    Settings,
+};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
@@ -34,6 +39,7 @@ pub struct PriceGenerator {
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
     file_sink: file_sink::FileSinkClient<PriceReportV1>,
+    iceberg_writer: Option<PriceWriter>,
 }
 
 impl ManagedTask for PriceGenerator {
@@ -56,6 +62,7 @@ impl PriceGenerator {
     pub async fn new(
         settings: &Settings,
         file_sink: file_sink::FileSinkClient<PriceReportV1>,
+        iceberg_writer: Option<PriceWriter>,
     ) -> Result<Self> {
         Ok(Self {
             last_price_opt: None,
@@ -66,6 +73,7 @@ impl PriceGenerator {
             stale_price_duration: settings.stale_price_duration,
             latest_price_file: settings.cache.join(LATEST_PRICE_FILE),
             file_sink,
+            iceberg_writer,
         })
     }
 
@@ -101,6 +109,28 @@ impl PriceGenerator {
         let price_report = PriceReportV1::from(price);
         tracing::info!(token = TOKEN, price.price, "updating price");
         self.file_sink.write(price_report, []).await?;
+
+        let iceberg_record = match IcebergPriceReport::try_from(&price_report) {
+            Ok(record) => record,
+            Err(err) => {
+                tracing::error!(token = TOKEN, ?err, "invalid iceberg record; skipping");
+                return Ok(());
+            }
+        };
+        let write_id = format!("{TOKEN}_{}", price_report.timestamp);
+        if let Err(err) = iceberg::maybe_write_idempotent(
+            self.iceberg_writer.as_ref(),
+            &write_id,
+            vec![iceberg_record],
+        )
+        .await
+        {
+            tracing::error!(
+                token = TOKEN,
+                ?err,
+                "iceberg write failed; file_sink copy is durable"
+            );
+        }
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use clap::Parser;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::PriceReportV1;
-use price::{cli::check, PriceGenerator, Settings};
+use price::{backfill, cli::check, iceberg, PriceGenerator, Settings};
 use std::{
     path::{self, PathBuf},
     time::Duration,
@@ -36,10 +36,11 @@ impl Cli {
 pub enum Cmd {
     Server(Server),
     Check(Check),
+    Backfill(backfill::Cmd),
 }
 
 impl Cmd {
-    pub async fn run(&self, config: Option<PathBuf>) -> Result<()> {
+    pub async fn run(self, config: Option<PathBuf>) -> Result<()> {
         match self {
             Self::Server(cmd) => {
                 let settings = Settings::new(config)?;
@@ -48,11 +49,17 @@ impl Cmd {
                 cmd.run(&settings).await
             }
             Self::Check(options) => {
-                let url = match &options.url {
-                    Some(url) => url.clone(),
+                let url = match options.url {
+                    Some(url) => url,
                     None => Settings::new(config)?.source,
                 };
                 check::run(url).await
+            }
+            Self::Backfill(cmd) => {
+                let settings = Settings::new(config)?;
+                custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+                tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
+                cmd.run(&settings).await
             }
         }
     }
@@ -89,10 +96,21 @@ impl Server {
         )
         .await?;
 
+        let iceberg_writer = match settings.iceberg_settings.as_ref() {
+            Some(iceberg_settings) => {
+                tracing::info!("iceberg settings provided, connecting...");
+                Some(iceberg::get_writer(iceberg_settings).await?)
+            }
+            None => {
+                tracing::info!("no iceberg settings provided");
+                None
+            }
+        };
+
         let mut task_manager = TaskManager::new();
         task_manager.add(file_upload_server);
         task_manager.add(price_sink_server);
-        task_manager.add(PriceGenerator::new(settings, price_sink.clone()).await?);
+        task_manager.add(PriceGenerator::new(settings, price_sink.clone(), iceberg_writer).await?);
 
         task_manager.start().await?;
         Ok(())

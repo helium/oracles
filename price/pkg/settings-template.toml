@@ -56,3 +56,27 @@ interval = "60 seconds"
 # Prometheus scrape endpoint. Default below.
 #
 # endpoint = "127.0.0.1:19000"
+
+
+# Database settings. Required only when running the `backfill` subcommand;
+# the `server` path does not open any DB connections. Used by the
+# file_info_poller to track which S3 files have already been processed.
+#
+# [database]
+# url = "postgres://postgres:postgres@localhost/price"
+# max_connections = 10
+
+
+# Iceberg catalog settings. When provided, the `server` also writes each
+# live tick into the Iceberg table `rewards.price`. Required by `backfill`.
+#
+# [iceberg_settings]
+# catalog_uri = "http://iceberg-catalog:8181"
+# catalog_name = "nova"
+# warehouse = "s3://warehouse-bucket/iceberg"
+#
+# [iceberg_settings.auth]
+# # (optional) OAuth2 / token config
+#
+# [iceberg_settings.s3]
+# region = "us-west-2"
