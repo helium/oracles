@@ -10,7 +10,8 @@ use helium_proto::{
         chain_rewardable_entities::{
             entity_reward_destination_change_v1::RewardsDestination,
             split_recipient_info_v1::RewardAmount, EntityOwnershipChangeReportV1,
-            EntityRewardDestinationChangeReportV1,
+            EntityRewardDestinationChangeReportV1, IotHotspotChangeReportV1,
+            MobileHotspotChangeReportV1,
         },
         packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
         poc_lora::{
@@ -443,6 +444,37 @@ impl Cmd {
                         "unique_connections": req.unique_connections,
                         "timestamp": req.timestamp,
                         "carrier_key": req.carrier_key,
+                    }))?;
+                }
+                FileType::MobileHotspotChangeReport => {
+                    let report = MobileHotspotChangeReportV1::decode(msg)?;
+                    let report = report.report.unwrap();
+                    let change = report.change.unwrap();
+                    let meta = change.metadata.unwrap_or_default();
+                    print_json(&json!({
+                        "pubkey": PublicKeyBinary::from(change.pub_key.unwrap().value),
+                        "asset": bs58::encode(change.asset.unwrap().value).into_string(),
+                        "block": change.block,
+                        "timestamp": change.timestamp_seconds,
+                        "device_type": meta.device_type,
+                        "asserted_hex": meta.asserted_hex,
+                        "azimuth": meta.azimuth,
+                        "serial_number": meta.serial_number,
+                    }))?;
+                }
+                FileType::IotHotspotChangeReport => {
+                    let report = IotHotspotChangeReportV1::decode(msg)?;
+                    let report = report.report.unwrap();
+                    let change = report.change.unwrap();
+                    let meta = change.metadata.unwrap_or_default();
+                    print_json(&json!({
+                        "pubkey": PublicKeyBinary::from(change.pub_key.unwrap().value),
+                        "asset": bs58::encode(change.asset.unwrap().value).into_string(),
+                        "block": change.block,
+                        "timestamp": change.timestamp_seconds,
+                        "asserted_hex": meta.asserted_hex,
+                        "elevation": meta.elevation,
+                        "is_data_only": meta.is_data_only,
                     }))?;
                 }
                 FileType::EntityOwnershipChangeReport => {
