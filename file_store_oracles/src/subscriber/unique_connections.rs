@@ -17,6 +17,9 @@ pub enum UniqueConnectionsError {
 
     #[error("missing field: {0}")]
     MissingField(&'static str),
+
+    #[error("unknown enum value: {0}")]
+    UnknownEnum(prost::UnknownEnumValue),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -99,6 +102,31 @@ impl From<UniqueConnectionReq> for proto::UniqueConnectionsReqV1 {
             carrier_key: value.carrier_key.into(),
             signature: value.signature,
         }
+    }
+}
+
+impl MsgDecode for VerifiedUniqueConnectionsIngestReport {
+    type Msg = proto::VerifiedUniqueConnectionsIngestReportV1;
+}
+
+impl TryFrom<proto::VerifiedUniqueConnectionsIngestReportV1>
+    for VerifiedUniqueConnectionsIngestReport
+{
+    type Error = UniqueConnectionsError;
+
+    fn try_from(
+        value: proto::VerifiedUniqueConnectionsIngestReportV1,
+    ) -> Result<Self, Self::Error> {
+        Ok(Self {
+            timestamp: value.timestamp.to_timestamp_millis()?,
+            report: value
+                .report
+                .ok_or(UniqueConnectionsError::MissingField(
+                    "verified_unique_connections.report",
+                ))?
+                .try_into()?,
+            status: crate::prost_enum(value.status, UniqueConnectionsError::UnknownEnum)?,
+        })
     }
 }
 
