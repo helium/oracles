@@ -110,6 +110,7 @@ where
             .add_task(verified_unique_conections_server)
             .add_task(ingestor)
             .add_task(unique_connections_server)
+            .add_task(backfill_server)
             .build())
     }
 
@@ -137,6 +138,11 @@ where
                 _ = shutdown.clone() => break,
                 Some(file) = self.unique_connections_receiver.recv() => {
                     self.process_unique_connections_file(file).await?;
+                }
+                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
+                // When iceberg is not configured, recv() returns pending() immediately.
+                file = self.backfiller.recv() => {
+                    self.backfiller.handle(file).await?;
                 }
             }
         }
