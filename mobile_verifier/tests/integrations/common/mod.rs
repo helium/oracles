@@ -439,6 +439,7 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
         mobile_verifier::iceberg::heartbeat::table_definition()?,
         mobile_verifier::iceberg::speedtest::table_definition()?,
+        mobile_verifier::iceberg::unique_connections::table_definition()?,
     ])
     .await?;
     Ok(harness)
