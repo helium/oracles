@@ -4,6 +4,8 @@ pub mod ingestor;
 use helium_crypto::PublicKeyBinary;
 use std::collections::HashMap;
 
+pub use ingestor::UniqueConnectionsBackfiller;
+
 pub type UniqueConnectionCounts = HashMap<PublicKeyBinary, u64>;
 
 // hip-134:

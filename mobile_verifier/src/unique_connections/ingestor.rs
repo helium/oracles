@@ -23,15 +23,40 @@ use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{
+    backfill::{Backfiller, IcebergBackfill},
+    iceberg, Settings,
+};
 
 use super::db;
+
+// ── Unique Connections backfill ───────────────────────────────────────────────
+
+pub struct UniqueConnectionsConverter;
+pub type UniqueConnectionsBackfiller = Backfiller<UniqueConnectionsConverter>;
+
+impl IcebergBackfill for UniqueConnectionsConverter {
+    type FileRecord = VerifiedUniqueConnectionsIngestReport;
+    type IcebergRow = iceberg::IcebergUniqueConnections;
+    const FILE_TYPE: FileType = FileType::VerifiedUniqueConnectionsReport;
+
+    fn convert(
+        record: VerifiedUniqueConnectionsIngestReport,
+    ) -> Option<iceberg::IcebergUniqueConnections> {
+        (record.status == VerifiedUniqueConnectionsIngestReportStatus::Valid)
+            .then(|| iceberg::IcebergUniqueConnections::from(&record))
+    }
+}
+
+// ── UniqueConnectionsIngestor ─────────────────────────────────────────────────
 
 pub struct UniqueConnectionsIngestor<AV> {
     pool: PgPool,
     unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
     verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
     authorization_verifier: AV,
+    iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
+    backfiller: UniqueConnectionsBackfiller,
 }
 
 impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
@@ -53,6 +78,7 @@ where
         file_upload: FileUpload,
         bucket_client: BucketClient,
         authorization_verifier: AV,
+        iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
             VerifiedUniqueConnectionsIngestReportV1::file_sink(
@@ -73,17 +99,33 @@ where
                 .create()
                 .await?;
 
-        let radio_threshold_ingestor = Self::new(
+        let backfill_opts = settings
+            .unique_connections_backfill
+            .as_ref()
+            .map(|b| b.as_options("unique-connections-backfill"));
+
+        let (backfiller, backfill_server) = UniqueConnectionsBackfiller::create(
+            pool.clone(),
+            settings.buckets.output.connect().await,
+            iceberg_writer.clone(),
+            backfill_opts,
+        )
+        .await?;
+
+        let ingestor = Self::new(
             pool.clone(),
             unique_connections_ingest,
             verified_unique_connections,
             authorization_verifier,
+            iceberg_writer,
+            backfiller,
         );
 
         Ok(TaskManager::builder()
             .add_task(verified_unique_conections_server)
-            .add_task(radio_threshold_ingestor)
+            .add_task(ingestor)
             .add_task(unique_connections_server)
+            .add_task(backfill_server)
             .build())
     }
 
@@ -92,12 +134,16 @@ where
         unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
         verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
         authorization_verifier: AV,
+        iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
+        backfiller: UniqueConnectionsBackfiller,
     ) -> Self {
         Self {
             pool,
             unique_connections_receiver,
             verified_unique_connections_sink,
             authorization_verifier,
+            iceberg_writer,
+            backfiller,
         }
     }
 
@@ -110,6 +156,11 @@ where
                 Some(file) = self.unique_connections_receiver.recv() => {
                     self.process_unique_connections_file(file).await?;
                 }
+                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
+                // When iceberg is not configured, recv() returns pending() immediately.
+                file = self.backfiller.recv() => {
+                    self.backfiller.handle(file).await?;
+                }
             }
         }
         tracing::info!("stopping unique connections ingestor");
@@ -121,38 +172,49 @@ where
         file_info_stream: FileInfoStream<UniqueConnectionsIngestReport>,
     ) -> anyhow::Result<()> {
         let file_info = file_info_stream.file_info.clone();
+        let write_id = file_info.key.clone();
         tracing::info!(?file_info, "processing file");
 
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
         let mut verified = vec![];
+        let mut iceberg_records = vec![];
 
         while let Some(unique_connections_report) = stream.next().await {
             let verified_report_status = self
                 .verify_unique_connection_report(&unique_connections_report.report)
                 .await;
 
-            if matches!(
+            let is_valid = matches!(
                 verified_report_status,
                 VerifiedUniqueConnectionsIngestReportStatus::Valid
-            ) {
+            );
+
+            if is_valid {
                 verified.push(unique_connections_report.clone());
             }
 
-            let verified_report_proto = VerifiedUniqueConnectionsIngestReport {
+            let verified_report = VerifiedUniqueConnectionsIngestReport {
                 timestamp: Utc::now(),
                 report: unique_connections_report,
                 status: verified_report_status,
             };
 
+            if is_valid && self.iceberg_writer.is_some() {
+                iceberg_records.push(iceberg::IcebergUniqueConnections::from(&verified_report));
+            }
+
             self.verified_unique_connections_sink
                 .write(
-                    verified_report_proto,
+                    verified_report,
                     &[("report_status", verified_report_status.as_str_name())],
                 )
                 .await?;
         }
+
+        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
+            .await?;
 
         db::save(&mut txn, &verified).await?;
         txn.commit().await?;
