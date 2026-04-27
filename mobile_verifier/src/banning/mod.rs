@@ -1,31 +1,15 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use file_store::file_upload::FileUpload;
-use file_store::BucketClient;
 use helium_crypto::PublicKeyBinary;
-use ingestor::BanIngestor;
-use mobile_config::client::AuthorizationClient;
 use sqlx::{PgConnection, PgPool};
-use task_manager::ManagedTask;
-
-use crate::Settings;
 
 pub mod db;
 pub mod ingestor;
 
-pub const BAN_CLEANUP_DAYS: i64 = 7;
+pub use ingestor::BanBackfiller;
 
-pub async fn create_managed_task(
-    pool: PgPool,
-    file_upload: FileUpload,
-    bucket_client: BucketClient,
-    auth_verifier: AuthorizationClient,
-    settings: &Settings,
-) -> anyhow::Result<impl ManagedTask> {
-    BanIngestor::create_managed_task(pool, file_upload, bucket_client, auth_verifier, settings)
-        .await
-}
+pub const BAN_CLEANUP_DAYS: i64 = 7;
 
 #[derive(Debug, Default)]
 pub struct BannedRadios {

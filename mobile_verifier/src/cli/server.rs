@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    banning,
+    banning::ingestor::BanIngestor,
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
@@ -160,12 +160,13 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                banning::create_managed_task(
+                BanIngestor::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
                     auth_client,
                     settings,
+                    poc_writers.ban,
                 )
                 .await?,
             )

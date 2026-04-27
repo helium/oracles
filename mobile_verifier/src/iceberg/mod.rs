@@ -2,6 +2,7 @@ use anyhow::Context;
 use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
+pub mod ban;
 pub mod gateway_reward;
 pub mod heartbeat;
 pub mod radio_reward;
@@ -11,6 +12,7 @@ pub mod speedtest;
 pub mod unallocated_reward;
 pub mod unique_connections;
 
+pub use ban::IcebergBan;
 pub use heartbeat::IcebergHeartbeat;
 pub use speedtest::IcebergSpeedtest;
 pub use unique_connections::IcebergUniqueConnections;
@@ -18,11 +20,13 @@ pub use unique_connections::IcebergUniqueConnections;
 pub const NAMESPACE: &str = "poc";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
+pub type BanWriter = BoxedDataWriter<IcebergBan>;
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
 pub type UniqueConnectionsWriter = BoxedDataWriter<IcebergUniqueConnections>;
 
 pub struct PocWriters {
+    pub ban: Option<BanWriter>,
     pub heartbeat: Option<HeartbeatWriter>,
     pub speedtest: Option<SpeedtestWriter>,
     pub unique_connections: Option<UniqueConnectionsWriter>,
@@ -31,6 +35,7 @@ pub struct PocWriters {
 impl PocWriters {
     pub fn noop() -> Self {
         Self {
+            ban: None,
             heartbeat: None,
             speedtest: None,
             unique_connections: None,
@@ -42,6 +47,10 @@ impl PocWriters {
         let catalog = settings.connect().await.context("connecting to catalog")?;
         catalog.create_namespace_if_not_exists(NAMESPACE).await?;
 
+        let ban = catalog
+            .create_table_if_not_exists(ban::table_definition()?)
+            .await?
+            .boxed();
         let heartbeat = catalog
             .create_table_if_not_exists(heartbeat::table_definition()?)
             .await?
@@ -56,6 +65,7 @@ impl PocWriters {
             .boxed();
 
         Ok(Self {
+            ban: Some(ban),
             heartbeat: Some(heartbeat),
             speedtest: Some(speedtest),
             unique_connections: Some(unique_connections),
