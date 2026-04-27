@@ -13,3 +13,4 @@ mod rewarder_sp_rewards;
 mod seniority;
 mod speedtests;
 mod speedtests_iceberg;
+mod unique_connections_iceberg;
