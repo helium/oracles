@@ -2,7 +2,8 @@ use anyhow::Result;
 use clap::Parser;
 use mobile_verifier::{
     cli::{
-        backfill_speedtest, backfill_unique_connections, reward_from_db, server, verify_disktree,
+        backfill_ban, backfill_speedtest, backfill_unique_connections, reward_from_db, server,
+        verify_disktree,
     },
     Settings,
 };
@@ -44,6 +45,8 @@ pub enum Cmd {
     BackfillSpeedtest(backfill_speedtest::Cmd),
     /// Backfill historical VerifiedUniqueConnections files to the poc.unique_connections iceberg table.
     BackfillUniqueConnections(backfill_unique_connections::Cmd),
+    /// Backfill historical VerifiedMobileBanReport files to the poc.bans iceberg table.
+    BackfillBan(backfill_ban::Cmd),
 }
 
 impl Cmd {
@@ -54,6 +57,7 @@ impl Cmd {
             Self::VerifyDisktree(cmd) => cmd.run(&settings).await,
             Self::BackfillSpeedtest(cmd) => cmd.run(&settings).await,
             Self::BackfillUniqueConnections(cmd) => cmd.run(&settings).await,
+            Self::BackfillBan(cmd) => cmd.run(&settings).await,
         }
     }
 }
