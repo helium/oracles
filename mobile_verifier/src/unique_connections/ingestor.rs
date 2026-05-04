@@ -56,7 +56,6 @@ pub struct UniqueConnectionsIngestor<AV> {
     verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
     authorization_verifier: AV,
     iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
-    backfiller: UniqueConnectionsBackfiller,
 }
 
 impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
@@ -99,33 +98,18 @@ where
                 .create()
                 .await?;
 
-        let backfill_opts = settings
-            .unique_connections_backfill
-            .as_ref()
-            .map(|b| b.as_options("unique-connections-backfill"));
-
-        let (backfiller, backfill_server) = UniqueConnectionsBackfiller::create(
-            pool.clone(),
-            settings.buckets.output.connect().await,
-            iceberg_writer.clone(),
-            backfill_opts,
-        )
-        .await?;
-
         let ingestor = Self::new(
             pool.clone(),
             unique_connections_ingest,
             verified_unique_connections,
             authorization_verifier,
             iceberg_writer,
-            backfiller,
         );
 
         Ok(TaskManager::builder()
             .add_task(verified_unique_conections_server)
             .add_task(ingestor)
             .add_task(unique_connections_server)
-            .add_task(backfill_server)
             .build())
     }
 
@@ -135,7 +119,6 @@ where
         verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
         authorization_verifier: AV,
         iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
-        backfiller: UniqueConnectionsBackfiller,
     ) -> Self {
         Self {
             pool,
@@ -143,7 +126,6 @@ where
             verified_unique_connections_sink,
             authorization_verifier,
             iceberg_writer,
-            backfiller,
         }
     }
 
@@ -155,11 +137,6 @@ where
                 _ = shutdown.clone() => break,
                 Some(file) = self.unique_connections_receiver.recv() => {
                     self.process_unique_connections_file(file).await?;
-                }
-                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
-                // When iceberg is not configured, recv() returns pending() immediately.
-                file = self.backfiller.recv() => {
-                    self.backfiller.handle(file).await?;
                 }
             }
         }
