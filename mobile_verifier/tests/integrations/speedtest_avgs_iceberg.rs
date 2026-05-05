@@ -2,9 +2,7 @@ use chrono::{DateTime, Duration, SubsecRound, Utc};
 use file_store::{aws_local::AwsLocal, traits::TimestampEncode};
 use file_store_oracles::FileType;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    Speedtest, SpeedtestAvg, SpeedtestAvgValidity,
-};
+use helium_proto::services::poc_mobile::{Speedtest, SpeedtestAvg, SpeedtestAvgValidity};
 use mobile_verifier::{
     backfill::BackfillOptions,
     iceberg::{self, speedtest_avg::IcebergSpeedtestAvg},
@@ -148,14 +146,20 @@ async fn backfill_writes_speedtest_avgs_to_iceberg(pool: PgPool) -> anyhow::Resu
 
     awsl.put_protos_at_time(
         FileType::SpeedtestAvg.to_string(),
-        vec![make_speedtest_avg_proto(file1_time, SpeedtestAvgValidity::Valid)],
+        vec![make_speedtest_avg_proto(
+            file1_time,
+            SpeedtestAvgValidity::Valid,
+        )],
         file1_time,
     )
     .await?;
 
     awsl.put_protos_at_time(
         FileType::SpeedtestAvg.to_string(),
-        vec![make_speedtest_avg_proto(file2_time, SpeedtestAvgValidity::Valid)],
+        vec![make_speedtest_avg_proto(
+            file2_time,
+            SpeedtestAvgValidity::Valid,
+        )],
         file2_time,
     )
     .await?;

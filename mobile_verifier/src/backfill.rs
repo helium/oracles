@@ -8,7 +8,7 @@ use file_store_oracles::FileType;
 use futures::StreamExt;
 use helium_iceberg::BoxedDataWriter;
 use sqlx::PgPool;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
@@ -104,6 +104,8 @@ impl<C: IcebergBackfill> Backfiller<C> {
             return Ok(());
         };
 
+        let start = Instant::now();
+
         let file_info = file.file_info.clone();
         let write_id = file_info.key.clone();
         let mut txn = self.pool.begin().await?;
@@ -125,6 +127,7 @@ impl<C: IcebergBackfill> Backfiller<C> {
             written,
             skipped = total - written,
             age = %file_age(&file_info),
+            duration = ?start.elapsed(),
             "backfilled {} file",
             C::FILE_TYPE
         );
