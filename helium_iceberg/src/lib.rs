@@ -1,5 +1,6 @@
 extern crate tls_init;
 
+mod batched_writer;
 mod catalog;
 mod error;
 mod iceberg_table;
@@ -10,6 +11,7 @@ mod writer;
 #[cfg(feature = "test-harness")]
 pub mod test_harness;
 
+pub use batched_writer::{BatchedWriter, BatchedWriterConfig, BatchedWriterTask};
 pub use catalog::Catalog;
 pub use error::{Error, Result};
 pub use iceberg_table::IcebergTable;

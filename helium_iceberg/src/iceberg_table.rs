@@ -74,11 +74,22 @@ impl<T> IcebergTable<T> {
 
     async fn write_and_commit(
         &self,
-        batch: RecordBatch,
+        batches: Vec<RecordBatch>,
         snapshot_properties: HashMap<String, String>,
     ) -> Result {
-        let data_files = write_data_files(&self.table, batch).await?;
+        let data_files = write_data_files(&self.table, batches).await?;
         self.commit_files(data_files, snapshot_properties).await
+    }
+
+    /// Commit one or more pre-built `RecordBatch`es as a single Iceberg
+    /// snapshot. All batches must share the table's current schema. Used
+    /// by `BatchedWriter` after replaying its on-disk spool so we don't
+    /// re-serialize through arrow-json on the way back to Iceberg.
+    pub async fn write_record_batches(&self, batches: Vec<RecordBatch>) -> Result {
+        if batches.iter().all(|b| b.num_rows() == 0) {
+            return Ok(());
+        }
+        self.write_and_commit(batches, HashMap::new()).await
     }
 
     async fn commit_files(
@@ -124,7 +135,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         let table = self.table.read().await;
         let batch = records_to_batch(&table, &records)?;
         drop(table);
-        self.write_and_commit(batch, HashMap::new()).await
+        self.write_and_commit(vec![batch], HashMap::new()).await
     }
 
     async fn write_idempotent(&self, id: &str, records: Vec<T>) -> Result {
@@ -144,7 +155,7 @@ impl<T: Serialize + Send + Sync + 'static> DataWriter<T> for IcebergTable<T> {
         drop(table);
 
         let props = HashMap::from([(WRITE_ID_PROPERTY.to_string(), id.to_string())]);
-        self.write_and_commit(batch, props).await
+        self.write_and_commit(vec![batch], props).await
     }
 }
 
@@ -158,7 +169,7 @@ pub(crate) async fn reload_table(catalog: &Catalog, table: &RwLock<Table>) -> Re
     Ok(())
 }
 
-fn records_to_batch<T: Serialize>(table: &Table, records: &[T]) -> Result<RecordBatch> {
+pub(crate) fn records_to_batch<T: Serialize>(table: &Table, records: &[T]) -> Result<RecordBatch> {
     let iceberg_schema = table.metadata().current_schema();
     let arrow_schema = schema_to_arrow_schema(iceberg_schema).map_err(Error::Iceberg)?;
 
@@ -178,7 +189,7 @@ fn records_to_batch<T: Serialize>(table: &Table, records: &[T]) -> Result<Record
 
 async fn write_data_files(
     table: &RwLock<Table>,
-    batch: RecordBatch,
+    batches: Vec<RecordBatch>,
 ) -> Result<Vec<iceberg::spec::DataFile>> {
     let table_guard = table.read().await;
     let schema = table_guard.metadata().current_schema().clone();
@@ -215,15 +226,19 @@ async fn write_data_files(
         RecordBatchPartitionSplitter::try_new_with_computed_values(schema, partition_spec)
             .map_err(Error::Iceberg)?;
 
-    let partitioned_batches = splitter.split(&batch).map_err(Error::Iceberg)?;
-
     let mut fanout_writer = FanoutWriter::new(data_file_writer_builder);
 
-    for (partition_key, partition_batch) in partitioned_batches {
-        fanout_writer
-            .write(partition_key, partition_batch)
-            .await
-            .map_err(Error::Iceberg)?;
+    for batch in batches {
+        if batch.num_rows() == 0 {
+            continue;
+        }
+        let partitioned_batches = splitter.split(&batch).map_err(Error::Iceberg)?;
+        for (partition_key, partition_batch) in partitioned_batches {
+            fanout_writer
+                .write(partition_key, partition_batch)
+                .await
+                .map_err(Error::Iceberg)?;
+        }
     }
 
     fanout_writer.close().await.map_err(Error::Iceberg)
