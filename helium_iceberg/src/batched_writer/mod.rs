@@ -193,11 +193,11 @@ where
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    log_flush(&mut spool, &self.table, &table_label, "shutdown").await?;
+                    flush_to_iceberg(&mut spool, &self.table, &table_label, "shutdown").await?;
                     break;
                 }
                 _ = timer.tick() => {
-                    log_flush(&mut spool, &self.table, &table_label, "timeout").await?;
+                    flush_to_iceberg(&mut spool, &self.table, &table_label, "timeout").await?;
                 }
                 msg = self.receiver.recv() => match msg {
                     Some(BatchMessage::Queue(records, ack)) => {
@@ -215,18 +215,18 @@ where
                         let append_ok = append_res.is_ok();
                         let _ = ack.send(append_res);
                         if append_ok && spool.record_count() >= self.config.max_batch_size {
-                            log_flush(&mut spool, &self.table, &table_label, "size").await?;
+                            flush_to_iceberg(&mut spool, &self.table, &table_label, "size").await?;
                             timer.reset();
                         }
                     }
                     Some(BatchMessage::Flush(ack)) => {
-                        let res = log_flush(&mut spool, &self.table, &table_label, "manual").await;
+                        let res = flush_to_iceberg(&mut spool, &self.table, &table_label, "manual").await;
                         let _ = ack.send(res);
                         timer.reset();
                     }
                     None => {
                         // All handles dropped. Drain and exit.
-                        log_flush(&mut spool, &self.table, &table_label, "channel_closed")
+                        flush_to_iceberg(&mut spool, &self.table, &table_label, "channel_closed")
                             .await?;
                         break;
                     }
@@ -250,7 +250,7 @@ where
 /// Flush the spool to Iceberg and emit an info log on success. No-op
 /// (and no log) when the spool has no buffered records — empty
 /// timer/shutdown ticks shouldn't show up in logs.
-async fn log_flush<T>(
+async fn flush_to_iceberg<T>(
     spool: &mut Spool,
     table: &IcebergTable<T>,
     table_label: &str,
