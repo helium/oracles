@@ -9,19 +9,23 @@ pub mod radio_reward_covered_hex;
 pub mod service_provider_reward;
 pub mod speedtest;
 pub mod unallocated_reward;
+pub mod unique_connections;
 
 pub use heartbeat::IcebergHeartbeat;
 pub use speedtest::IcebergSpeedtest;
+pub use unique_connections::IcebergUniqueConnections;
 
 pub const NAMESPACE: &str = "poc";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
+pub type UniqueConnectionsWriter = BoxedDataWriter<IcebergUniqueConnections>;
 
 pub struct PocWriters {
     pub heartbeat: Option<HeartbeatWriter>,
     pub speedtest: Option<SpeedtestWriter>,
+    pub unique_connections: Option<UniqueConnectionsWriter>,
 }
 
 impl PocWriters {
@@ -29,6 +33,7 @@ impl PocWriters {
         Self {
             heartbeat: None,
             speedtest: None,
+            unique_connections: None,
         }
     }
 
@@ -45,10 +50,15 @@ impl PocWriters {
             .create_table_if_not_exists(speedtest::table_definition()?)
             .await?
             .boxed();
+        let unique_connections = catalog
+            .create_table_if_not_exists(unique_connections::table_definition()?)
+            .await?
+            .boxed();
 
         Ok(Self {
             heartbeat: Some(heartbeat),
             speedtest: Some(speedtest),
+            unique_connections: Some(unique_connections),
         })
     }
 }
