@@ -51,7 +51,6 @@ pub struct BanIngestor {
     report_rx: Receiver<FileInfoStream<BanReport>>,
     verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
     iceberg_writer: Option<iceberg::BanWriter>,
-    backfiller: BanBackfiller,
 }
 
 impl ManagedTask for BanIngestor {
@@ -86,32 +85,17 @@ impl BanIngestor {
             .create()
             .await?;
 
-        let backfill_opts = settings
-            .ban_backfill
-            .as_ref()
-            .map(|b| b.as_options("ban-backfill"));
-
-        let (backfiller, backfill_server) = BanBackfiller::create(
-            pool.clone(),
-            settings.buckets.output.connect().await,
-            iceberg_writer.clone(),
-            backfill_opts,
-        )
-        .await?;
-
         let ingestor = Self::new(
             pool,
             auth_verifier,
             report_rx,
             verified_sink,
             iceberg_writer,
-            backfiller,
         );
 
         Ok(TaskManager::builder()
             .add_task(verified_sink_server)
             .add_task(ingest_server)
-            .add_task(backfill_server)
             .add_task(ingestor)
             .build())
     }
@@ -122,7 +106,6 @@ impl BanIngestor {
         report_rx: Receiver<FileInfoStream<BanReport>>,
         verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
         iceberg_writer: Option<iceberg::BanWriter>,
-        backfiller: BanBackfiller,
     ) -> Self {
         Self {
             pool,
@@ -130,7 +113,6 @@ impl BanIngestor {
             report_rx,
             verified_sink,
             iceberg_writer,
-            backfiller,
         }
     }
 
@@ -146,11 +128,6 @@ impl BanIngestor {
                         anyhow::bail!("hotspot ban FileInfoPoller sender was dropped unexpectedly");
                     };
                     self.process_file(file_info_stream).await?;
-                }
-                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
-                // When iceberg is not configured, recv() returns pending() immediately.
-                file = self.backfiller.recv() => {
-                    self.backfiller.handle(file).await?;
                 }
             }
         }

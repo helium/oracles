@@ -56,9 +56,6 @@ pub struct Settings {
     /// is a no-op and no file poller is started.
     #[serde(default)]
     pub speedtest_backfill: Option<BackfillSettings>,
-    /// Settings for ban Iceberg backfill. Only used when iceberg_settings is configured.
-    #[serde(default)]
-    pub ban_backfill: Option<BackfillSettings>,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,
