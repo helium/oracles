@@ -3784,6 +3784,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
+ "arrow-ipc",
  "arrow-json",
  "arrow-schema",
  "async-trait",
@@ -3799,11 +3800,14 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tls-init",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "triggered",
  "trino-rust-client",
  "uuid",
 ]
