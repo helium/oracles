@@ -18,7 +18,7 @@ use file_store_oracles::{
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
+    SpeedtestAvg as SpeedtestAvgProto, SpeedtestAvgValidity, SpeedtestIngestReportV1,
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::gateway::client::GatewayInfoResolver;
@@ -84,6 +84,7 @@ pub struct SpeedtestDaemon<GIR> {
     speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
     verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
     iceberg_writer: Option<iceberg::SpeedtestWriter>,
+    speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
@@ -97,6 +98,7 @@ where
         bucket_client: BucketClient,
         gateway_resolver: GIR,
         iceberg_writer: Option<iceberg::SpeedtestWriter>,
+        speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
             &settings.cache,
@@ -131,6 +133,7 @@ where
             speedtests_avg,
             speedtests_validity,
             iceberg_writer,
+            speedtest_avg_iceberg_writer,
         );
 
         Ok(TaskManager::builder()
@@ -148,6 +151,7 @@ where
         speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
         verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
         iceberg_writer: Option<iceberg::SpeedtestWriter>,
+        speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
     ) -> Self {
         Self {
             pool,
@@ -156,6 +160,7 @@ where
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
             iceberg_writer,
+            speedtest_avg_iceberg_writer,
         }
     }
 
@@ -189,6 +194,7 @@ where
         let mut speedtests = file.into_stream(&mut transaction).await?;
 
         let mut iceberg_records = Vec::new();
+        let mut iceberg_avg_records = Vec::new();
 
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
@@ -206,6 +212,11 @@ where
                 if self.iceberg_writer.is_some() {
                     iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
                 }
+                if self.speedtest_avg_iceberg_writer.is_some()
+                    && average.validity == SpeedtestAvgValidity::Valid
+                {
+                    iceberg_avg_records.push(iceberg::IcebergSpeedtestAvg::from(&average));
+                }
             }
             // write out paper trail of speedtest validity
             self.write_verified_speedtest(speedtest_report, result)
@@ -214,6 +225,12 @@ where
 
         iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
             .await?;
+        iceberg::maybe_write_idempotent(
+            self.speedtest_avg_iceberg_writer.as_ref(),
+            &write_id,
+            iceberg_avg_records,
+        )
+        .await?;
 
         self.speedtest_avg_file_sink.commit().await?;
         self.verified_speedtest_file_sink.commit().await?;

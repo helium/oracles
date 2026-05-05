@@ -116,6 +116,7 @@ impl Cmd {
                     ingest_bucket_client.clone(),
                     gateway_client.clone(),
                     poc_writers.speedtest,
+                    poc_writers.speedtest_avg,
                 )
                 .await?,
             )
