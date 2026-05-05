@@ -22,7 +22,7 @@
 mod spool;
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use task_manager::{ManagedTask, TaskFuture};
@@ -176,6 +176,12 @@ where
     T: Serialize + Send + Sync + 'static,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
+        let table_label = {
+            let guard = self.table.table.read().await;
+            let id = guard.identifier();
+            format!("{}.{}", id.namespace().to_url_string(), id.name())
+        };
+
         Spool::replay_dir(&self.config.spool_dir, &self.table).await?;
         let mut spool = Spool::create(&self.config.spool_dir, &self.table).await?;
 
@@ -187,13 +193,11 @@ where
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    spool.flush_to_iceberg(&self.table).await?;
+                    log_flush(&mut spool, &self.table, &table_label, "shutdown").await?;
                     break;
                 }
                 _ = timer.tick() => {
-                    if !spool.is_empty() {
-                        spool.flush_to_iceberg(&self.table).await?;
-                    }
+                    log_flush(&mut spool, &self.table, &table_label, "timeout").await?;
                 }
                 msg = self.receiver.recv() => match msg {
                     Some(BatchMessage::Queue(records, ack)) => {
@@ -211,18 +215,19 @@ where
                         let append_ok = append_res.is_ok();
                         let _ = ack.send(append_res);
                         if append_ok && spool.record_count() >= self.config.max_batch_size {
-                            spool.flush_to_iceberg(&self.table).await?;
+                            log_flush(&mut spool, &self.table, &table_label, "size").await?;
                             timer.reset();
                         }
                     }
                     Some(BatchMessage::Flush(ack)) => {
-                        let res = spool.flush_to_iceberg(&self.table).await;
+                        let res = log_flush(&mut spool, &self.table, &table_label, "manual").await;
                         let _ = ack.send(res);
                         timer.reset();
                     }
                     None => {
                         // All handles dropped. Drain and exit.
-                        spool.flush_to_iceberg(&self.table).await?;
+                        log_flush(&mut spool, &self.table, &table_label, "channel_closed")
+                            .await?;
                         break;
                     }
                 }
@@ -240,4 +245,33 @@ where
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
         task_manager::spawn((*self).run(shutdown))
     }
+}
+
+/// Flush the spool to Iceberg and emit an info log on success. No-op
+/// (and no log) when the spool has no buffered records — empty
+/// timer/shutdown ticks shouldn't show up in logs.
+async fn log_flush<T>(
+    spool: &mut Spool,
+    table: &IcebergTable<T>,
+    table_label: &str,
+    reason: &'static str,
+) -> Result<()>
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    if spool.is_empty() {
+        return Ok(());
+    }
+    let records = spool.record_count();
+    let started = Instant::now();
+    spool.flush_to_iceberg(table).await?;
+    let duration_ms = started.elapsed().as_millis() as u64;
+    tracing::info!(
+        table = table_label,
+        reason,
+        records,
+        duration_ms,
+        "flushed batch to iceberg",
+    );
+    Ok(())
 }
