@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use helium_iceberg::{BatchedWriter, BatchedWriterConfig};
 use helium_proto::PriceReportV1;
 use price::{backfill, cli::check, iceberg, PriceGenerator, Settings};
 use std::{
@@ -93,10 +94,26 @@ impl Server {
         )
         .await?;
 
+        let mut task_manager = TaskManager::new();
+        task_manager.add(file_upload_server);
+        task_manager.add(price_sink_server);
+
+        // When Iceberg is configured, build a `BatchedWriter` so the
+        // PriceGenerator can `queue` each tick without producing one
+        // snapshot per minute. The `BatchedWriterTask` owns flushing on
+        // size/time thresholds, replays its on-disk spool on startup so a
+        // crash between the file_sink write and the Iceberg commit doesn't
+        // lose records, and drains on graceful shutdown.
         let iceberg_writer = match settings.iceberg_settings.as_ref() {
             Some(iceberg_settings) => {
                 tracing::info!("iceberg settings provided, connecting...");
-                Some(iceberg::get_writer(iceberg_settings).await?)
+                let table = iceberg::connect_table(iceberg_settings).await?;
+                let config = BatchedWriterConfig::new(settings.cache.join("iceberg-spool"))
+                    .with_max_batch_size(settings.iceberg_batch_size)
+                    .with_batch_timeout(settings.iceberg_batch_timeout);
+                let (writer, batched_task) = BatchedWriter::new(table, config);
+                task_manager.add(batched_task);
+                Some(writer)
             }
             None => {
                 tracing::info!("no iceberg settings provided");
@@ -104,9 +121,6 @@ impl Server {
             }
         };
 
-        let mut task_manager = TaskManager::new();
-        task_manager.add(file_upload_server);
-        task_manager.add(price_sink_server);
         task_manager.add(PriceGenerator::new(settings, price_sink.clone(), iceberg_writer).await?);
 
         task_manager.start().await?;

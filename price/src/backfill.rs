@@ -1,5 +1,5 @@
 use crate::{
-    iceberg::{self, IcebergPriceReport, PriceWriter},
+    iceberg::{self, IcebergPriceReport, PriceTable},
     settings::Settings,
 };
 use anyhow::{Context, Result};
@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source, FileInfo};
 use file_store_oracles::FileType;
 use futures::StreamExt;
+use helium_iceberg::DataWriter;
 use helium_proto::PriceReportV1;
 use sqlx::{PgPool, Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
@@ -45,7 +46,7 @@ impl Cmd {
         let pool = database.connect("price-backfill").await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let writer = iceberg::get_writer(iceberg_settings).await?;
+        let writer = iceberg::connect_table(iceberg_settings).await?;
 
         tracing::info!(
             process_name = %self.process_name,
@@ -81,7 +82,7 @@ pub struct BackfillOptions {
 pub struct PriceReportBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<PriceReportV1>>,
-    writer: PriceWriter,
+    writer: PriceTable,
     done: bool,
 }
 
@@ -89,7 +90,7 @@ impl PriceReportBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<PriceReportV1>>,
-        writer: PriceWriter,
+        writer: PriceTable,
     ) -> Self {
         Self {
             pool,
@@ -102,7 +103,7 @@ impl PriceReportBackfiller {
     pub async fn create(
         pool: PgPool,
         bucket_client: file_store::BucketClient,
-        writer: PriceWriter,
+        writer: PriceTable,
         options: BackfillOptions,
     ) -> Result<(Self, impl ManagedTask)> {
         let (reports, reports_server) =
@@ -125,7 +126,7 @@ impl PriceReportBackfiller {
     pub async fn create_managed_task(
         pool: PgPool,
         bucket_client: file_store::BucketClient,
-        writer: PriceWriter,
+        writer: PriceTable,
         options: BackfillOptions,
     ) -> Result<TaskManager> {
         let (backfiller, server) = Self::create(pool, bucket_client, writer, options).await?;

@@ -71,6 +71,15 @@ bucket = "price"
 # Iceberg catalog settings. When provided, the `server` also writes each
 # live tick into the Iceberg table `rewards.price`. Required by `backfill`.
 #
+# Live writes go through a `BatchedWriter` that spools each record to
+# `<cache>/iceberg-spool` for crash durability and commits a single
+# Iceberg snapshot when either `iceberg_batch_size` records or
+# `iceberg_batch_timeout` of wall-clock time has elapsed since the last
+# commit. Defaults below produce ~24 snapshots/day at a 60s tick.
+#
+# iceberg_batch_size = 60
+# iceberg_batch_timeout = "1 hour"
+#
 # [iceberg_settings]
 # catalog_uri = "http://iceberg-catalog:8181"
 # catalog_name = "nova"

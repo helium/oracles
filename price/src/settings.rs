@@ -45,6 +45,16 @@ pub struct Settings {
     /// the `rewards.price` Iceberg table. Required by `backfill`.
     #[serde(default)]
     pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Maximum number of records buffered before forcing an Iceberg commit.
+    /// Whichever of `iceberg_batch_size` / `iceberg_batch_timeout` fires
+    /// first triggers the snapshot. With a 60s tick this is also a cap on
+    /// catch-up batch growth. Default = 60.
+    #[serde(default = "default_iceberg_batch_size")]
+    pub iceberg_batch_size: usize,
+    /// Maximum time between Iceberg commits. With the default (1 hour) the
+    /// daemon writes ~24 snapshots/day instead of one per tick. Default = 1 hour.
+    #[serde(with = "humantime_serde", default = "default_iceberg_batch_timeout")]
+    pub iceberg_batch_timeout: Duration,
 }
 
 /// Settings controlling the Iceberg backfill window.
@@ -83,6 +93,14 @@ fn default_stale_price_duration() -> Duration {
 
 fn default_cache() -> PathBuf {
     PathBuf::from("/opt/price/data")
+}
+
+fn default_iceberg_batch_size() -> usize {
+    60
+}
+
+fn default_iceberg_batch_timeout() -> Duration {
+    humantime::parse_duration("10 minutes").unwrap()
 }
 
 impl Settings {
