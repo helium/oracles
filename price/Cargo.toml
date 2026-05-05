@@ -33,7 +33,7 @@ poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
 
-helium-iceberg = { path = "../helium_iceberg", features = ["test-harness"] }
+helium-iceberg = { path = "../helium_iceberg" }
 trino-rust-client = { version = "0.9" }
 
 [dev-dependencies]
