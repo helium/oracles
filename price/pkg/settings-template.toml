@@ -7,8 +7,6 @@
 #
 # source = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756"
 
-# S3 bucket to write price reports to. Required.
-output_bucket = "price"
 
 # Folder for the local on-disk price cache / file sink staging area.
 # Default below.
@@ -29,6 +27,9 @@ interval = "60 seconds"
 #
 # default_price =
 
+#output bucket
+[output]
+bucket = "price"
 
 [custom_tracing]
 # File watched for runtime tracing-config reloads. Default below.

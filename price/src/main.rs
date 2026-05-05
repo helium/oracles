@@ -80,12 +80,9 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let file_store_client = settings.file_store.connect().await;
-
         // Initialize uploader
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::new(file_store_client.clone(), settings.output_bucket.clone())
-                .await;
+            file_upload::FileUpload::from_bucket_client(settings.output.connect().await).await;
 
         let (price_sink, price_sink_server) = PriceReportV1::file_sink(
             &settings.cache,

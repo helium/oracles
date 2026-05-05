@@ -20,9 +20,7 @@ pub struct Settings {
     /// parameter for the HNT feed. Required.
     #[serde(default = "default_source")]
     pub source: String,
-    #[serde(default)]
-    pub file_store: file_store::Settings,
-    pub output_bucket: String,
+    pub output: file_store::BucketSettings,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -88,19 +86,6 @@ fn default_cache() -> PathBuf {
 }
 
 impl Settings {
-    /// Build a `BucketClient` for the output bucket using the shared
-    /// `file_store` credentials.
-    pub async fn output_bucket_client(&self) -> file_store::BucketClient {
-        file_store::BucketClient::new(
-            self.output_bucket.clone(),
-            self.file_store.region.clone(),
-            self.file_store.endpoint.clone(),
-            self.file_store.access_key_id.clone(),
-            self.file_store.secret_access_key.clone(),
-        )
-        .await
-    }
-
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overridden with environment variables.
     ///
@@ -138,14 +123,14 @@ mod tests {
     fn test_default_price_override() -> anyhow::Result<()> {
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
                 ("PRICE__DEFAULT_PRICE", Some("100000000".to_string())),
             ],
             || Settings::new::<PathBuf>(None),
         )?;
 
         assert_eq!(settings.default_price, Some(100_000_000));
-        assert_eq!(settings.output_bucket, "test-bucket");
+        assert_eq!(settings.output.bucket, "test-bucket");
         Ok(())
     }
 
@@ -159,7 +144,7 @@ mod tests {
         })?;
 
         assert!(settings.source.contains("hermes.pyth.network"));
-        assert_eq!(settings.output_bucket, "price");
+        assert_eq!(settings.output.bucket, "price");
         assert_eq!(settings.interval, Duration::from_secs(60));
         Ok(())
     }
@@ -169,7 +154,7 @@ mod tests {
         let url = "https://example.test/v2/updates/price/latest?ids[]=abc";
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
                 ("PRICE__SOURCE", Some(url.to_string())),
             ],
             || Settings::new::<PathBuf>(None),

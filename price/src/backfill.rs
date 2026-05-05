@@ -56,7 +56,7 @@ impl Cmd {
 
         let task = PriceReportBackfiller::create_managed_task(
             pool,
-            settings.output_bucket_client().await,
+            settings.output.connect().await,
             writer,
             BackfillOptions {
                 process_name: self.process_name,
