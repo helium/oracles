@@ -42,7 +42,7 @@ pub struct Settings {
     #[serde(default)]
     pub database: Option<db_store::Settings>,
     /// Iceberg catalog settings. When provided, live ticks also write to
-    /// the `rewards.price` Iceberg table. Required by `backfill`.
+    /// the `rewards.prices` Iceberg table. Required by `backfill`.
     #[serde(default)]
     pub iceberg_settings: Option<helium_iceberg::Settings>,
     /// Maximum number of records buffered before forcing an Iceberg commit.
@@ -96,7 +96,7 @@ fn default_cache() -> PathBuf {
 }
 
 fn default_iceberg_batch_size() -> usize {
-    60
+    10_000
 }
 
 fn default_iceberg_batch_timeout() -> Duration {

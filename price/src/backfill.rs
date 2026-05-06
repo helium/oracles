@@ -1,5 +1,5 @@
 use crate::{
-    iceberg::{self, IcebergPriceReport, PriceTable},
+    iceberg::{self, IcebergPriceReport},
     settings::Settings,
 };
 use anyhow::{Context, Result};
@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source, FileInfo};
 use file_store_oracles::FileType;
 use futures::StreamExt;
-use helium_iceberg::DataWriter;
+use helium_iceberg::{BatchedWriter, BatchedWriterConfig};
 use helium_proto::PriceReportV1;
 use sqlx::{PgPool, Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
@@ -46,7 +46,13 @@ impl Cmd {
         let pool = database.connect("price-backfill").await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let writer = iceberg::connect_table(iceberg_settings).await?;
+        let table = iceberg::connect_table(iceberg_settings).await?;
+        // Use a separate spool dir from the server so the two paths can
+        // coexist on the same host without crossing each other's replay.
+        let config = BatchedWriterConfig::new(settings.cache.join("iceberg-spool-backfill"))
+            .with_max_batch_size(settings.iceberg_batch_size)
+            .with_batch_timeout(settings.iceberg_batch_timeout);
+        let (writer, batched_task) = BatchedWriter::new(table, config);
 
         tracing::info!(
             process_name = %self.process_name,
@@ -59,6 +65,7 @@ impl Cmd {
             pool,
             settings.output.connect().await,
             writer,
+            batched_task,
             BackfillOptions {
                 process_name: self.process_name,
                 start_after: self.start_after,
@@ -82,7 +89,7 @@ pub struct BackfillOptions {
 pub struct PriceReportBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<PriceReportV1>>,
-    writer: PriceTable,
+    writer: BatchedWriter<IcebergPriceReport>,
     done: bool,
 }
 
@@ -90,7 +97,7 @@ impl PriceReportBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<PriceReportV1>>,
-        writer: PriceTable,
+        writer: BatchedWriter<IcebergPriceReport>,
     ) -> Self {
         Self {
             pool,
@@ -103,7 +110,7 @@ impl PriceReportBackfiller {
     pub async fn create(
         pool: PgPool,
         bucket_client: file_store::BucketClient,
-        writer: PriceTable,
+        writer: BatchedWriter<IcebergPriceReport>,
         options: BackfillOptions,
     ) -> Result<(Self, impl ManagedTask)> {
         let (reports, reports_server) =
@@ -123,15 +130,24 @@ impl PriceReportBackfiller {
         ))
     }
 
-    pub async fn create_managed_task(
+    pub async fn create_managed_task<T: ManagedTask + 'static>(
         pool: PgPool,
         bucket_client: file_store::BucketClient,
-        writer: PriceTable,
+        writer: BatchedWriter<IcebergPriceReport>,
+        batched_task: T,
         options: BackfillOptions,
     ) -> Result<TaskManager> {
         let (backfiller, server) = Self::create(pool, bucket_client, writer, options).await?;
 
+        // Start order is FIFO; shutdown is LIFO. Adding `batched_task` first
+        // means on a signal-triggered shutdown the backfiller stops first,
+        // then the file_source server, and the BatchedWriterTask drains its
+        // spool last. On natural completion (`stop_after` reached), the
+        // file_source closes the channel → backfiller exits and is dropped
+        // → its `BatchedWriter` handle (the only sender) drops → the
+        // BatchedWriterTask sees `None`, drains, and exits cleanly.
         Ok(TaskManager::builder()
+            .add_task(batched_task)
             .add_task(server)
             .add_task(backfiller)
             .build())
@@ -173,7 +189,6 @@ impl PriceReportBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-        let write_id = file_info.key.clone();
         let reports = file_info_stream.into_stream(&mut txn).await?;
         let all_reports: Vec<_> = reports.collect().await;
         let total = all_reports.len();
@@ -191,10 +206,23 @@ impl PriceReportBackfiller {
         let valid = iceberg_records.len();
         let skipped = total - valid;
 
+        // `queue_all` returns once the records are durable in the spool's
+        // kernel page cache. The actual Iceberg commit happens
+        // asynchronously when the BatchedWriter's size or time threshold
+        // is reached (or on graceful shutdown / channel close).
+        //
+        // Trade-off vs. the previous `write_idempotent` path: there is now
+        // a narrow window between the spool ack and the DB txn commit
+        // where a hard crash can cause a file's records to be replayed
+        // from spool on restart while the file is also re-emitted by the
+        // file_info_poller (since its row never made it into
+        // `files_processed`). Acceptable here because backfill is a
+        // one-shot, operator-supervised command and any duplicates are
+        // recoverable by re-running with a fresh table.
         self.writer
-            .write_idempotent(&write_id, iceberg_records)
+            .queue_all(iceberg_records)
             .await
-            .context("writing price reports to iceberg")?;
+            .context("queueing price reports to iceberg")?;
 
         txn.commit().await.context("committing db transaction")?;
 

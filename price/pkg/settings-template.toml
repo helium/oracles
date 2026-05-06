@@ -69,7 +69,7 @@ bucket = "price"
 
 
 # Iceberg catalog settings. When provided, the `server` also writes each
-# live tick into the Iceberg table `rewards.price`. Required by `backfill`.
+# live tick into the Iceberg table `rewards.prices`. Required by `backfill`.
 #
 # Live writes go through a `BatchedWriter` that spools each record to
 # `<cache>/iceberg-spool` for crash durability and commits a single

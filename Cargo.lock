@@ -6302,6 +6302,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "solana",
  "sqlx",
  "task-manager",
  "temp-env",
