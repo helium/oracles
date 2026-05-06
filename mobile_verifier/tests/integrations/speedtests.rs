@@ -75,6 +75,7 @@ async fn speedtests_average_should_only_include_last_48_hours(
             speedtest_avg_client,
             verified_client,
             None,
+            None,
         );
 
         daemon.process_file(stream).await?;
@@ -105,6 +106,7 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
         rx,
         speedtest_avg_client,
         verified_client,
+        None,
         None,
     );
 
@@ -144,6 +146,7 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
         rx,
         speedtest_avg_client,
         verified_client,
+        None,
         None,
     );
 
@@ -185,6 +188,7 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
         speedtest_avg_client,
         verified_client,
         None,
+        None,
     );
 
     // Create speedtest with both speeds > 300Mbits
@@ -225,6 +229,7 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
         speedtest_avg_client,
         verified_client,
         None,
+        None,
     );
 
     // Create speedtest with both speeds within 300Mbits limit
@@ -264,6 +269,7 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
         rx,
         speedtest_avg_client,
         verified_client,
+        None,
         None,
     );
 
@@ -368,6 +374,7 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
             rx,
             speedtest_avg_client,
             verified_client,
+            None,
             None,
         );
 

@@ -1,12 +1,33 @@
-use crate::speedtests::{self, Speedtest};
+use crate::{
+    backfill::{Backfiller, IcebergBackfill},
+    iceberg,
+    speedtests::{self, Speedtest},
+};
 use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-use file_store_oracles::traits::MsgTimestamp;
+use file_store_oracles::{traits::MsgTimestamp, FileType};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::{self as proto, SpeedtestAvgValidity};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
+
+// ── SpeedtestAvg backfill ─────────────────────────────────────────────────────
+
+pub struct SpeedtestAvgConverter;
+
+impl IcebergBackfill for SpeedtestAvgConverter {
+    type FileRecord = file_store_oracles::mobile::speedtest::cli::SpeedtestAverage;
+    type IcebergRow = iceberg::IcebergSpeedtestAvg;
+    const FILE_TYPE: FileType = FileType::SpeedtestAvg;
+
+    fn convert(record: Self::FileRecord) -> Option<Self::IcebergRow> {
+        (record.validity == SpeedtestAvgValidity::Valid)
+            .then(|| iceberg::IcebergSpeedtestAvg::from(&record))
+    }
+}
+
+pub type SpeedtestAvgBackfiller = Backfiller<SpeedtestAvgConverter>;
 
 pub const SPEEDTEST_LAPSE: i64 = 48;
 const MIN_DOWNLOAD: u64 = mbps(30);

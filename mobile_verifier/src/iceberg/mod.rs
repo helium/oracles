@@ -9,12 +9,14 @@ pub mod radio_reward;
 pub mod radio_reward_covered_hex;
 pub mod service_provider_reward;
 pub mod speedtest;
+pub mod speedtest_avg;
 pub mod unallocated_reward;
 pub mod unique_connections;
 
 pub use ban::IcebergBan;
 pub use heartbeat::IcebergHeartbeat;
 pub use speedtest::IcebergSpeedtest;
+pub use speedtest_avg::IcebergSpeedtestAvg;
 pub use unique_connections::IcebergUniqueConnections;
 
 pub const NAMESPACE: &str = "poc";
@@ -23,12 +25,14 @@ pub const REWARDS_NAMESPACE: &str = "rewards";
 pub type BanWriter = BoxedDataWriter<IcebergBan>;
 pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
 pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
+pub type SpeedtestAvgWriter = BoxedDataWriter<IcebergSpeedtestAvg>;
 pub type UniqueConnectionsWriter = BoxedDataWriter<IcebergUniqueConnections>;
 
 pub struct PocWriters {
     pub ban: Option<BanWriter>,
     pub heartbeat: Option<HeartbeatWriter>,
     pub speedtest: Option<SpeedtestWriter>,
+    pub speedtest_avg: Option<SpeedtestAvgWriter>,
     pub unique_connections: Option<UniqueConnectionsWriter>,
 }
 
@@ -38,6 +42,7 @@ impl PocWriters {
             ban: None,
             heartbeat: None,
             speedtest: None,
+            speedtest_avg: None,
             unique_connections: None,
         }
     }
@@ -59,6 +64,10 @@ impl PocWriters {
             .create_table_if_not_exists(speedtest::table_definition()?)
             .await?
             .boxed();
+        let speedtest_avg = catalog
+            .create_table_if_not_exists(speedtest_avg::table_definition()?)
+            .await?
+            .boxed();
         let unique_connections = catalog
             .create_table_if_not_exists(unique_connections::table_definition()?)
             .await?
@@ -68,6 +77,7 @@ impl PocWriters {
             ban: Some(ban),
             heartbeat: Some(heartbeat),
             speedtest: Some(speedtest),
+            speedtest_avg: Some(speedtest_avg),
             unique_connections: Some(unique_connections),
         })
     }
