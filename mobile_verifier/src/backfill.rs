@@ -7,14 +7,9 @@ use file_store::{
 use file_store_oracles::FileType;
 use futures::StreamExt;
 use helium_iceberg::{
-    BatchedWriter, BatchedWriterConfig, BatchedWriterTask, BoxedDataWriter, Catalog,
-    TableDefinition,
+    BatchedWriter, BatchedWriterConfig, BatchedWriterTask, Catalog, TableDefinition,
 };
 
-enum BackfillWriter<T> {
-    Boxed(BoxedDataWriter<T>),
-    Batched(BatchedWriter<T>),
-}
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
 use task_manager::ManagedTask;
@@ -62,7 +57,7 @@ impl ManagedTask for BackfillPollerServer {
 pub struct Backfiller<C: IcebergBackfill> {
     pool: PgPool,
     reports: Receiver<FileInfoStream<C::FileRecord>>,
-    writer: Option<BackfillWriter<C::IcebergRow>>,
+    writer: Option<BatchedWriter<C::IcebergRow>>,
     done: bool,
 }
 
@@ -70,13 +65,13 @@ impl<C: IcebergBackfill> Backfiller<C> {
     pub fn new(
         pool: PgPool,
         reports: Receiver<FileInfoStream<C::FileRecord>>,
-        writer: Option<BoxedDataWriter<C::IcebergRow>>,
+        writer: Option<BatchedWriter<C::IcebergRow>>,
     ) -> Self {
         let done = writer.is_none();
         Self {
             pool,
             reports,
-            writer: writer.map(BackfillWriter::Boxed),
+            writer,
             done,
         }
     }
@@ -115,7 +110,6 @@ impl<C: IcebergBackfill> Backfiller<C> {
         let start = Instant::now();
 
         let file_info = file.file_info.clone();
-        let write_id = file_info.key.clone();
         let mut txn = self.pool.begin().await?;
 
         let all: Vec<_> = file.into_stream(&mut txn).await?.collect().await;
@@ -124,18 +118,11 @@ impl<C: IcebergBackfill> Backfiller<C> {
         let rows: Vec<C::IcebergRow> = all.into_iter().filter_map(C::convert).collect();
         let written = rows.len();
 
-        match writer {
-            BackfillWriter::Boxed(w) => w
-                .write_idempotent(&write_id, rows)
+        if !rows.is_empty() {
+            writer
+                .queue_all(rows)
                 .await
-                .with_context(|| format!("writing {} backfill to iceberg", C::FILE_TYPE))?,
-            BackfillWriter::Batched(w) => {
-                if !rows.is_empty() {
-                    w.queue_all(rows)
-                        .await
-                        .with_context(|| format!("queueing {} backfill", C::FILE_TYPE))?;
-                }
-            }
+                .with_context(|| format!("queuing {} backfill", C::FILE_TYPE))?;
         }
 
         txn.commit().await?;
@@ -180,38 +167,6 @@ where
     <C::FileRecord as TryFrom<<C::FileRecord as MsgDecode>::Msg>>::Error: std::error::Error,
     <C::FileRecord as MsgDecode>::Msg: prost::Message + Default,
 {
-    pub async fn create(
-        pool: PgPool,
-        bucket_client: BucketClient,
-        writer: Option<BoxedDataWriter<C::IcebergRow>>,
-        options: Option<BackfillOptions>,
-    ) -> anyhow::Result<(Self, BackfillPollerServer)> {
-        let (Some(writer), Some(options)) = (writer, options) else {
-            let (_, rx) = tokio::sync::mpsc::channel(1);
-            return Ok((
-                Backfiller::new(pool, rx, None),
-                BackfillPollerServer::noop(),
-            ));
-        };
-
-        let (reports, reports_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(bucket_client)
-            .prefix(C::FILE_TYPE.to_string())
-            .lookback_start_after(options.start_after)
-            .stop_after(options.stop_after)
-            .process_name(options.process_name)
-            .poll_duration_opt(options.poll_duration)
-            .idle_timeout_opt(options.idle_timeout)
-            .create()
-            .await?;
-
-        Ok((
-            Backfiller::new(pool, reports, Some(writer)),
-            BackfillPollerServer::active(reports_server),
-        ))
-    }
-
     /// Like `create`, but writes go through a `BatchedWriter` (on-disk spool +
     /// size/time-bounded snapshots) instead of per-file `write_idempotent`.
     /// Caller is responsible for registering the `BatchedWriterTask` returned
@@ -245,7 +200,7 @@ where
         let backfiller = Backfiller {
             pool,
             reports,
-            writer: Some(BackfillWriter::Batched(writer)),
+            writer: Some(writer),
             done: false,
         };
         Ok((backfiller, BackfillPollerServer::active(reports_server)))
@@ -277,21 +232,6 @@ fn file_age(file_info: &FileInfo) -> String {
     }
 }
 
-pub async fn batched_writer_for_table<T>(
-    catalog: Catalog,
-    table_def: TableDefinition,
-    config: BatchedWriterConfig,
-) -> anyhow::Result<(BatchedWriter<T>, BatchedWriterTask<T>)>
-where
-    T: serde::Serialize + Send + Sync + 'static,
-{
-    catalog
-        .create_namespace_if_not_exists(table_def.namespace())
-        .await?;
-    let table = catalog.create_table_if_not_exists(table_def).await?;
-    Ok(BatchedWriter::new(table, config))
-}
-
 #[async_trait::async_trait]
 pub trait BatchedWriterExt: Sized {
     async fn batched_writer(
@@ -311,6 +251,10 @@ where
         table_def: TableDefinition,
         config: BatchedWriterConfig,
     ) -> anyhow::Result<(BatchedWriter<Self>, BatchedWriterTask<Self>)> {
-        batched_writer_for_table(catalog, table_def, config).await
+        catalog
+            .create_namespace_if_not_exists(table_def.namespace())
+            .await?;
+        let table = catalog.create_table_if_not_exists(table_def).await?;
+        Ok(BatchedWriter::new(table, config))
     }
 }

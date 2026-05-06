@@ -1,6 +1,12 @@
-use crate::{iceberg, unique_connections::UniqueConnectionsBackfiller, Settings};
+use crate::{
+    backfill::BatchedWriterExt,
+    iceberg::{self, IcebergUniqueConnections},
+    unique_connections::UniqueConnectionsBackfiller,
+    Settings,
+};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use helium_iceberg::BatchedWriterConfig;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -33,12 +39,16 @@ impl Cmd {
             anyhow::anyhow!("iceberg_settings required for unique connections backfill")
         })?;
 
-        let unique_connections_writer = iceberg::PocWriters::from_settings(iceberg_settings)
-            .await?
-            .unique_connections
-            .ok_or_else(|| {
-                anyhow::anyhow!("iceberg_settings required for unique_connections backfill")
-            })?;
+        let (writer, writer_task) = IcebergUniqueConnections::batched_writer(
+            iceberg_settings.connect().await?,
+            iceberg::unique_connections::table_definition()?,
+            BatchedWriterConfig::new(
+                settings
+                    .cache
+                    .join("iceberg-spool/unique-connections-backfill"),
+            ),
+        )
+        .await?;
 
         tracing::info!(
             process_name = %self.process_name,
@@ -55,15 +65,16 @@ impl Cmd {
             idle_timeout: None,
         };
 
-        let (backfiller, server) = UniqueConnectionsBackfiller::create(
+        let (backfiller, server) = UniqueConnectionsBackfiller::create_batched(
             pool,
             settings.buckets.output.connect().await,
-            Some(unique_connections_writer),
+            Some(writer),
             Some(opts),
         )
         .await?;
 
         TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()

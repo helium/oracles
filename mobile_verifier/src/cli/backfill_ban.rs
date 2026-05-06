@@ -1,6 +1,12 @@
-use crate::{banning::BanBackfiller, iceberg, Settings};
+use crate::{
+    backfill::BatchedWriterExt,
+    banning::BanBackfiller,
+    iceberg::{self, IcebergBan},
+    Settings,
+};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use helium_iceberg::BatchedWriterConfig;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -34,10 +40,12 @@ impl Cmd {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for ban backfill"))?;
 
-        let ban_writer = iceberg::PocWriters::from_settings(iceberg_settings)
-            .await?
-            .ban
-            .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for ban backfill"))?;
+        let (writer, writer_task) = IcebergBan::batched_writer(
+            iceberg_settings.connect().await?,
+            iceberg::ban::table_definition()?,
+            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/ban-backfill")),
+        )
+        .await?;
 
         tracing::info!(
             process_name = %self.process_name,
@@ -54,15 +62,16 @@ impl Cmd {
             idle_timeout: None,
         };
 
-        let (backfiller, server) = BanBackfiller::create(
+        let (backfiller, server) = BanBackfiller::create_batched(
             pool,
             settings.buckets.output.connect().await,
-            Some(ban_writer),
+            Some(writer),
             Some(opts),
         )
         .await?;
 
         TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
