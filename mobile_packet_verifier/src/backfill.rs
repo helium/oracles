@@ -1,8 +1,23 @@
-use crate::iceberg::{
-    self, burned_session::IcebergBurnedDataTransferSession, session::IcebergDataTransferSession,
-    BurnedDataTransferWriter, DataTransferWriter,
-};
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient, FileInfo};
+use file_store_oracles::{
+    mobile_session::VerifiedDataTransferIngestReport, mobile_transfer::ValidDataTransferSession,
+    FileType,
+};
+use futures::StreamExt;
+use helium_iceberg::BatchedWriter;
+use helium_proto::services::poc_mobile::verified_data_transfer_ingest_report_v1::ReportStatus;
+use sqlx::{PgPool, Pool, Postgres};
+use std::time::{Duration, Instant};
+use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::mpsc::Receiver;
+
+use crate::{iceberg, settings::Settings};
+
+type BatchedDataTransferWriter = BatchedWriter<iceberg::session::IcebergDataTransferSession>;
+type BatchedBurnedDataTranfserWriter =
+    BatchedWriter<iceberg::burned_session::IcebergBurnedDataTransferSession>;
 
 /// A server task returned by [`DataSessionsBackfiller::create`] and
 /// [`BurnedSessionsBackfiller::create`].
@@ -30,20 +45,6 @@ impl ManagedTask for BackfillPollerServer {
         }
     }
 }
-use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient, FileInfo};
-use file_store_oracles::{
-    mobile_session::VerifiedDataTransferIngestReport, mobile_transfer::ValidDataTransferSession,
-    FileType,
-};
-use futures::StreamExt;
-use helium_proto::services::poc_mobile::verified_data_transfer_ingest_report_v1::ReportStatus;
-use sqlx::{PgPool, Pool, Postgres};
-use std::time::{Duration, Instant};
-use task_manager::{ManagedTask, TaskManager};
-use tokio::sync::mpsc::Receiver;
-
-use crate::settings::Settings;
 
 #[derive(Debug, clap::Args)]
 pub struct BackfillSessionsCmd {
@@ -61,6 +62,10 @@ pub struct BackfillSessionsCmd {
     /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
     #[clap(long)]
     stop_after: DateTime<Utc>,
+
+    /// Number of sessions to process in each batch.
+    #[clap(long, default_value = "1000000")]
+    batch_size: usize,
 }
 
 #[derive(Debug, clap::Args)]
@@ -79,6 +84,10 @@ pub struct BackfillBurnedCmd {
     /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
     #[clap(long)]
     stop_after: DateTime<Utc>,
+
+    /// Number of sessions to process in each batch.
+    #[clap(long, default_value = "1000000")]
+    batch_size: usize,
 }
 
 impl BackfillSessionsCmd {
@@ -94,13 +103,27 @@ impl BackfillSessionsCmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let (session_writer, _burned_session_writer) =
-            iceberg::get_writers(iceberg_settings).await?;
+        let catalog = iceberg_settings.connect().await?;
+        let table_def = iceberg::session::table_definition()?;
+        catalog
+            .create_namespace_if_not_exists(table_def.namespace())
+            .await?;
+        let table = catalog.create_table_if_not_exists(table_def).await?;
+
+        let (writer, writer_task) = helium_iceberg::BatchedWriter::new(
+            table,
+            helium_iceberg::BatchedWriterConfig::new(
+                settings.cache.join("iceberg-spool/data-sessions"),
+            )
+            .with_max_batch_size(self.batch_size)
+            .with_batch_timeout(Duration::from_mins(5)),
+        );
 
         tracing::info!(
             process_name = %self.process_name,
             start_after = %self.start_after,
             stop_after = %self.stop_after,
+            batch_size = self.batch_size,
             "starting all backfills"
         );
 
@@ -109,12 +132,13 @@ impl BackfillSessionsCmd {
         let data_sessions_task = DataSessionsBackfiller::create_managed_task(
             pool.clone(),
             settings.output_bucket.connect().await,
-            Some(session_writer),
+            Some(writer),
             options.clone(),
         )
         .await?;
 
         TaskManager::builder()
+            .add_task(writer_task)
             .add_task(data_sessions_task)
             .build()
             .start()
@@ -136,13 +160,27 @@ impl BackfillBurnedCmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let (_session_writer, burned_session_writer) =
-            iceberg::get_writers(iceberg_settings).await?;
+        let catalog = iceberg_settings.connect().await?;
+        let table_def = iceberg::burned_session::table_definition()?;
+        catalog
+            .create_namespace_if_not_exists(table_def.namespace())
+            .await?;
+        let table = catalog.create_table_if_not_exists(table_def).await?;
+
+        let (writer, writer_task) = helium_iceberg::BatchedWriter::new(
+            table,
+            helium_iceberg::BatchedWriterConfig::new(
+                settings.cache.join("iceberg-spool/burned-sessions"),
+            )
+            .with_max_batch_size(self.batch_size)
+            .with_batch_timeout(Duration::from_mins(5)),
+        );
 
         tracing::info!(
             process_name = %self.process_name,
             start_after = %self.start_after,
             stop_after = %self.stop_after,
+            batch_size = self.batch_size,
             "starting all backfills"
         );
 
@@ -151,12 +189,13 @@ impl BackfillBurnedCmd {
         let burned_sessions_task = BurnedSessionsBackfiller::create_managed_task(
             pool,
             settings.output_bucket.connect().await,
-            Some(burned_session_writer),
+            Some(writer),
             options,
         )
         .await?;
 
         TaskManager::builder()
+            .add_task(writer_task)
             .add_task(burned_sessions_task)
             .build()
             .start()
@@ -204,7 +243,7 @@ impl BackfillOptions {
 pub struct DataSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
-    writer: Option<DataTransferWriter>,
+    writer: Option<BatchedDataTransferWriter>,
     done: bool,
 }
 
@@ -212,7 +251,7 @@ impl DataSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<VerifiedDataTransferIngestReport>>,
-        writer: Option<DataTransferWriter>,
+        writer: Option<BatchedDataTransferWriter>,
     ) -> Self {
         let done = writer.is_none();
         Self {
@@ -234,7 +273,7 @@ impl DataSessionsBackfiller {
     pub async fn create(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: Option<DataTransferWriter>,
+        writer: Option<BatchedDataTransferWriter>,
         options: Option<BackfillOptions>,
     ) -> anyhow::Result<(Self, BackfillPollerServer)> {
         let (Some(writer), Some(options)) = (writer, options) else {
@@ -264,7 +303,7 @@ impl DataSessionsBackfiller {
     pub async fn create_managed_task(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: Option<DataTransferWriter>,
+        writer: Option<BatchedDataTransferWriter>,
         options: BackfillOptions,
     ) -> anyhow::Result<TaskManager> {
         let (backfiller, server) = Self::create(pool, bucket_client, writer, Some(options)).await?;
@@ -338,37 +377,32 @@ impl DataSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-        let write_id = file.file_info.key.clone();
 
         let all: Vec<_> = file.into_stream(&mut txn).await?.collect().await;
         let total = all.len();
-        let collect_time = start.elapsed();
 
-        let start = Instant::now();
         let rows: Vec<_> = all
             .into_iter()
             .filter(|verified_report| verified_report.status == ReportStatus::Valid)
-            .map(|verified_report| IcebergDataTransferSession::from(verified_report.report))
+            .map(|verified_report| {
+                iceberg::IcebergDataTransferSession::from(verified_report.report)
+            })
             .collect();
         let written = rows.len();
-        let transform_time = start.elapsed();
 
-        let start = Instant::now();
         writer
-            .write_idempotent(&write_id, rows)
+            .queue_all(rows)
             .await
-            .context("writing sessions to iceberg")?;
+            .context("queueing data sessions backfill")?;
 
         txn.commit().await.context("committing db transaction")?;
-        let write_time = start.elapsed();
 
         tracing::info!(
             file = %file_info,
             written,
             skipped = total - written,
             age = %age,
-            ?collect_time, ?transform_time, ?write_time,
-            total_time = ?(collect_time + transform_time + write_time),
+            duration = ?start.elapsed(),
             "backfilled verified sessions file"
         );
         Ok(())
@@ -384,7 +418,7 @@ impl ManagedTask for DataSessionsBackfiller {
 pub struct BurnedSessionsBackfiller {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
-    writer: Option<BurnedDataTransferWriter>,
+    writer: Option<BatchedBurnedDataTranfserWriter>,
     done: bool,
 }
 
@@ -392,7 +426,7 @@ impl BurnedSessionsBackfiller {
     pub async fn create(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: Option<BurnedDataTransferWriter>,
+        writer: Option<BatchedBurnedDataTranfserWriter>,
         options: Option<BackfillOptions>,
     ) -> anyhow::Result<(Self, BackfillPollerServer)> {
         let (Some(writer), Some(options)) = (writer, options) else {
@@ -425,7 +459,7 @@ impl BurnedSessionsBackfiller {
     pub async fn create_managed_task(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: Option<BurnedDataTransferWriter>,
+        writer: Option<BatchedBurnedDataTranfserWriter>,
         options: BackfillOptions,
     ) -> anyhow::Result<TaskManager> {
         let (burned_backfiller, server) =
@@ -440,7 +474,7 @@ impl BurnedSessionsBackfiller {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<ValidDataTransferSession>>,
-        writer: Option<BurnedDataTransferWriter>,
+        writer: Option<BatchedBurnedDataTranfserWriter>,
     ) -> Self {
         let done = writer.is_none();
         Self {
@@ -507,6 +541,8 @@ impl BurnedSessionsBackfiller {
             return Ok(());
         };
 
+        let start = Instant::now();
+
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::info!(
@@ -517,24 +553,31 @@ impl BurnedSessionsBackfiller {
         );
 
         let mut txn = self.pool.begin().await?;
-        let write_id = file.file_info.key.clone();
 
-        let reports = file.into_stream(&mut txn).await?;
+        let all: Vec<_> = file.into_stream(&mut txn).await?.collect().await;
 
-        let iceberg_sessions = reports
-            .map(|session| IcebergBurnedDataTransferSession::from_session(session, &file_info))
-            .collect::<Vec<_>>()
-            .await;
+        let rows: Vec<_> = all
+            .into_iter()
+            .map(|session| {
+                iceberg::IcebergBurnedDataTransferSession::from_session(session, &file_info)
+            })
+            .collect();
+        let written = rows.len();
 
-        let count = iceberg_sessions.len();
         writer
-            .write_idempotent(&write_id, iceberg_sessions)
+            .queue_all(rows)
             .await
             .context("writing burned sessions to iceberg")?;
 
         txn.commit().await.context("committing db transaction")?;
 
-        tracing::info!(file = %file_info, count, "backfilled burned sessions file");
+        tracing::info!(
+            file = %file_info,
+            written,
+            age = %age,
+            duration = ?start.elapsed(),
+            "backfilled burned sessions file"
+        );
         Ok(())
     }
 }
