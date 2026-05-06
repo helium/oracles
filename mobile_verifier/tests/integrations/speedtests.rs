@@ -15,13 +15,8 @@ use mobile_config::{
         service::info::{DeviceType, GatewayInfo, GatewayInfoStream},
     },
 };
-use mobile_verifier::speedtests::{SpeedtestBackfiller, SpeedtestDaemon};
+use mobile_verifier::speedtests::SpeedtestDaemon;
 use sqlx::{Pool, Postgres};
-
-fn noop_backfiller(pool: Pool<Postgres>) -> SpeedtestBackfiller {
-    let (_, rx) = tokio::sync::mpsc::channel(1);
-    SpeedtestBackfiller::new(pool, rx, None)
-}
 
 #[derive(Clone)]
 struct MockGatewayInfoResolver {}
@@ -80,7 +75,6 @@ async fn speedtests_average_should_only_include_last_48_hours(
             speedtest_avg_client,
             verified_client,
             None,
-            noop_backfiller(pool),
         );
 
         daemon.process_file(stream).await?;
@@ -112,7 +106,6 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
         speedtest_avg_client,
         verified_client,
         None,
-        noop_backfiller(pool),
     );
 
     let speedtest_report = CellSpeedtestIngestReport {
@@ -152,7 +145,6 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
         speedtest_avg_client,
         verified_client,
         None,
-        noop_backfiller(pool),
     );
 
     // Create speedtest with download speed > 300Mbits
@@ -193,7 +185,6 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
         speedtest_avg_client,
         verified_client,
         None,
-        noop_backfiller(pool),
     );
 
     // Create speedtest with both speeds > 300Mbits
@@ -234,7 +225,6 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
         speedtest_avg_client,
         verified_client,
         None,
-        noop_backfiller(pool),
     );
 
     // Create speedtest with both speeds within 300Mbits limit
@@ -275,7 +265,6 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
         speedtest_avg_client,
         verified_client,
         None,
-        noop_backfiller(pool),
     );
 
     // Create speedtest with speeds exactly at 300Mbits limit
@@ -380,7 +369,6 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
             speedtest_avg_client,
             verified_client,
             None,
-            noop_backfiller(pool),
         );
 
         daemon.process_file(stream).await?;

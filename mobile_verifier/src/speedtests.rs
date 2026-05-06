@@ -84,7 +84,6 @@ pub struct SpeedtestDaemon<GIR> {
     speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
     verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
     iceberg_writer: Option<iceberg::SpeedtestWriter>,
-    speedtest_backfill: SpeedtestBackfiller,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
@@ -125,19 +124,6 @@ where
             .create()
             .await?;
 
-        let backfill_opts = settings
-            .speedtest_backfill
-            .as_ref()
-            .map(|b| b.as_options("speedtest-backfill"));
-
-        let (speedtest_backfill, backfill_server) = SpeedtestBackfiller::create(
-            pool.clone(),
-            settings.buckets.output.connect().await,
-            iceberg_writer.clone(),
-            backfill_opts,
-        )
-        .await?;
-
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
             gateway_resolver,
@@ -145,14 +131,12 @@ where
             speedtests_avg,
             speedtests_validity,
             iceberg_writer,
-            speedtest_backfill,
         );
 
         Ok(TaskManager::builder()
             .add_task(speedtests_validity_server)
             .add_task(speedtests_avg_server)
             .add_task(speedtests_server)
-            .add_task(backfill_server)
             .add_task(speedtest_daemon)
             .build())
     }
@@ -164,7 +148,6 @@ where
         speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
         verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
         iceberg_writer: Option<iceberg::SpeedtestWriter>,
-        speedtest_backfill: SpeedtestBackfiller,
     ) -> Self {
         Self {
             pool,
@@ -173,7 +156,6 @@ where
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
             iceberg_writer,
-            speedtest_backfill,
         }
     }
 
@@ -190,11 +172,6 @@ where
                     self.process_file(file).await?;
                     metrics::histogram!("speedtest_processing_time")
                         .record(start.elapsed());
-                }
-                // Backfill runs at lowest priority — only fires when ingest has nothing ready.
-                // When iceberg is not configured, recv() returns pending() immediately.
-                file = self.speedtest_backfill.recv() => {
-                    self.speedtest_backfill.handle(file).await?;
                 }
             }
         }
