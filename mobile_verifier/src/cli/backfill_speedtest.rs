@@ -1,7 +1,12 @@
-use crate::{iceberg, speedtests::SpeedtestBackfiller, Settings};
+use crate::{
+    backfill::BatchedWriterExt,
+    iceberg::{self, IcebergSpeedtest},
+    speedtests::SpeedtestBackfiller,
+    Settings,
+};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use helium_iceberg::{BatchedTableWriterExt, BatchedWriter, BatchedWriterConfig, IcebergTable};
+use helium_iceberg::BatchedWriterConfig;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -35,13 +40,12 @@ impl Cmd {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for speedtest backfill"))?;
 
-        let catalog = iceberg_settings.connect().await?;
-        let (writer, writer_task) = catalog
-            .create_namespace_table_if_not_exists(iceberg::speedtest::table_definition()?)
-            .await?
-            .batched_writer(BatchedWriterConfig::new(
-                settings.cache.join("iceberg-spool/speedtest-backfill"),
-            ));
+        let (writer, writer_task) = IcebergSpeedtest::batched_writer(
+            iceberg_settings.connect().await?,
+            iceberg::speedtest::table_definition()?,
+            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/speedtest-backfill")),
+        )
+        .await?;
 
         tracing::info!(
             process_name = %self.process_name,

@@ -6,7 +6,10 @@ use file_store::{
 };
 use file_store_oracles::FileType;
 use futures::StreamExt;
-use helium_iceberg::{BatchedWriter, BoxedDataWriter};
+use helium_iceberg::{
+    BatchedWriter, BatchedWriterConfig, BatchedWriterTask, BoxedDataWriter, Catalog,
+    TableDefinition,
+};
 
 enum BackfillWriter<T> {
     Boxed(BoxedDataWriter<T>),
@@ -271,5 +274,43 @@ fn file_age(file_info: &FileInfo) -> String {
         (0, 0, m) => format!("{m}m ago"),
         (0, h, m) => format!("{h}h {m}m ago"),
         (d, h, _) => format!("{d}d {h}h ago"),
+    }
+}
+
+pub async fn batched_writer_for_table<T>(
+    catalog: Catalog,
+    table_def: TableDefinition,
+    config: BatchedWriterConfig,
+) -> anyhow::Result<(BatchedWriter<T>, BatchedWriterTask<T>)>
+where
+    T: serde::Serialize + Send + Sync + 'static,
+{
+    catalog
+        .create_namespace_if_not_exists(table_def.namespace())
+        .await?;
+    let table = catalog.create_table_if_not_exists(table_def).await?;
+    Ok(BatchedWriter::new(table, config))
+}
+
+#[async_trait::async_trait]
+pub trait BatchedWriterExt: Sized {
+    async fn batched_writer(
+        catalog: Catalog,
+        table_def: TableDefinition,
+        config: BatchedWriterConfig,
+    ) -> anyhow::Result<(BatchedWriter<Self>, BatchedWriterTask<Self>)>;
+}
+
+#[async_trait::async_trait]
+impl<T> BatchedWriterExt for T
+where
+    T: serde::Serialize + Send + Sync + 'static,
+{
+    async fn batched_writer(
+        catalog: Catalog,
+        table_def: TableDefinition,
+        config: BatchedWriterConfig,
+    ) -> anyhow::Result<(BatchedWriter<Self>, BatchedWriterTask<Self>)> {
+        batched_writer_for_table(catalog, table_def, config).await
     }
 }
