@@ -60,7 +60,6 @@ pub struct Daemon<S, MCR> {
 }
 
 impl<S, MCR> Daemon<S, MCR> {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         burn_period: Duration,
