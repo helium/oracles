@@ -5,7 +5,8 @@ use file_store::{
     file_upload::FileUpload,
 };
 use file_store_oracles::mobile_ban::{
-    proto::VerifiedBanIngestReportV1, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
+    proto::{VerifiedBanIngestReportStatus, VerifiedBanIngestReportV1},
+    BanReport, VerifiedBanReport,
 };
 use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -18,15 +19,38 @@ use sqlx::{PgConnection, PgPool};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{
+    backfill::{Backfiller, IcebergBackfill},
+    iceberg, Settings,
+};
 
 use super::db;
+
+// ── Ban backfill ──────────────────────────────────────────────────────────────
+
+pub struct BanConverter;
+pub type BanBackfiller = Backfiller<BanConverter>;
+
+impl IcebergBackfill for BanConverter {
+    type FileRecord = VerifiedBanReport;
+    type IcebergRow = iceberg::IcebergBan;
+    const FILE_TYPE: FileType = FileType::VerifiedMobileBanReport;
+
+    fn convert(record: VerifiedBanReport) -> Option<iceberg::IcebergBan> {
+        record
+            .is_valid()
+            .then(|| iceberg::IcebergBan::from(&record))
+    }
+}
+
+// ── BanIngestor ───────────────────────────────────────────────────────────────
 
 pub struct BanIngestor {
     pool: PgPool,
     auth_verifier: AuthorizationClient,
     report_rx: Receiver<FileInfoStream<BanReport>>,
     verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
+    iceberg_writer: Option<iceberg::BanWriter>,
 }
 
 impl ManagedTask for BanIngestor {
@@ -42,6 +66,7 @@ impl BanIngestor {
         bucket_client: BucketClient,
         auth_verifier: AuthorizationClient,
         settings: &Settings,
+        iceberg_writer: Option<iceberg::BanWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_sink, verified_sink_server) = VerifiedBanIngestReportV1::file_sink(
             settings.store_base_path(),
@@ -60,12 +85,13 @@ impl BanIngestor {
             .create()
             .await?;
 
-        let ingestor = Self {
+        let ingestor = Self::new(
             pool,
             auth_verifier,
             report_rx,
             verified_sink,
-        };
+            iceberg_writer,
+        );
 
         Ok(TaskManager::builder()
             .add_task(verified_sink_server)
@@ -79,12 +105,14 @@ impl BanIngestor {
         auth_verifier: AuthorizationClient,
         report_rx: Receiver<FileInfoStream<BanReport>>,
         verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
+        iceberg_writer: Option<iceberg::BanWriter>,
     ) -> Self {
         Self {
             pool,
             auth_verifier,
             report_rx,
             verified_sink,
+            iceberg_writer,
         }
     }
 
@@ -94,7 +122,7 @@ impl BanIngestor {
         loop {
             tokio::select! {
                 biased;
-                _= &mut shutdown => break,
+                _ = &mut shutdown => break,
                 msg = self.report_rx.recv() => {
                     let Some(file_info_stream) = msg else {
                         anyhow::bail!("hotspot ban FileInfoPoller sender was dropped unexpectedly");
@@ -113,19 +141,27 @@ impl BanIngestor {
         &self,
         file_info_stream: FileInfoStream<BanReport>,
     ) -> anyhow::Result<()> {
-        let file = &file_info_stream.file_info.key;
-        tracing::info!(file, "processing");
+        let write_id = file_info_stream.file_info.key.clone();
+        tracing::info!(file = %write_id, "processing");
 
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
+        let mut iceberg_records = vec![];
+
         while let Some(report) = stream.next().await {
             let verified_report = process_ban_report(&mut txn, &self.auth_verifier, report).await?;
+            if verified_report.is_valid() && self.iceberg_writer.is_some() {
+                iceberg_records.push(iceberg::IcebergBan::from(&verified_report));
+            }
             let status = verified_report.status.as_str_name();
             self.verified_sink
                 .write(verified_report, &[("status", status)])
                 .await?;
         }
+
+        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
+            .await?;
 
         self.verified_sink.commit().await?;
         txn.commit().await?;
