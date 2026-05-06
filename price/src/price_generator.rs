@@ -1,7 +1,6 @@
-use crate::{hermes, metrics::Metrics, Settings};
+use crate::{hermes, metrics::Metrics, sinks::PriceSink, Settings};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
-use file_store::file_sink;
 use futures::TryFutureExt;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use serde::{Deserialize, Serialize};
@@ -33,7 +32,9 @@ pub struct PriceGenerator {
     default_price: Option<u64>,
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
-    file_sink: file_sink::FileSinkClient<PriceReportV1>,
+    /// Configured destinations. Empty in unit tests; populated by
+    /// `Server::run` based on `output` and `iceberg_settings`.
+    sinks: Vec<Box<dyn PriceSink>>,
 }
 
 impl ManagedTask for PriceGenerator {
@@ -53,10 +54,7 @@ impl From<&Price> for PriceReportV1 {
 }
 
 impl PriceGenerator {
-    pub async fn new(
-        settings: &Settings,
-        file_sink: file_sink::FileSinkClient<PriceReportV1>,
-    ) -> Result<Self> {
+    pub async fn new(settings: &Settings, sinks: Vec<Box<dyn PriceSink>>) -> Result<Self> {
         Ok(Self {
             last_price_opt: None,
             http: reqwest::Client::new(),
@@ -65,7 +63,7 @@ impl PriceGenerator {
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
             latest_price_file: settings.cache.join(LATEST_PRICE_FILE),
-            file_sink,
+            sinks,
         })
     }
 
@@ -100,8 +98,9 @@ impl PriceGenerator {
     async fn write_price_to_sink(&self, price: &Price) -> Result<()> {
         let price_report = PriceReportV1::from(price);
         tracing::info!(token = TOKEN, price.price, "updating price");
-        self.file_sink.write(price_report, []).await?;
-
+        for sink in &self.sinks {
+            sink.write(&price_report).await?;
+        }
         Ok(())
     }
 

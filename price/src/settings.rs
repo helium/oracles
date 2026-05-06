@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
@@ -19,9 +20,13 @@ pub struct Settings {
     /// parameter for the HNT feed. Required.
     #[serde(default = "default_source")]
     pub source: String,
+    /// S3 bucket for `PriceReportV1` protobuf files. Optional for
+    /// `server`; required for `backfill` (which reads these files
+    /// back). When unset on the server, the file_sink/FileUpload tasks
+    /// are not started and ticks go only to the configured Iceberg
+    /// table.
     #[serde(default)]
-    pub file_store: file_store::Settings,
-    pub output_bucket: String,
+    pub output: Option<file_store::BucketSettings>,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -38,6 +43,42 @@ pub struct Settings {
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
+    /// Database settings. Required when running `backfill`; unused by the
+    /// server path.
+    #[serde(default)]
+    pub database: Option<db_store::Settings>,
+    /// Iceberg catalog settings. When provided, live ticks also write to
+    /// the `tokens.prices` Iceberg table. Required by `backfill`.
+    #[serde(default)]
+    pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Maximum number of records buffered before forcing an Iceberg commit.
+    /// Whichever of `iceberg_batch_size` / `iceberg_batch_timeout` fires
+    /// first triggers the snapshot. With a 60s tick this is also a cap on
+    /// catch-up batch growth. Default = 60.
+    #[serde(default = "default_iceberg_batch_size")]
+    pub iceberg_batch_size: usize,
+    /// Maximum time between Iceberg commits. With the default (1 hour) the
+    /// daemon writes ~24 snapshots/day instead of one per tick. Default = 1 hour.
+    #[serde(with = "humantime_serde", default = "default_iceberg_batch_timeout")]
+    pub iceberg_batch_timeout: Duration,
+}
+
+/// Settings controlling the Iceberg backfill window.
+///
+/// Backfill covers [`start_after`, `stop_after`). Set `stop_after` to the date
+/// Iceberg was first enabled in production so the backfiller does not overlap
+/// with the daemon's real-time Iceberg writes.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BackfillSettings {
+    /// Start of the backfill window. Defaults to UNIX_EPOCH (all available history).
+    #[serde(default = "default_backfill_start_after")]
+    pub start_after: DateTime<Utc>,
+    /// End of the backfill window (exclusive).
+    pub stop_after: DateTime<Utc>,
+}
+
+fn default_backfill_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_source() -> String {
@@ -58,6 +99,14 @@ fn default_stale_price_duration() -> Duration {
 
 fn default_cache() -> PathBuf {
     PathBuf::from("/opt/price/data")
+}
+
+fn default_iceberg_batch_size() -> usize {
+    10_000
+}
+
+fn default_iceberg_batch_timeout() -> Duration {
+    humantime::parse_duration("10 minutes").unwrap()
 }
 
 impl Settings {
@@ -98,28 +147,31 @@ mod tests {
     fn test_default_price_override() -> anyhow::Result<()> {
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
                 ("PRICE__DEFAULT_PRICE", Some("100000000".to_string())),
             ],
             || Settings::new::<PathBuf>(None),
         )?;
 
         assert_eq!(settings.default_price, Some(100_000_000));
-        assert_eq!(settings.output_bucket, "test-bucket");
+        assert_eq!(
+            settings.output.as_ref().expect("output").bucket,
+            "test-bucket"
+        );
         Ok(())
     }
 
     #[test]
     fn test_settings_template_parses() -> anyhow::Result<()> {
         let template = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pkg/settings-template.toml");
-        // The template intentionally leaves output_bucket populated; no env
-        // overrides so we exercise pure file parsing.
+        // The template ships with `[output]` commented out — `output`
+        // is optional for the server and required only for backfill.
         let settings = temp_env::with_vars(Vec::<(&str, Option<String>)>::new(), || {
             Settings::new(Some(&template))
         })?;
 
         assert!(settings.source.contains("hermes.pyth.network"));
-        assert_eq!(settings.output_bucket, "price");
+        assert!(settings.output.is_none());
         assert_eq!(settings.interval, Duration::from_secs(60));
         Ok(())
     }
@@ -129,7 +181,7 @@ mod tests {
         let url = "https://example.test/v2/updates/price/latest?ids[]=abc";
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
+                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
                 ("PRICE__SOURCE", Some(url.to_string())),
             ],
             || Settings::new::<PathBuf>(None),
