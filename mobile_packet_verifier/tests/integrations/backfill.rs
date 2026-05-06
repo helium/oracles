@@ -21,6 +21,7 @@ use mobile_packet_verifier::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use task_manager::TaskManager;
 use trino_rust_client::Trino;
 
 use crate::common;
@@ -68,9 +69,8 @@ fn make_verified_report(
 #[sqlx::test]
 async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::session::table_definition()?).await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -107,16 +107,22 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
     // Run backfill - poller will exit via idle_timeout after processing all files
     let options = common::test_backfill_options("test-backfill", start_time, end_time);
 
+    let (backfiller, server) = DataSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
+
     tokio::time::timeout(
         TEST_TIMEOUT,
-        DataSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -132,9 +138,8 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
 #[sqlx::test]
 async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::session::table_definition()?).await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -184,16 +189,22 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     // Run backfill with stop_after = file3_time (should process only first 2 files)
     // Poller exits via stop_after before reaching file3, then idle_timeout triggers exit
     let options = common::test_backfill_options("test-backfill-stop", start_time, stop_time);
+    let (backfiller, server) = DataSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
+
     tokio::time::timeout(
         TEST_TIMEOUT,
-        DataSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -213,9 +224,6 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -267,16 +275,23 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
 
     // First run: process only first 2 files (stop before file3_time)
     let options = common::test_backfill_options(process_name, start_time, stop_time);
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::session::table_definition()?).await?;
+    let (backfiller, server) = DataSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
     tokio::time::timeout(
         TEST_TIMEOUT,
-        DataSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer.clone()),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -292,16 +307,23 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
     // The FileInfoPoller should skip already-processed files
     // Poller exits via idle_timeout after processing file3
     let options = common::test_backfill_options(process_name, start_time, end_time);
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::session::table_definition()?).await?;
+    let (backfiller, server) = DataSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
     tokio::time::timeout(
         TEST_TIMEOUT,
-        DataSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -321,9 +343,8 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
 #[sqlx::test]
 async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::session::table_definition()?).await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -353,16 +374,22 @@ async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
 
     let options = common::test_backfill_options("test-backfill-filter", start_time, end_time);
 
+    let (backfiller, server) = DataSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
+
     tokio::time::timeout(
         TEST_TIMEOUT,
-        DataSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -397,9 +424,8 @@ fn make_valid_data_transfer_session(
 #[sqlx::test]
 async fn burned_backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::burned_session::TABLE_NAME)
-        .await?;
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::burned_session::table_definition()?).await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -424,16 +450,22 @@ async fn burned_backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Res
 
     let options = common::test_backfill_options("test-burned-backfill", start_time, end_time);
 
+    let (backfiller, server) = BurnedSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await?;
+
     tokio::time::timeout(
         TEST_TIMEOUT,
-        BurnedSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
@@ -450,9 +482,8 @@ async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer(iceberg::burned_session::TABLE_NAME)
-        .await?;
+    let (writer, writer_task, _spool_dir) =
+        common::make_batched_writer(&harness, iceberg::burned_session::table_definition()?).await?;
 
     let awsl = AwsLocal::new().await;
     awsl.create_bucket().await?;
@@ -478,17 +509,23 @@ async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
 
     let options = common::test_backfill_options("test-burned-backfill-epoch", start_time, end_time);
 
+    let (backfiller, server) = BurnedSessionsBackfiller::create(
+        pool.clone(),
+        awsl.bucket_client(),
+        Some(writer),
+        Some(options),
+    )
+    .await
+    .context("burned backfiller")?;
+
     tokio::time::timeout(
         TEST_TIMEOUT,
-        BurnedSessionsBackfiller::create_managed_task(
-            pool.clone(),
-            awsl.bucket_client(),
-            Some(writer),
-            options,
-        )
-        .await
-        .context("burned backfiller")?
-        .start(),
+        TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
