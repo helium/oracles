@@ -39,14 +39,14 @@ use file_store_oracles::{
 use futures::StreamExt;
 use helium_proto::services::poc_mobile::verified_data_transfer_ingest_report_v1::ReportStatus;
 use sqlx::{PgPool, Pool, Postgres};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::settings::Settings;
 
 #[derive(Debug, clap::Args)]
-pub struct Cmd {
+pub struct BackfillSessionsCmd {
     /// Process name for tracking sessions backfill (avoids conflict with daemon)
     #[clap(long, default_value = "backfill")]
     process_name: String,
@@ -63,7 +63,25 @@ pub struct Cmd {
     stop_after: DateTime<Utc>,
 }
 
-impl Cmd {
+#[derive(Debug, clap::Args)]
+pub struct BackfillBurnedCmd {
+    /// Process name for tracking sessions backfill (avoids conflict with daemon)
+    #[clap(long, default_value = "backfill")]
+    process_name: String,
+
+    /// Start processing files after this timestamp.
+    /// Format: RFC 3339 (e.g., 2024-01-01T00:00:00Z)
+    #[clap(long)]
+    start_after: DateTime<Utc>,
+
+    /// Stop processing files when their timestamp is > this value.
+    /// Use this to avoid reprocessing files that the daemon has already handled.
+    /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
+    #[clap(long)]
+    stop_after: DateTime<Utc>,
+}
+
+impl BackfillSessionsCmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let iceberg_settings = settings
             .iceberg_settings
@@ -76,7 +94,7 @@ impl Cmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let (session_writer, burned_session_writer) =
+        let (session_writer, _burned_session_writer) =
             iceberg::get_writers(iceberg_settings).await?;
 
         tracing::info!(
@@ -96,6 +114,40 @@ impl Cmd {
         )
         .await?;
 
+        TaskManager::builder()
+            .add_task(data_sessions_task)
+            .build()
+            .start()
+            .await?;
+        Ok(())
+    }
+}
+
+impl BackfillBurnedCmd {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
+        let iceberg_settings = settings
+            .iceberg_settings
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for backfill"))?;
+
+        let pool = settings
+            .database
+            .connect("mobile-packet-verifier-backfill")
+            .await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        let (_session_writer, burned_session_writer) =
+            iceberg::get_writers(iceberg_settings).await?;
+
+        tracing::info!(
+            process_name = %self.process_name,
+            start_after = %self.start_after,
+            stop_after = %self.stop_after,
+            "starting all backfills"
+        );
+
+        let options = BackfillOptions::new(&self.process_name, self.start_after, self.stop_after);
+
         let burned_sessions_task = BurnedSessionsBackfiller::create_managed_task(
             pool,
             settings.output_bucket.connect().await,
@@ -105,7 +157,6 @@ impl Cmd {
         .await?;
 
         TaskManager::builder()
-            .add_task(data_sessions_task)
             .add_task(burned_sessions_task)
             .build()
             .start()
@@ -275,6 +326,8 @@ impl DataSessionsBackfiller {
             return Ok(());
         };
 
+        let start = Instant::now();
+
         let file_info = file.file_info.clone();
         let age = format_file_age(&file_info);
         tracing::debug!(
@@ -287,31 +340,35 @@ impl DataSessionsBackfiller {
         let mut txn = self.pool.begin().await?;
         let write_id = file.file_info.key.clone();
 
-        let reports = file.into_stream(&mut txn).await?;
+        let all: Vec<_> = file.into_stream(&mut txn).await?.collect().await;
+        let total = all.len();
+        let collect_time = start.elapsed();
 
-        let all_reports: Vec<_> = reports.collect().await;
-        let total = all_reports.len();
-
-        let iceberg_sessions: Vec<_> = all_reports
+        let start = Instant::now();
+        let rows: Vec<_> = all
             .into_iter()
             .filter(|verified_report| verified_report.status == ReportStatus::Valid)
             .map(|verified_report| IcebergDataTransferSession::from(verified_report.report))
             .collect();
+        let written = rows.len();
+        let transform_time = start.elapsed();
 
-        let valid_count = iceberg_sessions.len();
-        let filtered_count = total - valid_count;
-
+        let start = Instant::now();
         writer
-            .write_idempotent(&write_id, iceberg_sessions)
+            .write_idempotent(&write_id, rows)
             .await
             .context("writing sessions to iceberg")?;
 
         txn.commit().await.context("committing db transaction")?;
+        let write_time = start.elapsed();
 
         tracing::info!(
             file = %file_info,
-            valid_count,
-            filtered_count,
+            written,
+            skipped = total - written,
+            age = %age,
+            ?collect_time, ?transform_time, ?write_time,
+            total_time = ?(collect_time + transform_time + write_time),
             "backfilled verified sessions file"
         );
         Ok(())
