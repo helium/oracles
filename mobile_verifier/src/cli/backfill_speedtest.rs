@@ -1,6 +1,7 @@
 use crate::{iceberg, speedtests::SpeedtestBackfiller, Settings};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use helium_iceberg::{BatchedTableWriterExt, BatchedWriter, BatchedWriterConfig, IcebergTable};
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -34,10 +35,13 @@ impl Cmd {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for speedtest backfill"))?;
 
-        let speedtest_writer = iceberg::PocWriters::from_settings(iceberg_settings)
+        let catalog = iceberg_settings.connect().await?;
+        let (writer, writer_task) = catalog
+            .create_namespace_table_if_not_exists(iceberg::speedtest::table_definition()?)
             .await?
-            .speedtest
-            .expect("iceberg writer");
+            .batched_writer(BatchedWriterConfig::new(
+                settings.cache.join("iceberg-spool/speedtest-backfill"),
+            ));
 
         tracing::info!(
             process_name = %self.process_name,
@@ -54,15 +58,16 @@ impl Cmd {
             idle_timeout: None,
         };
 
-        let (backfiller, server) = SpeedtestBackfiller::create(
+        let (backfiller, server) = SpeedtestBackfiller::create_batched(
             pool,
             settings.buckets.output.connect().await,
-            Some(speedtest_writer),
+            Some(writer),
             Some(opts),
         )
         .await?;
 
         TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()

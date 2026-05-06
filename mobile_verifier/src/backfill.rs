@@ -6,7 +6,12 @@ use file_store::{
 };
 use file_store_oracles::FileType;
 use futures::StreamExt;
-use helium_iceberg::BoxedDataWriter;
+use helium_iceberg::{BatchedWriter, BoxedDataWriter};
+
+enum BackfillWriter<T> {
+    Boxed(BoxedDataWriter<T>),
+    Batched(BatchedWriter<T>),
+}
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
 use task_manager::ManagedTask;
@@ -54,7 +59,7 @@ impl ManagedTask for BackfillPollerServer {
 pub struct Backfiller<C: IcebergBackfill> {
     pool: PgPool,
     reports: Receiver<FileInfoStream<C::FileRecord>>,
-    writer: Option<BoxedDataWriter<C::IcebergRow>>,
+    writer: Option<BackfillWriter<C::IcebergRow>>,
     done: bool,
 }
 
@@ -68,7 +73,7 @@ impl<C: IcebergBackfill> Backfiller<C> {
         Self {
             pool,
             reports,
-            writer,
+            writer: writer.map(BackfillWriter::Boxed),
             done,
         }
     }
@@ -116,10 +121,19 @@ impl<C: IcebergBackfill> Backfiller<C> {
         let rows: Vec<C::IcebergRow> = all.into_iter().filter_map(C::convert).collect();
         let written = rows.len();
 
-        writer
-            .write_idempotent(&write_id, rows)
-            .await
-            .with_context(|| format!("writing {} backfill to iceberg", C::FILE_TYPE))?;
+        match writer {
+            BackfillWriter::Boxed(w) => w
+                .write_idempotent(&write_id, rows)
+                .await
+                .with_context(|| format!("writing {} backfill to iceberg", C::FILE_TYPE))?,
+            BackfillWriter::Batched(w) => {
+                if !rows.is_empty() {
+                    w.queue_all(rows)
+                        .await
+                        .with_context(|| format!("queueing {} backfill", C::FILE_TYPE))?;
+                }
+            }
+        }
 
         txn.commit().await?;
         tracing::info!(
@@ -193,6 +207,45 @@ where
             Backfiller::new(pool, reports, Some(writer)),
             BackfillPollerServer::active(reports_server),
         ))
+    }
+
+    /// Like `create`, but writes go through a `BatchedWriter` (on-disk spool +
+    /// size/time-bounded snapshots) instead of per-file `write_idempotent`.
+    /// Caller is responsible for registering the `BatchedWriterTask` returned
+    /// alongside the writer with the `TaskManager`.
+    pub async fn create_batched(
+        pool: PgPool,
+        bucket_client: BucketClient,
+        writer: Option<BatchedWriter<C::IcebergRow>>,
+        options: Option<BackfillOptions>,
+    ) -> anyhow::Result<(Self, BackfillPollerServer)> {
+        let (Some(writer), Some(options)) = (writer, options) else {
+            let (_, rx) = tokio::sync::mpsc::channel(1);
+            return Ok((
+                Backfiller::new(pool, rx, None),
+                BackfillPollerServer::noop(),
+            ));
+        };
+
+        let (reports, reports_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .bucket_client(bucket_client)
+            .prefix(C::FILE_TYPE.to_string())
+            .lookback_start_after(options.start_after)
+            .stop_after(options.stop_after)
+            .process_name(options.process_name)
+            .poll_duration_opt(options.poll_duration)
+            .idle_timeout_opt(options.idle_timeout)
+            .create()
+            .await?;
+
+        let backfiller = Backfiller {
+            pool,
+            reports,
+            writer: Some(BackfillWriter::Batched(writer)),
+            done: false,
+        };
+        Ok((backfiller, BackfillPollerServer::active(reports_server)))
     }
 }
 
