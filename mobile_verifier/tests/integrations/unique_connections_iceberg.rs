@@ -157,8 +157,11 @@ async fn idempotent_write_deduplicates() -> anyhow::Result<()> {
 #[sqlx::test]
 async fn backfill_writes_unique_connections_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergUniqueConnections>(iceberg::unique_connections::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergUniqueConnections>(
+            &harness,
+            iceberg::unique_connections::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -191,13 +194,18 @@ async fn backfill_writes_unique_connections_to_iceberg(pool: PgPool) -> anyhow::
     .await?;
 
     let opts = test_backfill_options("test-backfill", start_time, end_time);
-    let (backfiller, server) =
-        UniqueConnectionsBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = UniqueConnectionsBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
@@ -216,8 +224,11 @@ async fn backfill_writes_unique_connections_to_iceberg(pool: PgPool) -> anyhow::
 #[sqlx::test]
 async fn backfill_filters_invalid_unique_connections(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergUniqueConnections>(iceberg::unique_connections::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergUniqueConnections>(
+            &harness,
+            iceberg::unique_connections::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -245,13 +256,18 @@ async fn backfill_filters_invalid_unique_connections(pool: PgPool) -> anyhow::Re
     .await?;
 
     let opts = test_backfill_options("test-backfill-filter", start_time, end_time);
-    let (backfiller, server) =
-        UniqueConnectionsBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = UniqueConnectionsBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
@@ -274,8 +290,11 @@ async fn backfill_filters_invalid_unique_connections(pool: PgPool) -> anyhow::Re
 #[sqlx::test]
 async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergUniqueConnections>(iceberg::unique_connections::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergUniqueConnections>(
+            &harness,
+            iceberg::unique_connections::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -306,13 +325,18 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     }
 
     let opts = test_backfill_options("test-backfill-stop", start_time, stop_time);
-    let (backfiller, server) =
-        UniqueConnectionsBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = UniqueConnectionsBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()

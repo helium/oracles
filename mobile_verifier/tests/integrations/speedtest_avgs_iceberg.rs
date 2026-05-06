@@ -131,8 +131,11 @@ async fn idempotent_write_deduplicates() -> anyhow::Result<()> {
 #[sqlx::test]
 async fn backfill_writes_speedtest_avgs_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergSpeedtestAvg>(iceberg::speedtest_avg::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergSpeedtestAvg>(
+            &harness,
+            iceberg::speedtest_avg::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -165,13 +168,18 @@ async fn backfill_writes_speedtest_avgs_to_iceberg(pool: PgPool) -> anyhow::Resu
     .await?;
 
     let opts = test_backfill_options("test-avg-backfill", start_time, end_time);
-    let (backfiller, server) =
-        SpeedtestAvgBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
@@ -190,8 +198,11 @@ async fn backfill_writes_speedtest_avgs_to_iceberg(pool: PgPool) -> anyhow::Resu
 #[sqlx::test]
 async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergSpeedtestAvg>(iceberg::speedtest_avg::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergSpeedtestAvg>(
+            &harness,
+            iceberg::speedtest_avg::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -219,13 +230,18 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     }
 
     let opts = test_backfill_options("test-avg-backfill-stop", start_time, stop_time);
-    let (backfiller, server) =
-        SpeedtestAvgBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
@@ -248,8 +264,11 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn backfill_filters_invalid_speedtest_avgs(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let writer = harness
-        .get_table_writer::<IcebergSpeedtestAvg>(iceberg::speedtest_avg::TABLE_NAME)
+    let (writer, writer_task, _spool_dir) =
+        crate::common::make_batched_writer::<IcebergSpeedtestAvg>(
+            &harness,
+            iceberg::speedtest_avg::table_definition()?,
+        )
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -274,13 +293,18 @@ async fn backfill_filters_invalid_speedtest_avgs(pool: PgPool) -> anyhow::Result
     .await?;
 
     let opts = test_backfill_options("test-avg-backfill-filter", start_time, end_time);
-    let (backfiller, server) =
-        SpeedtestAvgBackfiller::create(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
+        pool,
+        awsl.bucket_client(),
+        Some(writer),
+        Some(opts),
+    )
+    .await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
         task_manager::TaskManager::builder()
+            .add_task(writer_task)
             .add_task(server)
             .add_task(backfiller)
             .build()
