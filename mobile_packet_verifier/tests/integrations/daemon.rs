@@ -12,13 +12,11 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession,
     poc_mobile::{
-        verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
-        DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+        CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
         VerifiedDataTransferIngestReportV1,
     },
 };
 use mobile_packet_verifier::{
-    backfill::{BurnedSessionsBackfiller, DataSessionsBackfiller},
     burner::Burner,
     daemon::{Daemon, IngestReports},
     iceberg,
@@ -60,17 +58,6 @@ fn make_ingest_report(
         },
     }
     .into()
-}
-
-fn make_verified_report(
-    timestamp: chrono::DateTime<Utc>,
-    event_id: &str,
-) -> VerifiedDataTransferIngestReportV1 {
-    VerifiedDataTransferIngestReportV1 {
-        report: Some(make_ingest_report(timestamp, event_id)),
-        status: ReportStatus::Valid as i32,
-        timestamp: timestamp.timestamp_millis() as u64,
-    }
 }
 
 fn mk_data_transfer_session(
@@ -185,11 +172,6 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         .create()
         .await?;
 
-    // Backfillers with None writer: done=true on construction, recv() returns
-    // pending() immediately, so the select! arms never fire.
-    let (_, session_rx) = tokio::sync::mpsc::channel(10);
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-
     let ingest_reports = IngestReports::new(
         pool.clone(),
         reports,
@@ -205,8 +187,6 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         ingest_reports,
         noop_burner(),
         common::TestMobileConfig::all_valid(),
-        DataSessionsBackfiller::new(pool.clone(), session_rx, None),
-        BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
     );
 
     let (trigger, listener) = triggered::trigger();
@@ -248,157 +228,6 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     );
 
     awsl.cleanup().await?;
-    Ok(())
-}
-
-/// Verify that when Iceberg is configured, the daemon's backfill arms process
-/// verified session files and write them to Iceberg during idle time.
-/// No ingest reports are present; the test exits when the Iceberg row appears.
-#[sqlx::test]
-async fn daemon_with_iceberg_processes_backfill(pool: PgPool) -> anyhow::Result<()> {
-    let harness = common::setup_iceberg().await?;
-    let session_writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
-
-    let awsl = AwsLocal::new().await;
-    awsl.create_bucket().await?;
-
-    let base_time = Utc::now() - Duration::hours(1);
-    let start_time = base_time - Duration::minutes(1);
-    let end_time = base_time + Duration::days(42);
-    let file_time = base_time;
-
-    // Put a verified session file that the session backfiller will pick up.
-    awsl.put_protos_at_time(
-        FileType::VerifiedDataTransferSession.to_string(),
-        vec![make_verified_report(file_time, "backfill-event-1")],
-        file_time,
-    )
-    .await?;
-
-    // Session backfiller with a real writer.
-    let backfill_opts = common::test_backfill_options("daemon-backfill", start_time, end_time);
-    let (session_backfill, session_backfill_server) = DataSessionsBackfiller::create(
-        pool.clone(),
-        awsl.bucket_client(),
-        Some(session_writer),
-        Some(backfill_opts),
-    )
-    .await?;
-
-    // Burned backfiller with no writer (no burned session files in this test).
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-    let burned_backfill = BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None);
-
-    // Reports channel kept open so the daemon's ingest arm just blocks.
-    let (_reports_tx, reports_rx) = tokio::sync::mpsc::channel(10);
-
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(100);
-    let ingest_reports = IngestReports::new(
-        pool.clone(),
-        reports_rx,
-        FileSinkClient::new(verified_tx, "test"),
-        None,
-    );
-
-    let daemon = Daemon::new(
-        pool.clone(),
-        NO_BURN,
-        NO_BURN,
-        NO_BURN,
-        ingest_reports,
-        noop_burner(),
-        common::TestMobileConfig::all_valid(),
-        session_backfill,
-        burned_backfill,
-    );
-
-    // Shutdown: poll Iceberg until the backfilled row appears, then trigger.
-    // When the Iceberg write is committed the backfiller has finished its work.
-    let (trigger, listener) = triggered::trigger();
-
-    let trino_client = harness.owned_trino().await?;
-    let job = TaskManager::builder()
-        .add_task(session_backfill_server)
-        .add_task(daemon)
-        .add_task(|_| async {
-            trigger
-                .when_iceberg_sessions_exist(trino_client)
-                .await
-                .expect("iceberg sessions exist");
-            Ok(())
-        })
-        .build();
-
-    // Spawn the TaskManager separately so we can borrow `harness` in this task.
-    tokio::time::timeout(TEST_TIMEOUT, Box::new(job).start_task(listener))
-        .await
-        .map_err(|err| anyhow::anyhow!("deamon failed {:?}", err))??;
-
-    let rows = iceberg::session::get_all(harness.trino()).await?;
-    assert_eq!(rows.len(), 1, "expected 1 backfilled session in iceberg");
-
-    awsl.cleanup().await?;
-    Ok(())
-}
-
-/// Verify that when Iceberg is not configured, the daemon starts and runs without
-/// panicking. Backfillers are disabled (done=true on construction). Shutdown is
-/// driven by an explicit trigger after a brief delay — this test only checks that
-/// the daemon wires up and starts cleanly, not that any processing occurs.
-#[sqlx::test]
-async fn daemon_without_iceberg_skips_backfill(pool: PgPool) -> anyhow::Result<()> {
-    pending_burns::initialize(&pool).await?;
-
-    // Manual reports channel — keep the sender alive so the daemon's ingest arm
-    // just blocks rather than bailing with "sender dropped".
-    // No S3 is needed since no files are processed in this test.
-    let (_reports_tx, reports_rx) = tokio::sync::mpsc::channel(10);
-
-    // No-op backfillers (no Iceberg writer → done=true, recv() returns pending())
-    let (_, session_rx) = tokio::sync::mpsc::channel(10);
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(100);
-    let ingest_reports = IngestReports::new(
-        pool.clone(),
-        reports_rx,
-        FileSinkClient::new(verified_tx, "test"),
-        None,
-    );
-
-    let daemon = Daemon::new(
-        pool.clone(),
-        NO_BURN,
-        NO_BURN,
-        NO_BURN,
-        ingest_reports,
-        noop_burner(),
-        common::TestMobileConfig::all_valid(),
-        DataSessionsBackfiller::new(pool.clone(), session_rx, None),
-        BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
-    );
-
-    let (trigger, listener) = triggered::trigger();
-    let job = TaskManager::builder()
-        .add_task(daemon)
-        .add_task(|_| async {
-            // Trigger shutdown after a short delay — enough to confirm the
-            // daemon starts without panicking and idles cleanly.
-            trigger.after_sleep(300).await;
-            Ok(())
-        })
-        .build();
-
-    tokio::time::timeout(TEST_TIMEOUT, Box::new(job).start_task(listener))
-        .await
-        .map_err(|err| anyhow::anyhow!("daemon failed {err:?}"))??;
-
-    // No files were processed; pending burns table should be empty.
-    let burns = pending_burns::get_all(&pool).await?;
-    assert!(burns.is_empty(), "expected no pending burns");
-
     Ok(())
 }
 
@@ -463,10 +292,6 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         Some(burned_writer),
     );
 
-    // No-op backfillers
-    let (_, session_rx) = tokio::sync::mpsc::channel(10);
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-
     // Keep reports channel sender alive so the daemon's ingest arm just blocks.
     let (_reports_tx, reports_rx) = tokio::sync::mpsc::channel(1);
 
@@ -487,8 +312,6 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         ingest_reports,
         burner,
         common::TestMobileConfig::all_valid(),
-        DataSessionsBackfiller::new(pool.clone(), session_rx, None),
-        BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
     );
 
     // On BurnSuccess, manually commit the Automatic FileSink so the rolled file
@@ -631,10 +454,6 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         .create()
         .await?;
 
-    // No-op backfillers — this test exercises only the real-time ingest + burn path.
-    let (_, session_rx) = tokio::sync::mpsc::channel(10);
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-
     let ingest_reports = IngestReports::new(
         pool.clone(),
         reports,
@@ -652,8 +471,6 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         ingest_reports,
         burner,
         common::TestMobileConfig::all_valid(),
-        DataSessionsBackfiller::new(pool.clone(), session_rx, None),
-        BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None),
     );
 
     // On BurnSuccess, manually commit the Automatic FileSink so the rolled file
@@ -745,169 +562,6 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Verify that the backfill `stop_after` boundary is respected when the daemon
-/// runs with embedded backfillers alongside a real-time ingest path.
-///
-/// **Scenario**:
-/// - A "historical" VerifiedDataTransferSession file exists at `T_historical`
-///   (one hour before the boundary).
-/// - A "new" VerifiedDataTransferSession file exists at `T_new` (30 minutes
-///   after the boundary).
-/// - Backfill is configured with `stop_after = boundary`.
-/// - An ingest report is also present and processed by the real-time path,
-///   writing its own Iceberg session record.
-///
-/// **Expected**:
-/// - Iceberg has exactly 2 session records:
-///   1. The historical session (written by the backfiller).
-///   2. The fresh ingest session (written by the real-time daemon path).
-/// - The new VerifiedDataTransferSession file (T_new) is **not** processed by
-///   the backfiller because it lies beyond `stop_after`.
-#[sqlx::test]
-async fn daemon_backfill_boundary(pool: PgPool) -> anyhow::Result<()> {
-    pending_burns::initialize(&pool).await?;
-
-    let harness = common::setup_iceberg().await?;
-    let session_writer = harness
-        .get_table_writer(iceberg::session::TABLE_NAME)
-        .await?;
-
-    let awsl = AwsLocal::new().await;
-    awsl.create_bucket().await?;
-
-    // Times
-    let boundary = Utc::now() - Duration::hours(1); // "Iceberg deployment date"
-    let historical_time = boundary - Duration::hours(1); // before boundary → backfiller processes
-    let new_verified_time = boundary + Duration::minutes(30); // after boundary → backfiller skips
-    let ingest_time = Utc::now() - Duration::minutes(5); // fresh ingest → real-time path
-    let ingest_start = ingest_time - Duration::minutes(1);
-
-    // Historical VerifiedDataTransferSession file (before boundary)
-    awsl.put_protos_at_time(
-        FileType::VerifiedDataTransferSession.to_string(),
-        vec![make_verified_report(historical_time, "historical-event")],
-        historical_time,
-    )
-    .await?;
-
-    // New VerifiedDataTransferSession file (after boundary) — backfiller must skip this
-    awsl.put_protos_at_time(
-        FileType::VerifiedDataTransferSession.to_string(),
-        vec![make_verified_report(
-            new_verified_time,
-            "new-verified-event",
-        )],
-        new_verified_time,
-    )
-    .await?;
-
-    // Fresh ingest report — processed by the daemon's real-time path
-    awsl.put_protos_at_time(
-        FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_ingest_report(ingest_time, "ingest-event")],
-        ingest_time,
-    )
-    .await?;
-
-    // Backfill: start before historical_time, stop at boundary
-    let backfill_start = historical_time - Duration::minutes(1);
-    let backfill_opts = common::test_backfill_options("boundary-test", backfill_start, boundary);
-    let (session_backfill, session_backfill_server) = DataSessionsBackfiller::create(
-        pool.clone(),
-        awsl.bucket_client(),
-        Some(session_writer),
-        Some(backfill_opts),
-    )
-    .await?;
-
-    let (_, burned_rx) = tokio::sync::mpsc::channel(10);
-    let burned_backfill = BurnedSessionsBackfiller::new(pool.clone(), burned_rx, None);
-
-    // Real-time reports poller for the fresh ingest file.
-    let (reports, reports_server) = file_source::continuous_source()
-        .state(pool.clone())
-        .bucket_client(awsl.bucket_client())
-        .prefix(FileType::DataTransferSessionIngestReport.to_string())
-        .lookback_start_after(ingest_start)
-        .poll_duration_opt(Some(std::time::Duration::from_millis(100)))
-        .create()
-        .await?;
-
-    // No-op file sinks for verified sessions output (not asserting S3 in this test).
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(100);
-    // No real-time Iceberg writer: the ingest path produces a pending_burn which
-    // serves as its "done" signal; session rows come from the backfiller only.
-    let ingest_reports = IngestReports::new(
-        pool.clone(),
-        reports,
-        FileSinkClient::new(verified_tx, "test"),
-        None,
-    );
-
-    let daemon = Daemon::new(
-        pool.clone(),
-        NO_BURN,
-        NO_BURN,
-        NO_BURN,
-        ingest_reports,
-        noop_burner(),
-        common::TestMobileConfig::all_valid(),
-        session_backfill,
-        burned_backfill,
-    );
-
-    let (trigger, listener) = triggered::trigger();
-
-    let job = TaskManager::builder()
-        .add_task(session_backfill_server)
-        .add_task(reports_server)
-        .add_task(daemon)
-        .build();
-
-    let job_handle = tokio::spawn(Box::new(job).start_task(listener));
-
-    // Shutdown: wait for:
-    //   - the historical backfill row in Iceberg, AND
-    //   - the pending burn from the fresh ingest (signals real-time path completed)
-    let pool_watch = pool.clone();
-    tokio::time::timeout(TEST_TIMEOUT, async {
-        loop {
-            let iceberg_rows = iceberg::session::get_all(harness.trino()).await?;
-            let burns = pending_burns::get_all(&pool_watch).await?;
-            // 1 backfilled row + ingest produced a pending burn
-            if !iceberg_rows.is_empty() && !burns.is_empty() {
-                trigger.trigger();
-                return anyhow::Ok(());
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("boundary test timed out after {:?}", TEST_TIMEOUT))??;
-
-    job_handle
-        .await
-        .map_err(|e| anyhow::anyhow!("job panicked: {e}"))??;
-
-    // The backfiller should have written exactly 1 row: the historical session.
-    // The "new" VerifiedDataTransferSession file (T_new) must NOT appear because
-    // it lies beyond stop_after.
-    let rows = iceberg::session::get_all(harness.trino()).await?;
-    assert_eq!(
-        rows.len(),
-        1,
-        "backfiller must write only the historical session; \
-         new-verified-event (past stop_after) must be excluded"
-    );
-
-    // The fresh ingest produced a pending burn (real-time path ran correctly).
-    let burns = pending_burns::get_all(&pool).await?;
-    assert_eq!(burns.len(), 1, "ingest should have produced 1 pending burn");
-
-    awsl.cleanup().await?;
-    Ok(())
-}
-
 async fn verified_data_transfer_files(
     bucket_client: &BucketClient,
 ) -> anyhow::Result<Vec<FileInfo>> {
@@ -947,41 +601,18 @@ async fn commit_valid_session_sink_on_burn(
 mod trigger {
     use file_store::file_upload::FileUpload;
     use mobile_packet_verifier::daemon::DaemonEvent;
-    use mobile_packet_verifier::iceberg;
-    use std::time::Duration;
     use tokio::sync::broadcast::Receiver;
-    use tokio::time::sleep;
 
     pub trait TriggerExt {
-        async fn when_iceberg_sessions_exist(
-            self,
-            trino: trino_rust_client::Client,
-        ) -> anyhow::Result<()>;
         async fn when_uploads_completed_at_least(
             self,
             n_uploads: u64,
             events: Receiver<DaemonEvent>,
             file_upload_watcher: FileUpload,
         ) -> anyhow::Result<()>;
-
-        async fn after_sleep(self, ms: u64);
     }
 
     impl TriggerExt for triggered::Trigger {
-        async fn when_iceberg_sessions_exist(
-            self,
-            trino: trino_rust_client::Client,
-        ) -> anyhow::Result<()> {
-            loop {
-                let rows = iceberg::session::get_all(&trino).await.unwrap_or_default();
-                if !rows.is_empty() {
-                    self.trigger();
-                    return Ok(());
-                }
-                sleep(Duration::from_millis(100)).await;
-            }
-        }
-
         async fn when_uploads_completed_at_least(
             self,
             n_uploads: u64,
@@ -998,11 +629,6 @@ mod trigger {
                 }
             }
             anyhow::bail!("no report handle event received");
-        }
-
-        async fn after_sleep(self, ms: u64) {
-            sleep(Duration::from_millis(ms)).await;
-            self.trigger();
         }
     }
 }
