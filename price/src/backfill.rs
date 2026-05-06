@@ -42,6 +42,13 @@ impl Cmd {
             .iceberg_settings
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for backfill"))?;
+        // Backfill reads `PriceReportV1` files from S3 to seed the
+        // Iceberg history; the bucket is non-optional here even though
+        // the daemon allows Iceberg-only configurations.
+        let output = settings
+            .output
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("`output` (S3 bucket) is required for backfill"))?;
 
         let pool = database.connect("price-backfill").await?;
         sqlx::migrate!().run(&pool).await?;
@@ -63,7 +70,7 @@ impl Cmd {
 
         let task = PriceReportBackfiller::create_managed_task(
             pool,
-            settings.output.connect().await,
+            output.connect().await,
             writer,
             batched_task,
             BackfillOptions {

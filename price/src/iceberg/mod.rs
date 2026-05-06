@@ -4,7 +4,7 @@ pub mod price_report;
 
 pub use price_report::IcebergPriceReport;
 
-pub const NAMESPACE: &str = "rewards";
+pub const NAMESPACE: &str = "tokens";
 
 /// Type alias for the price-report Iceberg table handle. The server feeds
 /// this into a `BatchedWriter`; the backfiller uses it directly via

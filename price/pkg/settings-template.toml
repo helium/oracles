@@ -27,9 +27,13 @@ interval = "60 seconds"
 #
 # default_price =
 
-#output bucket
-[output]
-bucket = "price"
+# S3 bucket for `PriceReportV1` protobuf files.
+# - Optional for `server`. Omit when running an Iceberg-only deployment;
+#   the server will then fan out only to the Iceberg sink.
+# - Required for `backfill`, which reads these files back to seed Iceberg.
+#
+# [output]
+# bucket = "price"
 
 [custom_tracing]
 # File watched for runtime tracing-config reloads. Default below.
@@ -69,7 +73,7 @@ bucket = "price"
 
 
 # Iceberg catalog settings. When provided, the `server` also writes each
-# live tick into the Iceberg table `rewards.prices`. Required by `backfill`.
+# live tick into the Iceberg table `tokens.prices`. Required by `backfill`.
 #
 # Live writes go through a `BatchedWriter` that spools each record to
 # `<cache>/iceberg-spool` for crash durability and commits a single

@@ -20,7 +20,13 @@ pub struct Settings {
     /// parameter for the HNT feed. Required.
     #[serde(default = "default_source")]
     pub source: String,
-    pub output: file_store::BucketSettings,
+    /// S3 bucket for `PriceReportV1` protobuf files. Optional for
+    /// `server`; required for `backfill` (which reads these files
+    /// back). When unset on the server, the file_sink/FileUpload tasks
+    /// are not started and ticks go only to the configured Iceberg
+    /// table.
+    #[serde(default)]
+    pub output: Option<file_store::BucketSettings>,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -42,7 +48,7 @@ pub struct Settings {
     #[serde(default)]
     pub database: Option<db_store::Settings>,
     /// Iceberg catalog settings. When provided, live ticks also write to
-    /// the `rewards.prices` Iceberg table. Required by `backfill`.
+    /// the `tokens.prices` Iceberg table. Required by `backfill`.
     #[serde(default)]
     pub iceberg_settings: Option<helium_iceberg::Settings>,
     /// Maximum number of records buffered before forcing an Iceberg commit.
@@ -148,21 +154,24 @@ mod tests {
         )?;
 
         assert_eq!(settings.default_price, Some(100_000_000));
-        assert_eq!(settings.output.bucket, "test-bucket");
+        assert_eq!(
+            settings.output.as_ref().expect("output").bucket,
+            "test-bucket"
+        );
         Ok(())
     }
 
     #[test]
     fn test_settings_template_parses() -> anyhow::Result<()> {
         let template = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pkg/settings-template.toml");
-        // The template intentionally leaves output_bucket populated; no env
-        // overrides so we exercise pure file parsing.
+        // The template ships with `[output]` commented out — `output`
+        // is optional for the server and required only for backfill.
         let settings = temp_env::with_vars(Vec::<(&str, Option<String>)>::new(), || {
             Settings::new(Some(&template))
         })?;
 
         assert!(settings.source.contains("hermes.pyth.network"));
-        assert_eq!(settings.output.bucket, "price");
+        assert!(settings.output.is_none());
         assert_eq!(settings.interval, Duration::from_secs(60));
         Ok(())
     }
