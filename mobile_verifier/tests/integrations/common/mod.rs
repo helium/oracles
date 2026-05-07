@@ -5,7 +5,9 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::IcebergTestHarness;
+use helium_iceberg::{
+    BatchedWriter, BatchedWriterConfig, BatchedWriterTask, IcebergTestHarness, TableDefinition,
+};
 use helium_proto::services::poc_mobile::{
     mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
@@ -19,11 +21,13 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
+use mobile_verifier::backfill::BatchedWriterExt;
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
+use serde::Serialize;
 use solana::Token;
 use sqlx::PgPool;
 use std::{
@@ -445,4 +449,23 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     ])
     .await?;
     Ok(harness)
+}
+
+/// Build a `BatchedWriter` against the harness's catalog with a fresh tempdir
+/// spool. Tests run quickly so the timeout never fires; `max_batch_size = 1`
+/// makes each `queue_all` flush right away so assertions see rows promptly.
+pub async fn make_batched_writer<T>(
+    harness: &IcebergTestHarness,
+    table_def: TableDefinition,
+) -> anyhow::Result<(BatchedWriter<T>, BatchedWriterTask<T>, tempfile::TempDir)>
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    let spool_dir = tempfile::tempdir()?;
+    let config = BatchedWriterConfig::new(spool_dir.path().to_path_buf())
+        .with_max_batch_size(1)
+        .with_batch_timeout(std::time::Duration::from_secs(3600));
+    let (writer, task) =
+        T::batched_writer(harness.iceberg_catalog().clone(), table_def, config).await?;
+    Ok((writer, task, spool_dir))
 }
