@@ -1,6 +1,5 @@
 use crate::{
     accumulate::{accumulate_sessions, AccumulatedSessions},
-    backfill::{BackfillOptions, BurnedSessionsBackfiller, DataSessionsBackfiller},
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
@@ -58,13 +57,9 @@ pub struct Daemon<S, MCR> {
     mobile_config_resolver: MCR,
     ingest_reports: IngestReports,
     event_tx: tokio::sync::broadcast::Sender<DaemonEvent>,
-    // backfill temp
-    session_backfill: DataSessionsBackfiller,
-    burned_backfill: BurnedSessionsBackfiller,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         burn_period: Duration,
@@ -73,9 +68,6 @@ impl<S, MCR> Daemon<S, MCR> {
         ingest_reports: IngestReports,
         burner: Burner<S>,
         mobile_config_resolver: MCR,
-        // backfill temp
-        session_backfill: DataSessionsBackfiller,
-        burned_backfill: BurnedSessionsBackfiller,
     ) -> Self {
         let (event_tx, _event_rx) = tokio::sync::broadcast::channel(100);
         Self {
@@ -86,8 +78,6 @@ impl<S, MCR> Daemon<S, MCR> {
             initial_burn_delay,
             mobile_config_resolver,
             ingest_reports,
-            session_backfill,
-            burned_backfill,
             event_tx,
         }
     }
@@ -134,18 +124,6 @@ where
                 file = self.ingest_reports.recv() => {
                     self.ingest_reports.handle(file, &self.mobile_config_resolver).await?;
                     let _ = self.event_tx.send(DaemonEvent::ReportHandle);
-                }
-                // Backfill runs at lowest priority — only fires when burn and
-                // ingest have nothing ready. When iceberg is not configured,
-                // the backfillers set done=true on construction and recv()
-                // returns pending() immediately, so these arms never fire.
-                file = self.session_backfill.recv() => {
-                    self.session_backfill.handle(file).await?;
-                    let _ = self.event_tx.send(DaemonEvent::BackfillDataSession);
-                }
-                file = self.burned_backfill.recv() => {
-                    self.burned_backfill.handle(file).await?;
-                    let _ = self.event_tx.send(DaemonEvent::BackfillBurnedSession);
                 }
             }
         }
@@ -354,34 +332,6 @@ impl Cmd {
             session_writer.clone(),
         );
 
-        // Backfill covers [backfill.start_after, backfill.stop_after):
-        //   - backfill.stop_after is the Iceberg deployment date (set at deploy time)
-        //   - everything before stop_after is historical data written by the backfiller
-        //   - everything from stop_after onwards is written to Iceberg in real-time
-        // This boundary is deterministic and configured at deploy time — no overlap.
-        //
-        // When settings.backfill is None (or iceberg_settings is None so writers are None),
-        // create() returns a no-op backfiller with no poller.
-        let backfill_opts = settings
-            .backfill
-            .as_ref()
-            .map(|b| BackfillOptions::new("backfill", b.start_after, b.stop_after));
-
-        let (data_session_backfill, backfill_reports_server) = DataSessionsBackfiller::create(
-            pool.clone(),
-            settings.output_bucket.connect().await,
-            session_writer,
-            backfill_opts.clone(),
-        )
-        .await?;
-        let (burned_session_backfill, burned_reports_server) = BurnedSessionsBackfiller::create(
-            pool.clone(),
-            settings.output_bucket.connect().await,
-            burned_session_writer.clone(),
-            backfill_opts,
-        )
-        .await?;
-
         let daemon = Daemon::new(
             pool.clone(),
             settings.burn_period,
@@ -390,8 +340,6 @@ impl Cmd {
             ingest_reports,
             burner,
             resolver,
-            data_session_backfill,
-            burned_session_backfill,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
@@ -405,8 +353,6 @@ impl Cmd {
             .add_task(banning)
             .add_task(event_id_purger)
             .add_task(daemon)
-            .add_task(backfill_reports_server)
-            .add_task(burned_reports_server)
             .build()
             .start()
             .await?;

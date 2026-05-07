@@ -29,14 +29,16 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Server(daemon::Cmd),
-    Backfill(backfill::Cmd),
+    BackfillSessions(backfill::BackfillSessionsCmd),
+    BackfillBurned(backfill::BackfillBurnedCmd),
 }
 
 impl Cmd {
     async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
-            Self::Backfill(cmd) => cmd.run(&settings).await,
+            Self::BackfillSessions(cmd) => cmd.run(&settings).await,
+            Self::BackfillBurned(cmd) => cmd.run(&settings).await,
         }
     }
 }
