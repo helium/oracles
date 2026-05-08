@@ -23,39 +23,15 @@ use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{
-    backfill::{Backfiller, IcebergBackfill},
-    iceberg, Settings,
-};
+use crate::Settings;
 
 use super::db;
-
-// ── Unique Connections backfill ───────────────────────────────────────────────
-
-pub struct UniqueConnectionsConverter;
-pub type UniqueConnectionsBackfiller = Backfiller<UniqueConnectionsConverter>;
-
-impl IcebergBackfill for UniqueConnectionsConverter {
-    type FileRecord = VerifiedUniqueConnectionsIngestReport;
-    type IcebergRow = iceberg::IcebergUniqueConnections;
-    const FILE_TYPE: FileType = FileType::VerifiedUniqueConnectionsReport;
-
-    fn convert(
-        record: VerifiedUniqueConnectionsIngestReport,
-    ) -> Option<iceberg::IcebergUniqueConnections> {
-        (record.status == VerifiedUniqueConnectionsIngestReportStatus::Valid)
-            .then(|| iceberg::IcebergUniqueConnections::from(&record))
-    }
-}
-
-// ── UniqueConnectionsIngestor ─────────────────────────────────────────────────
 
 pub struct UniqueConnectionsIngestor<AV> {
     pool: PgPool,
     unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
     verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
     authorization_verifier: AV,
-    iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
 }
 
 impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
@@ -77,7 +53,6 @@ where
         file_upload: FileUpload,
         bucket_client: BucketClient,
         authorization_verifier: AV,
-        iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
             VerifiedUniqueConnectionsIngestReportV1::file_sink(
@@ -103,7 +78,6 @@ where
             unique_connections_ingest,
             verified_unique_connections,
             authorization_verifier,
-            iceberg_writer,
         );
 
         Ok(TaskManager::builder()
@@ -118,14 +92,12 @@ where
         unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
         verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
         authorization_verifier: AV,
-        iceberg_writer: Option<iceberg::UniqueConnectionsWriter>,
     ) -> Self {
         Self {
             pool,
             unique_connections_receiver,
             verified_unique_connections_sink,
             authorization_verifier,
-            iceberg_writer,
         }
     }
 
@@ -149,14 +121,12 @@ where
         file_info_stream: FileInfoStream<UniqueConnectionsIngestReport>,
     ) -> anyhow::Result<()> {
         let file_info = file_info_stream.file_info.clone();
-        let write_id = file_info.key.clone();
         tracing::info!(?file_info, "processing file");
 
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
         let mut verified = vec![];
-        let mut iceberg_records = vec![];
 
         while let Some(unique_connections_report) = stream.next().await {
             let verified_report_status = self
@@ -178,10 +148,6 @@ where
                 status: verified_report_status,
             };
 
-            if is_valid && self.iceberg_writer.is_some() {
-                iceberg_records.push(iceberg::IcebergUniqueConnections::from(&verified_report));
-            }
-
             self.verified_unique_connections_sink
                 .write(
                     verified_report,
@@ -189,9 +155,6 @@ where
                 )
                 .await?;
         }
-
-        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
-            .await?;
 
         db::save(&mut txn, &verified).await?;
         txn.commit().await?;
