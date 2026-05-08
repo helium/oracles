@@ -148,7 +148,6 @@ impl Cmd {
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
                     auth_client.clone(),
-                    poc_writers.unique_connections,
                 )
                 .await?,
             )
