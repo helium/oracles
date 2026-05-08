@@ -24,7 +24,7 @@ pub use rolling_file_sink::{RollingFileSink, RollingFileSinkError, RollingFileWr
 pub use settings::{BucketSettings, Settings};
 
 // Client functions
-use aws_config::BehaviorVersion;
+use aws_config::{identity::IdentityCache, BehaviorVersion};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use bytes::BytesMut;
@@ -34,8 +34,19 @@ use futures::{
     stream::{self, BoxStream},
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
-use std::{collections::HashMap, future::Future, path::Path, sync::OnceLock};
+use std::{collections::HashMap, future::Future, path::Path, sync::OnceLock, time::Duration};
 use tokio::sync::Mutex;
+
+const IDENTITY_LOAD_TIMEOUT_ENV: &str = "FILE_STORE_IDENTITY_LOAD_TIMEOUT_SECS";
+const DEFAULT_IDENTITY_LOAD_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn identity_load_timeout() -> Duration {
+    std::env::var(IDENTITY_LOAD_TIMEOUT_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_IDENTITY_LOAD_TIMEOUT)
+}
 
 pub type Client = aws_sdk_s3::Client;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
@@ -94,7 +105,14 @@ pub async fn new_client(
         return client.clone();
     }
 
-    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+    let config = aws_config::defaults(BehaviorVersion::latest())
+        .identity_cache(
+            IdentityCache::lazy()
+                .load_timeout(identity_load_timeout())
+                .build(),
+        )
+        .load()
+        .await;
 
     let mut s3_config = aws_sdk_s3::config::Builder::from(&config);
 
