@@ -1,14 +1,59 @@
-use chrono::{DateTime, SubsecRound, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
+use file_store::aws_local::AwsLocal;
+use file_store_oracles::FileType;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
+use helium_proto::services::poc_mobile::{
+    CellType as ProtoCellType, Heartbeat as HeartbeatProto, HeartbeatValidity, LocationSource,
+};
 use mobile_config::gateway::service::info::DeviceType;
 use mobile_verifier::{
+    backfill::BackfillOptions,
     cell_type::CellType,
-    heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{backfill::HeartbeatBackfiller, HbType, Heartbeat, ValidatedHeartbeat},
     iceberg::{self, heartbeat::IcebergHeartbeat},
 };
 use rust_decimal_macros::dec;
+use sqlx::PgPool;
 use uuid::Uuid;
+
+const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn test_backfill_options(
+    process_name: &str,
+    start_after: DateTime<Utc>,
+    stop_after: DateTime<Utc>,
+) -> BackfillOptions {
+    BackfillOptions {
+        process_name: process_name.to_string(),
+        start_after,
+        stop_after,
+        poll_duration: Some(std::time::Duration::from_millis(100)),
+        idle_timeout: Some(std::time::Duration::from_millis(500)),
+    }
+}
+
+fn make_validated_heartbeat_proto(
+    timestamp: DateTime<Utc>,
+    validity: HeartbeatValidity,
+) -> HeartbeatProto {
+    let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        .parse()
+        .unwrap();
+    HeartbeatProto {
+        pub_key: pubkey.as_ref().to_vec(),
+        timestamp: timestamp.timestamp() as u64,
+        cell_type: ProtoCellType::NovaGenericWifiIndoor as i32,
+        validity: validity as i32,
+        lat: 37.7749,
+        lon: -122.4194,
+        coverage_object: Uuid::new_v4().as_bytes().to_vec(),
+        location_validation_timestamp: timestamp.timestamp() as u64,
+        distance_to_asserted: 250,
+        location_trust_score_multiplier: 750,
+        location_source: LocationSource::Skyhook as i32,
+        ..Default::default()
+    }
+}
 
 fn truncated_now() -> DateTime<Utc> {
     Utc::now().trunc_subsecs(3)
@@ -244,5 +289,125 @@ async fn empty_write_produces_no_rows() -> anyhow::Result<()> {
 
     assert_eq!(all.len(), 0);
 
+    Ok(())
+}
+
+// ── Backfill tests (DB needed for file-tracking state) ────────────────────────
+
+#[sqlx::test]
+async fn backfill_writes_validated_heartbeats_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
+    let harness = crate::common::setup_iceberg().await?;
+    let (writer, writer_task, _spool_dir) = crate::common::make_batched_writer::<IcebergHeartbeat>(
+        &harness,
+        iceberg::heartbeat::table_definition()?,
+    )
+    .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file1_time = base_time;
+    let file2_time = base_time + Duration::minutes(5);
+    let end_time = base_time + Duration::days(42);
+
+    awsl.put_protos_at_time(
+        FileType::ValidatedHeartbeat.to_string(),
+        vec![make_validated_heartbeat_proto(
+            file1_time,
+            HeartbeatValidity::Valid,
+        )],
+        file1_time,
+    )
+    .await?;
+
+    awsl.put_protos_at_time(
+        FileType::ValidatedHeartbeat.to_string(),
+        vec![make_validated_heartbeat_proto(
+            file2_time,
+            HeartbeatValidity::Valid,
+        )],
+        file2_time,
+    )
+    .await?;
+
+    let opts = test_backfill_options("test-heartbeat-backfill", start_time, end_time);
+    let (backfiller, server) =
+        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts))
+            .await?;
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        task_manager::TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows = iceberg::heartbeat::get_all(harness.trino()).await?;
+    assert_eq!(rows.len(), 2, "expected 2 heartbeats in iceberg");
+
+    awsl.cleanup().await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn backfill_filters_invalid_heartbeats(pool: PgPool) -> anyhow::Result<()> {
+    let harness = crate::common::setup_iceberg().await?;
+    let (writer, writer_task, _spool_dir) = crate::common::make_batched_writer::<IcebergHeartbeat>(
+        &harness,
+        iceberg::heartbeat::table_definition()?,
+    )
+    .await?;
+
+    let awsl = AwsLocal::new().await;
+    awsl.create_bucket().await?;
+
+    let base_time = Utc::now() - Duration::hours(1);
+    let start_time = base_time - Duration::minutes(1);
+    let file_time = base_time;
+    let end_time = base_time + Duration::days(42);
+
+    awsl.put_protos_at_time(
+        FileType::ValidatedHeartbeat.to_string(),
+        vec![
+            make_validated_heartbeat_proto(file_time, HeartbeatValidity::Valid),
+            make_validated_heartbeat_proto(file_time, HeartbeatValidity::HeartbeatOutsideRange),
+            make_validated_heartbeat_proto(file_time, HeartbeatValidity::GatewayNotFound),
+        ],
+        file_time,
+    )
+    .await?;
+
+    let opts = test_backfill_options("test-heartbeat-backfill-filter", start_time, end_time);
+    let (backfiller, server) =
+        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts))
+            .await?;
+
+    tokio::time::timeout(
+        TEST_TIMEOUT,
+        task_manager::TaskManager::builder()
+            .add_task(writer_task)
+            .add_task(server)
+            .add_task(backfiller)
+            .build()
+            .start(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("backfill timed out after {:?}", TEST_TIMEOUT))??;
+
+    let rows = iceberg::heartbeat::get_all(harness.trino()).await?;
+    assert_eq!(
+        rows.len(),
+        1,
+        "only valid heartbeats should be written to iceberg"
+    );
+
+    awsl.cleanup().await?;
     Ok(())
 }
