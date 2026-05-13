@@ -4,6 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CellType, Heartbeat as HeartbeatProto, HeartbeatValidity, LocationSource,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -36,7 +37,10 @@ pub struct ValidatedHeartbeat {
     pub coverage_object: Vec<u8>,
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub distance_to_asserted: u64,
-    pub location_trust_score_multiplier_milli: u32,
+    /// 0.0..=1.0 score. On the wire this is encoded as a `u32` scaled by
+    /// 1000 (see `helium_proto::services::poc_mobile::Heartbeat`); we
+    /// unscale on decode so callers don't have to remember the encoding.
+    pub location_trust_score_multiplier: Decimal,
     pub location_source: LocationSource,
 }
 
@@ -66,6 +70,11 @@ impl TryFrom<HeartbeatProto> for ValidatedHeartbeat {
             v.location_validation_timestamp.to_timestamp().ok()
         };
 
+        // Wire encoding is `score * 1000` packed in a `u32`. `Decimal::new`
+        // with scale=3 reverses that without going through f64.
+        let location_trust_score_multiplier =
+            Decimal::new(v.location_trust_score_multiplier as i64, 3);
+
         Ok(Self {
             pubkey: v.pub_key.into(),
             cbsd_id: v.cbsd_id,
@@ -77,8 +86,11 @@ impl TryFrom<HeartbeatProto> for ValidatedHeartbeat {
             coverage_object: v.coverage_object,
             location_validation_timestamp,
             distance_to_asserted: v.distance_to_asserted,
-            location_trust_score_multiplier_milli: v.location_trust_score_multiplier,
-            location_source: prost_enum(v.location_source, ValidatedHeartbeatError::LocationSource)?,
+            location_trust_score_multiplier,
+            location_source: prost_enum(
+                v.location_source,
+                ValidatedHeartbeatError::LocationSource,
+            )?,
         })
     }
 }
@@ -113,7 +125,11 @@ mod tests {
         assert_eq!(decoded.pubkey, PublicKeyBinary::from(pub_key));
         assert_eq!(decoded.validity, HeartbeatValidity::Valid);
         assert_eq!(decoded.distance_to_asserted, 42);
-        assert_eq!(decoded.location_trust_score_multiplier_milli, 750);
+        // Wire value 750 (u32, scaled by 1000) decodes to Decimal 0.750.
+        assert_eq!(
+            decoded.location_trust_score_multiplier,
+            Decimal::new(750, 3)
+        );
         assert!(decoded.location_validation_timestamp.is_some());
         assert!(decoded.coverage_object().is_some());
     }

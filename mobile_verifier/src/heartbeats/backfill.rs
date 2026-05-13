@@ -40,7 +40,7 @@ mod tests {
             coverage_object: Uuid::new_v4().as_bytes().to_vec(),
             location_validation_timestamp: Some(Utc::now()),
             distance_to_asserted: 250,
-            location_trust_score_multiplier_milli: 750,
+            location_trust_score_multiplier: rust_decimal::Decimal::new(750, 3),
             location_source: LocationSource::Skyhook,
         }
     }

@@ -123,8 +123,10 @@ impl From<file_store_oracles::validated_heartbeat::ValidatedHeartbeat> for Icebe
             location_validation_timestamp: value.location_validation_timestamp.map(Into::into),
             distance_to_asserted: Some(value.distance_to_asserted as i64),
             asserted_location: None,
-            location_trust_score_multiplier: value.location_trust_score_multiplier_milli as f64
-                / 1000.0,
+            location_trust_score_multiplier: value
+                .location_trust_score_multiplier
+                .to_f64()
+                .unwrap_or_default(),
             location_source: value.location_source.as_str_name().to_string(),
         }
     }
@@ -290,7 +292,7 @@ mod tests {
             coverage_object: coverage_uuid.as_bytes().to_vec(),
             location_validation_timestamp: Some(validation_ts),
             distance_to_asserted: 123,
-            location_trust_score_multiplier_milli: 500,
+            location_trust_score_multiplier: rust_decimal::Decimal::new(500, 3),
             location_source: LocationSource::Gps,
         };
 
@@ -334,7 +336,7 @@ mod tests {
             coverage_object: vec![],
             location_validation_timestamp: None,
             distance_to_asserted: 0,
-            location_trust_score_multiplier_milli: 1000,
+            location_trust_score_multiplier: rust_decimal::Decimal::new(1000, 3),
             location_source: LocationSource::Unknown,
         };
 
