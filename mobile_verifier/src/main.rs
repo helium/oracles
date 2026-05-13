@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::Parser;
 use mobile_verifier::{
     cli::{
-        backfill_ban, backfill_speedtest, backfill_speedtest_avg, reward_from_db, server,
-        verify_disktree,
+        backfill_ban, backfill_heartbeat, backfill_speedtest, backfill_speedtest_avg,
+        reward_from_db, server, verify_disktree,
     },
     Settings,
 };
@@ -47,6 +47,8 @@ pub enum Cmd {
     BackfillSpeedtestAvg(backfill_speedtest_avg::Cmd),
     /// Backfill historical VerifiedMobileBanReport files to the poc.bans iceberg table.
     BackfillBan(backfill_ban::Cmd),
+    /// Backfill historical validated Heartbeat files to the poc.heartbeats iceberg table.
+    BackfillHeartbeat(backfill_heartbeat::Cmd),
 }
 
 impl Cmd {
@@ -58,6 +60,7 @@ impl Cmd {
             Self::BackfillSpeedtest(cmd) => cmd.run(&settings).await,
             Self::BackfillSpeedtestAvg(cmd) => cmd.run(&settings).await,
             Self::BackfillBan(cmd) => cmd.run(&settings).await,
+            Self::BackfillHeartbeat(cmd) => cmd.run(&settings).await,
         }
     }
 }
