@@ -1,5 +1,6 @@
 use chrono::{DateTime, FixedOffset};
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
+use helium_proto::services::poc_mobile::CellType as ProtoCellType;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
@@ -94,6 +95,54 @@ impl From<&ValidatedHeartbeat> for IcebergHeartbeat {
                 .unwrap_or_default(),
             location_source: value.heartbeat.location_source.as_str_name().to_string(),
         }
+    }
+}
+
+/// Build an `IcebergHeartbeat` directly from the on-wire validated-heartbeat
+/// proto used for backfill. The wire format drops `heartbeat_timestamp` and
+/// `asserted_location`, so those collapse to `received_timestamp` / `None`.
+/// `device_type` is recovered from `cell_type` — the wire enum has no
+/// `WifiDataOnly` variant, but data-only hotspots don't heartbeat so the
+/// mapping is lossless for this stream.
+impl From<file_store_oracles::validated_heartbeat::ValidatedHeartbeat> for IcebergHeartbeat {
+    fn from(value: file_store_oracles::validated_heartbeat::ValidatedHeartbeat) -> Self {
+        let received_timestamp = value.received_timestamp.into();
+        let coverage_object = uuid::Uuid::from_slice(&value.coverage_object)
+            .map(|u| u.to_string())
+            .unwrap_or_default();
+        let device_type =
+            cell_type_to_device_type(value.cell_type).map(|dt| device_type_string(dt).to_string());
+        Self {
+            hotspot_pubkey: value.pubkey.to_string(),
+            received_timestamp,
+            heartbeat_timestamp: received_timestamp,
+            device_type,
+            lat: value.lat,
+            lon: value.lon,
+            coverage_object,
+            location_validation_timestamp: value.location_validation_timestamp.map(Into::into),
+            distance_to_asserted: Some(value.distance_to_asserted as i64),
+            asserted_location: None,
+            location_trust_score_multiplier: value.location_trust_score_multiplier_milli as f64
+                / 1000.0,
+            location_source: value.location_source.as_str_name().to_string(),
+        }
+    }
+}
+
+/// Recover the hotspot's `DeviceType` from the wire `cell_type` field for
+/// backfill rows. `WifiDataOnly` is unreachable here — the wire enum doesn't
+/// carry it and those hotspots don't emit heartbeats anyway.
+fn cell_type_to_device_type(cell_type: ProtoCellType) -> Option<DeviceType> {
+    match cell_type {
+        ProtoCellType::Nova436h
+        | ProtoCellType::Nova430i
+        | ProtoCellType::Neutrino430
+        | ProtoCellType::SercommIndoor
+        | ProtoCellType::SercommOutdoor => Some(DeviceType::Cbrs),
+        ProtoCellType::NovaGenericWifiIndoor => Some(DeviceType::WifiIndoor),
+        ProtoCellType::NovaGenericWifiOutdoor => Some(DeviceType::WifiOutdoor),
+        ProtoCellType::None => None,
     }
 }
 
@@ -217,6 +266,117 @@ mod tests {
             iceberg.asserted_location,
             Some("8a1fb466d2dffff".to_string())
         );
+    }
+
+    #[test]
+    fn from_wire_validated_heartbeat_collapses_lost_fields() {
+        use file_store_oracles::validated_heartbeat::ValidatedHeartbeat as WireHeartbeat;
+        use helium_proto::services::poc_mobile::{
+            CellType as ProtoCellType, HeartbeatValidity, LocationSource,
+        };
+
+        let received = Utc::now();
+        let coverage_uuid = Uuid::new_v4();
+        let validation_ts = received - chrono::Duration::minutes(5);
+
+        let wire = WireHeartbeat {
+            pubkey: PublicKeyBinary::from(vec![9, 9, 9]),
+            cbsd_id: String::new(),
+            cell_type: ProtoCellType::NovaGenericWifiIndoor,
+            validity: HeartbeatValidity::Valid,
+            received_timestamp: received,
+            lat: 1.5,
+            lon: -2.5,
+            coverage_object: coverage_uuid.as_bytes().to_vec(),
+            location_validation_timestamp: Some(validation_ts),
+            distance_to_asserted: 123,
+            location_trust_score_multiplier_milli: 500,
+            location_source: LocationSource::Gps,
+        };
+
+        let row: IcebergHeartbeat = wire.into();
+
+        // Fields preserved from the wire.
+        assert_eq!(
+            row.hotspot_pubkey,
+            PublicKeyBinary::from(vec![9, 9, 9]).to_string()
+        );
+        assert_eq!(row.lat, 1.5);
+        assert_eq!(row.lon, -2.5);
+        assert_eq!(row.coverage_object, coverage_uuid.to_string());
+        assert_eq!(row.distance_to_asserted, Some(123));
+        assert!((row.location_trust_score_multiplier - 0.5).abs() < f64::EPSILON);
+        assert_eq!(row.location_source, "gps");
+        assert!(row.location_validation_timestamp.is_some());
+        // `device_type` is recovered from the wire `cell_type`.
+        assert_eq!(row.device_type, Some("wifi_indoor".to_string()));
+
+        // Fields lost on the wire collapse to received_timestamp / None.
+        assert_eq!(row.heartbeat_timestamp, row.received_timestamp);
+        assert!(row.asserted_location.is_none());
+    }
+
+    #[test]
+    fn from_wire_validated_heartbeat_empty_coverage_yields_empty_string() {
+        use file_store_oracles::validated_heartbeat::ValidatedHeartbeat as WireHeartbeat;
+        use helium_proto::services::poc_mobile::{
+            CellType as ProtoCellType, HeartbeatValidity, LocationSource,
+        };
+
+        let wire = WireHeartbeat {
+            pubkey: PublicKeyBinary::from(vec![1]),
+            cbsd_id: String::new(),
+            cell_type: ProtoCellType::NovaGenericWifiIndoor,
+            validity: HeartbeatValidity::Valid,
+            received_timestamp: Utc::now(),
+            lat: 0.0,
+            lon: 0.0,
+            coverage_object: vec![],
+            location_validation_timestamp: None,
+            distance_to_asserted: 0,
+            location_trust_score_multiplier_milli: 1000,
+            location_source: LocationSource::Unknown,
+        };
+
+        let row: IcebergHeartbeat = wire.into();
+        assert_eq!(row.coverage_object, "");
+        assert!(row.location_validation_timestamp.is_none());
+        assert_eq!(row.distance_to_asserted, Some(0));
+        assert!((row.location_trust_score_multiplier - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cell_type_to_device_type_covers_wire_variants() {
+        use helium_proto::services::poc_mobile::CellType as Proto;
+        assert_eq!(
+            cell_type_to_device_type(Proto::Nova436h),
+            Some(DeviceType::Cbrs)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::Nova430i),
+            Some(DeviceType::Cbrs)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::Neutrino430),
+            Some(DeviceType::Cbrs)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::SercommIndoor),
+            Some(DeviceType::Cbrs)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::SercommOutdoor),
+            Some(DeviceType::Cbrs)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::NovaGenericWifiIndoor),
+            Some(DeviceType::WifiIndoor)
+        );
+        assert_eq!(
+            cell_type_to_device_type(Proto::NovaGenericWifiOutdoor),
+            Some(DeviceType::WifiOutdoor)
+        );
+        assert_eq!(cell_type_to_device_type(Proto::None), None);
     }
 
     #[test]
