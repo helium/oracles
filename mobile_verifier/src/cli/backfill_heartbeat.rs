@@ -1,7 +1,7 @@
 use crate::{
     backfill::BatchedWriterExt,
-    iceberg::{self, IcebergSpeedtestAvg},
-    speedtests_average::SpeedtestAvgBackfiller,
+    heartbeats::backfill::HeartbeatBackfiller,
+    iceberg::{self, IcebergHeartbeat},
     Settings,
 };
 use anyhow::Result;
@@ -12,8 +12,8 @@ use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
-    /// Process name for tracking speedtest_avg backfill (avoids conflict with daemon)
-    #[clap(long, default_value = "speedtest-avg-backfill")]
+    /// Process name for tracking heartbeat backfill (avoids conflict with daemon)
+    #[clap(long, default_value = "heartbeat-backfill")]
     process_name: String,
 
     /// Start processing files after this timestamp.
@@ -41,18 +41,19 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let pool = settings
             .database
-            .connect("mobile-verifier-speedtest-avg-backfill")
+            .connect("mobile-verifier-heartbeat-backfill")
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let iceberg_settings = settings.iceberg_settings.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("iceberg_settings required for speedtest_avg backfill")
-        })?;
+        let iceberg_settings = settings
+            .iceberg_settings
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("iceberg_settings required for heartbeat backfill"))?;
 
-        let (writer, writer_task) = IcebergSpeedtestAvg::batched_writer(
+        let (writer, writer_task) = IcebergHeartbeat::batched_writer(
             iceberg_settings.connect().await?,
-            iceberg::speedtest_avg::table_definition()?,
-            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/speedtest-avg-backfill"))
+            iceberg::heartbeat::table_definition()?,
+            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/heartbeat-backfill"))
                 .with_max_batch_size_opt(self.batch_size)
                 .with_batch_timeout_opt(self.batch_timeout),
         )
@@ -62,7 +63,7 @@ impl Cmd {
             process_name = %self.process_name,
             start_after = %self.start_after,
             stop_after = %self.stop_after,
-            "starting speedtest_avg backfill"
+            "starting heartbeat backfill"
         );
 
         let opts = crate::backfill::BackfillOptions {
@@ -73,7 +74,7 @@ impl Cmd {
             idle_timeout: None,
         };
 
-        let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
+        let (backfiller, server) = HeartbeatBackfiller::create_batched(
             pool,
             settings.buckets.output.connect().await,
             Some(writer),

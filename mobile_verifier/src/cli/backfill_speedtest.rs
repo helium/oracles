@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use helium_iceberg::BatchedWriterConfig;
+use std::time::Duration;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -25,6 +26,15 @@ pub struct Cmd {
     /// Format: RFC 3339 (e.g., 2025-02-25T00:00:00Z)
     #[clap(long)]
     stop_after: DateTime<Utc>,
+
+    /// Batch size for processing files.
+    #[clap(long)]
+    batch_size: Option<usize>,
+
+    /// Max time the batched writer waits before flushing a partial batch.
+    /// Accepts human-readable durations like "5m", "30s", "1h".
+    #[clap(long, value_parser = humantime::parse_duration)]
+    batch_timeout: Option<Duration>,
 }
 
 impl Cmd {
@@ -43,7 +53,9 @@ impl Cmd {
         let (writer, writer_task) = IcebergSpeedtest::batched_writer(
             iceberg_settings.connect().await?,
             iceberg::speedtest::table_definition()?,
-            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/speedtest-backfill")),
+            BatchedWriterConfig::new(settings.cache.join("iceberg-spool/speedtest-backfill"))
+                .with_max_batch_size_opt(self.batch_size)
+                .with_batch_timeout_opt(self.batch_timeout),
         )
         .await?;
 

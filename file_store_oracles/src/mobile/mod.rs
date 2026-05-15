@@ -7,4 +7,5 @@ pub mod mobile_session;
 pub mod mobile_subscriber;
 pub mod mobile_transfer;
 pub mod speedtest;
+pub mod validated_heartbeat;
 pub mod wifi_heartbeat;

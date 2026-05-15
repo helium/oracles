@@ -65,8 +65,22 @@ impl BatchedWriterConfig {
         self
     }
 
+    pub fn with_max_batch_size_opt(mut self, n: Option<usize>) -> Self {
+        if let Some(n) = n {
+            self.max_batch_size = n;
+        }
+        self
+    }
+
     pub fn with_batch_timeout(mut self, d: Duration) -> Self {
         self.batch_timeout = d;
+        self
+    }
+
+    pub fn with_batch_timeout_opt(mut self, d: Option<Duration>) -> Self {
+        if let Some(d) = d {
+            self.batch_timeout = d;
+        }
         self
     }
 
