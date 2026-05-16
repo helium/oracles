@@ -334,8 +334,7 @@ async fn backfill_writes_validated_heartbeats_to_iceberg(pool: PgPool) -> anyhow
 
     let opts = test_backfill_options("test-heartbeat-backfill", start_time, end_time);
     let (backfiller, server) =
-        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -386,8 +385,7 @@ async fn backfill_filters_invalid_heartbeats(pool: PgPool) -> anyhow::Result<()>
 
     let opts = test_backfill_options("test-heartbeat-backfill-filter", start_time, end_time);
     let (backfiller, server) =
-        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts))
-            .await?;
+        HeartbeatBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,

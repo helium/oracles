@@ -33,55 +33,31 @@ pub struct BackfillOptions {
     pub idle_timeout: Option<Duration>,
 }
 
-pub struct BackfillPollerServer(Option<Box<dyn ManagedTask>>);
-
-impl BackfillPollerServer {
-    fn noop() -> Self {
-        Self(None)
-    }
-
-    fn active(server: impl ManagedTask + 'static) -> Self {
-        Self(Some(Box::new(server)))
-    }
-}
-
-impl ManagedTask for BackfillPollerServer {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        match (*self).0 {
-            Some(task) => task.start_task(shutdown),
-            None => task_manager::spawn(async { anyhow::Ok(()) }),
-        }
-    }
-}
-
 pub struct Backfiller<C: IcebergBackfill> {
     pool: PgPool,
     reports: Receiver<FileInfoStream<C::FileRecord>>,
-    writer: Option<BatchedWriter<C::IcebergRow>>,
+    writer: BatchedWriter<C::IcebergRow>,
     done: bool,
+    files_processed: u64,
 }
 
 impl<C: IcebergBackfill> Backfiller<C> {
     pub fn new(
         pool: PgPool,
         reports: Receiver<FileInfoStream<C::FileRecord>>,
-        writer: Option<BatchedWriter<C::IcebergRow>>,
+        writer: BatchedWriter<C::IcebergRow>,
     ) -> Self {
-        let done = writer.is_none();
         Self {
             pool,
             reports,
             writer,
-            done,
+            done: false,
+            files_processed: 0,
         }
     }
 
     pub async fn recv(&mut self) -> Option<FileInfoStream<C::FileRecord>> {
-        if self.done {
-            std::future::pending().await
-        } else {
-            self.reports.recv().await
-        }
+        self.reports.recv().await
     }
 
     pub async fn handle(
@@ -102,39 +78,41 @@ impl<C: IcebergBackfill> Backfiller<C> {
         self.handle_file(stream).await
     }
 
-    async fn handle_file(&self, file: FileInfoStream<C::FileRecord>) -> anyhow::Result<()> {
-        let Some(ref writer) = self.writer else {
-            return Ok(());
-        };
-
-        let start = Instant::now();
-
+    async fn handle_file(&mut self, file: FileInfoStream<C::FileRecord>) -> anyhow::Result<()> {
         let file_info = file.file_info.clone();
         let mut txn = self.pool.begin().await?;
 
+        let parse_wait_start = Instant::now();
         let all: Vec<_> = file.into_stream(&mut txn).await?.collect().await;
+        let parse_wait_ms = parse_wait_start.elapsed();
+
+        let process_start = Instant::now();
         let total = all.len();
 
         let rows: Vec<C::IcebergRow> = all.into_iter().filter_map(C::convert).collect();
         let written = rows.len();
 
         if !rows.is_empty() {
-            writer
+            self.writer
                 .queue_all(rows)
                 .await
                 .with_context(|| format!("queuing {} backfill", C::FILE_TYPE))?;
         }
 
         txn.commit().await?;
+        self.files_processed += 1;
         tracing::info!(
             file = %file_info,
             written,
             skipped = total - written,
             age = %file_age(&file_info),
-            duration = ?start.elapsed(),
+            parse_wait_ms = ?parse_wait_ms,
+            duration = ?process_start.elapsed(),
+            files_processed = self.files_processed,
             "backfilled {} file",
             C::FILE_TYPE
         );
+
         Ok(())
     }
 
@@ -174,17 +152,9 @@ where
     pub async fn create_batched(
         pool: PgPool,
         bucket_client: BucketClient,
-        writer: Option<BatchedWriter<C::IcebergRow>>,
-        options: Option<BackfillOptions>,
-    ) -> anyhow::Result<(Self, BackfillPollerServer)> {
-        let (Some(writer), Some(options)) = (writer, options) else {
-            let (_, rx) = tokio::sync::mpsc::channel(1);
-            return Ok((
-                Backfiller::new(pool, rx, None),
-                BackfillPollerServer::noop(),
-            ));
-        };
-
+        writer: BatchedWriter<C::IcebergRow>,
+        options: BackfillOptions,
+    ) -> anyhow::Result<(Self, impl ManagedTask)> {
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -194,16 +164,12 @@ where
             .process_name(options.process_name)
             .poll_duration_opt(options.poll_duration)
             .idle_timeout_opt(options.idle_timeout)
+            .queue_size(32)
             .create()
             .await?;
 
-        let backfiller = Backfiller {
-            pool,
-            reports,
-            writer: Some(writer),
-            done: false,
-        };
-        Ok((backfiller, BackfillPollerServer::active(reports_server)))
+        let backfiller = Backfiller::new(pool, reports, writer);
+        Ok((backfiller, reports_server))
     }
 }
 

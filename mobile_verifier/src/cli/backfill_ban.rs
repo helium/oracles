@@ -77,8 +77,8 @@ impl Cmd {
         let (backfiller, server) = BanBackfiller::create_batched(
             pool,
             settings.buckets.output.connect().await,
-            Some(writer),
-            Some(opts),
+            writer,
+            opts,
         )
         .await?;
 
