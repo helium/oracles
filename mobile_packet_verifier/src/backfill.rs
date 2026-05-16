@@ -9,8 +9,9 @@ use futures::StreamExt;
 use helium_iceberg::BatchedWriter;
 use helium_proto::services::poc_mobile::verified_data_transfer_ingest_report_v1::ReportStatus;
 use sqlx::{PgPool, Pool, Postgres};
+use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
-use task_manager::{ManagedTask, TaskManager};
+use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{iceberg, settings::Settings};
@@ -262,14 +263,6 @@ impl DataSessionsBackfiller {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<FileInfoStream<VerifiedDataTransferIngestReport>> {
-        if self.done {
-            std::future::pending().await
-        } else {
-            self.reports.recv().await
-        }
-    }
-
     pub async fn create(
         pool: PgPool,
         bucket_client: BucketClient,
@@ -310,51 +303,8 @@ impl DataSessionsBackfiller {
 
         Ok(TaskManager::builder()
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build())
-    }
-
-    async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!("sessions backfiller starting");
-        loop {
-            if self.done {
-                tracing::info!("sessions backfiller complete");
-                return Ok(());
-            }
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => {
-                    tracing::info!("sessions backfiller shutting down");
-                    return Ok(());
-                }
-                file = self.recv() => {
-                    self.handle(file).await?;
-                }
-            }
-        }
-    }
-
-    pub async fn handle(
-        &mut self,
-        file: Option<FileInfoStream<VerifiedDataTransferIngestReport>>,
-    ) -> anyhow::Result<()> {
-        let Some(file_info_stream) = file else {
-            // Channel closed - poller reached stop_after or finished
-            tracing::info!("session backfiller completed");
-            self.done = true;
-            return Ok(());
-        };
-        let age = format_file_age(&file_info_stream.file_info);
-        tracing::info!(
-            file = %file_info_stream.file_info,
-            timestamp = %file_info_stream.file_info.timestamp,
-            age = %age,
-            "received file"
-        );
-
-        self.handle_file(file_info_stream).await?;
-
-        Ok(())
     }
 
     async fn handle_file(
@@ -409,9 +359,39 @@ impl DataSessionsBackfiller {
     }
 }
 
-impl ManagedTask for DataSessionsBackfiller {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for DataSessionsBackfiller {
+    type Item = FileInfoStream<VerifiedDataTransferIngestReport>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.reports.recv().await
+    }
+
+    async fn on_start(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        tracing::info!("sessions backfiller starting");
+        if self.done {
+            tracing::info!("sessions backfiller complete");
+            Ok(ControlFlow::Break(()))
+        } else {
+            Ok(ControlFlow::Continue(()))
+        }
+    }
+
+    async fn handle(&mut self, file_info_stream: Self::Item) -> anyhow::Result<()> {
+        let age = format_file_age(&file_info_stream.file_info);
+        tracing::info!(
+            file = %file_info_stream.file_info,
+            timestamp = %file_info_stream.file_info.timestamp,
+            age = %age,
+            "received file"
+        );
+        self.handle_file(file_info_stream).await
+    }
+
+    async fn on_receiver_closed(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        tracing::info!("session backfiller completed");
+        self.done = true;
+        Ok(ControlFlow::Break(()))
     }
 }
 
@@ -467,7 +447,7 @@ impl BurnedSessionsBackfiller {
 
         Ok(TaskManager::builder()
             .add_task(server)
-            .add_task(burned_backfiller)
+            .add_task(task_manager::channel_consumer(burned_backfiller))
             .build())
     }
 
@@ -483,57 +463,6 @@ impl BurnedSessionsBackfiller {
             writer,
             done,
         }
-    }
-
-    async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!("burned backfiller starting");
-        loop {
-            if self.done {
-                tracing::info!("burned backfiller complete");
-                return Ok(());
-            }
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => {
-                    tracing::info!("burned backfiller shutting down");
-                    return Ok(());
-                }
-                file = self.recv() => {
-                    self.handle(file).await?;
-                }
-            }
-        }
-    }
-
-    pub async fn recv(&mut self) -> Option<FileInfoStream<ValidDataTransferSession>> {
-        if self.done {
-            std::future::pending().await
-        } else {
-            self.reports.recv().await
-        }
-    }
-
-    pub async fn handle(
-        &mut self,
-        file: Option<FileInfoStream<ValidDataTransferSession>>,
-    ) -> anyhow::Result<()> {
-        let Some(file_info_stream) = file else {
-            // Channel closed - poller reached stop_after or finished
-            tracing::info!("burned backfiller completed");
-            self.done = true;
-            return Ok(());
-        };
-        let age = format_file_age(&file_info_stream.file_info);
-        tracing::info!(
-            file = %file_info_stream.file_info,
-            timestamp = %file_info_stream.file_info.timestamp,
-            age = %age,
-            "received file"
-        );
-
-        self.handle_file(file_info_stream).await?;
-
-        Ok(())
     }
 
     async fn handle_file(&self, file: FileInfoStream<ValidDataTransferSession>) -> Result<()> {
@@ -582,9 +511,39 @@ impl BurnedSessionsBackfiller {
     }
 }
 
-impl ManagedTask for BurnedSessionsBackfiller {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for BurnedSessionsBackfiller {
+    type Item = FileInfoStream<ValidDataTransferSession>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.reports.recv().await
+    }
+
+    async fn on_start(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        tracing::info!("burned backfiller starting");
+        if self.done {
+            tracing::info!("burned backfiller complete");
+            Ok(ControlFlow::Break(()))
+        } else {
+            Ok(ControlFlow::Continue(()))
+        }
+    }
+
+    async fn handle(&mut self, file_info_stream: Self::Item) -> anyhow::Result<()> {
+        let age = format_file_age(&file_info_stream.file_info);
+        tracing::info!(
+            file = %file_info_stream.file_info,
+            timestamp = %file_info_stream.file_info.timestamp,
+            age = %age,
+            "received file"
+        );
+        self.handle_file(file_info_stream).await
+    }
+
+    async fn on_receiver_closed(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        tracing::info!("burned backfiller completed");
+        self.done = true;
+        Ok(ControlFlow::Break(()))
     }
 }
 

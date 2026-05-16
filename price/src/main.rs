@@ -135,7 +135,9 @@ impl Server {
             );
         }
 
-        task_manager.add(PriceGenerator::new(settings, sinks).await?);
+        task_manager.add(task_manager::periodic(
+            PriceGenerator::new(settings, sinks).await?,
+        ));
 
         task_manager.start().await?;
         Ok(())
