@@ -21,7 +21,7 @@ use mobile_config::gateway::service::info::DeviceType;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::{Postgres, Transaction};
+use sqlx::PgTransaction;
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
@@ -415,7 +415,7 @@ impl ValidatedHeartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+    pub async fn save(self, exec: &mut PgTransaction<'_>) -> anyhow::Result<()> {
         coverage::set_invalidated_at(
             exec,
             self.heartbeat.timestamp,
@@ -456,7 +456,7 @@ pub(crate) async fn process_validated_heartbeats(
     coverage_claim_time_cache: &CoverageClaimTimeCache,
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
     seniority_sink: &FileSinkClient<proto::SeniorityUpdate>,
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut PgTransaction<'_>,
     iceberg_ctx: Option<(&crate::iceberg::HeartbeatWriter, &str)>,
 ) -> anyhow::Result<()> {
     let mut iceberg_records = Vec::new();
