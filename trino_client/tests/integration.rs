@@ -1,27 +1,18 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use trino_client::{Client, Settings, SqlQuery, SqlStatement, Statement};
-use trino_rust_client::Trino;
+use trino_client::{
+    Client, ClientBuilder, SqlQuery, SqlStatement, Statement, TrinoFromRow, TypedStatement,
+};
 
 fn client() -> Client {
     let host = std::env::var("TRINO_HOST").unwrap_or_else(|_| "localhost".to_string());
 
-    let settings = Settings {
-        host,
-        port: 8080,
-        user: "admin".into(),
-        catalog: None,
-        schema: None,
-        secure: false,
-        ca_cert_path: None,
-        insecure_skip_tls_verify: false,
-        auth: None,
-    };
-
-    Client::from_settings(&settings).expect("build trino client")
+    ClientBuilder::new(host, 8080, "admin")
+        .build()
+        .expect("build trino client")
 }
 
-#[derive(Debug, Clone, Trino, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
 struct Scalars {
     n: i64,
     s: String,
@@ -29,17 +20,17 @@ struct Scalars {
     d: f64,
 }
 
-#[derive(Debug, Clone, Trino, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
 struct DateRow {
     d: NaiveDate,
 }
 
-#[derive(Debug, Clone, Trino, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
 struct StringRow {
     s: String,
 }
 
-#[derive(Debug, Clone, Trino, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
 struct EqRow {
     eq: bool,
 }
@@ -144,7 +135,7 @@ struct FindUser {
     user_id: i64,
 }
 
-#[derive(Debug, Clone, Trino, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
 struct User {
     id: i64,
     name: String,
@@ -213,5 +204,34 @@ async fn bytes_bind_as_varbinary() -> anyhow::Result<()> {
         .render()?;
     let rows: Vec<EqRow> = client().get_all_raw(sql).await?;
     assert_eq!(rows, vec![EqRow { eq: true }]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn statement_directly_via_execute() -> anyhow::Result<()> {
+    let stmt = Statement::new("SELECT :x").bind("x", 1i64);
+    client().execute(&stmt).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_statement_via_get_all() -> anyhow::Result<()> {
+    let typed: TypedStatement<Scalars> =
+        Statement::new("SELECT :n AS n, :s AS s, :b AS b, :d AS d")
+            .bind("n", 42i64)
+            .bind("s", "alice")
+            .bind("b", true)
+            .bind("d", 1.5_f64)
+            .typed();
+    let rows = client().get_all(&typed).await?;
+    assert_eq!(
+        rows,
+        vec![Scalars {
+            n: 42,
+            s: "alice".into(),
+            b: true,
+            d: 1.5,
+        }]
+    );
     Ok(())
 }

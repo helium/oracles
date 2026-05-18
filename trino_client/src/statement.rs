@@ -1,5 +1,7 @@
 use crate::error::{Error, Result};
+use crate::{SqlQuery, SqlStatement};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use std::marker::PhantomData;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Param {
@@ -149,6 +151,7 @@ impl Param {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Statement {
     sql: String,
     params: Vec<(String, Param)>,
@@ -170,6 +173,45 @@ impl Statement {
     pub fn render(&self) -> Result<String> {
         render_internal(&self.sql, &self.params)
     }
+
+    /// Tag this statement with its row type so it can be passed to
+    /// `Client::get_all` without a separate row struct.
+    pub fn typed<R>(self) -> TypedStatement<R> {
+        TypedStatement {
+            stmt: self,
+            _row: PhantomData,
+        }
+    }
+}
+
+impl SqlStatement for Statement {
+    fn to_statement(&self) -> Statement {
+        self.clone()
+    }
+}
+
+/// A `Statement` paired with a row type, satisfying `SqlQuery` so it can be
+/// used with `Client::get_all` directly.
+pub struct TypedStatement<R> {
+    stmt: Statement,
+    _row: PhantomData<fn() -> R>,
+}
+
+impl<R> TypedStatement<R> {
+    pub fn bind(mut self, name: impl Into<String>, value: impl Into<Param>) -> Self {
+        self.stmt = self.stmt.bind(name, value);
+        self
+    }
+}
+
+impl<R> SqlStatement for TypedStatement<R> {
+    fn to_statement(&self) -> Statement {
+        self.stmt.clone()
+    }
+}
+
+impl<R> SqlQuery for TypedStatement<R> {
+    type Row = R;
 }
 
 enum ScanState {
@@ -656,5 +698,42 @@ mod tests {
             .render()
             .unwrap();
         assert_eq!(r, "EXECUTE IMMEDIATE 'SELECT ?, ?' USING 'hi', NULL");
+    }
+
+    #[test]
+    fn statement_satisfies_sql_statement() {
+        let stmt = Statement::new("SELECT :x").bind("x", 1i64);
+        let copy = stmt.to_statement();
+        assert_eq!(
+            copy.render().unwrap(),
+            "EXECUTE IMMEDIATE 'SELECT ?' USING 1"
+        );
+    }
+
+    #[test]
+    fn typed_wraps_statement() {
+        struct DummyRow;
+        let typed: TypedStatement<DummyRow> = Statement::new("SELECT :x").bind("x", 1i64).typed();
+        let rendered = typed.to_statement().render().unwrap();
+        assert_eq!(rendered, "EXECUTE IMMEDIATE 'SELECT ?' USING 1");
+    }
+
+    #[test]
+    fn typed_allows_late_binds() {
+        struct DummyRow;
+        let typed: TypedStatement<DummyRow> = Statement::new("SELECT :a, :b")
+            .bind("a", 1i64)
+            .typed()
+            .bind("b", "x");
+        let rendered = typed.to_statement().render().unwrap();
+        assert_eq!(rendered, "EXECUTE IMMEDIATE 'SELECT ?, ?' USING 1, 'x'");
+    }
+
+    #[test]
+    fn typed_statement_exposes_row_type() {
+        struct DummyRow;
+        let typed: TypedStatement<DummyRow> = Statement::new("SELECT :x").bind("x", 1i64).typed();
+        fn assert_row_is_dummy<S: SqlQuery<Row = DummyRow>>(_: &S) {}
+        assert_row_is_dummy(&typed);
     }
 }

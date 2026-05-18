@@ -1,16 +1,19 @@
 pub use trino_rust_client;
+pub use trino_rust_client::Trino as TrinoFromRow;
 
+mod builder;
 mod error;
 mod settings;
 mod statement;
 
+pub use builder::ClientBuilder;
 pub use error::{Error, Result};
 pub use settings::{AuthSettings, Settings};
-pub use statement::{Param, Statement};
+pub use statement::{Param, Statement, TypedStatement};
 
 use trino_rust_client::auth::Auth;
 use trino_rust_client::ssl::Ssl;
-use trino_rust_client::ClientBuilder;
+use trino_rust_client::ClientBuilder as UpstreamClientBuilder;
 
 pub trait SqlStatement {
     fn to_statement(&self) -> Statement;
@@ -26,7 +29,7 @@ pub struct Client {
 
 impl Client {
     pub fn from_settings(settings: &Settings) -> Result<Self> {
-        let mut builder = ClientBuilder::new(&settings.user, &settings.host)
+        let mut builder = UpstreamClientBuilder::new(&settings.user, &settings.host)
             .port(settings.port)
             .secure(settings.secure);
 
@@ -69,16 +72,17 @@ impl Client {
         &self.inner
     }
 
-    pub async fn execute<S: SqlStatement>(&self, sql_struct: &S) -> Result<()> {
-        self.execute_raw(sql_struct.to_statement().render()?).await
+    pub async fn execute<S: SqlStatement>(&self, sql_statement: &S) -> Result<()> {
+        self.execute_raw(sql_statement.to_statement().render()?)
+            .await
     }
 
-    pub async fn get_all<S: SqlQuery>(&self, sql_struct: &S) -> Result<Vec<S::Row>>
+    pub async fn get_all<S: SqlQuery>(&self, sql_query: &S) -> Result<Vec<S::Row>>
     where
         S::Row: trino_rust_client::Trino + 'static,
         for<'de> S::Row: serde::Deserialize<'de> + serde::Serialize,
     {
-        self.get_all_raw(sql_struct.to_statement().render()?).await
+        self.get_all_raw(sql_query.to_statement().render()?).await
     }
 
     pub async fn execute_raw(&self, sql: impl Into<String>) -> Result<()> {
