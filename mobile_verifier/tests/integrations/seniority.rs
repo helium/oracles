@@ -3,7 +3,7 @@ use helium_proto::services::poc_mobile::{
     HeartbeatValidity, LocationSource, SeniorityUpdateReason,
 };
 use mobile_verifier::cell_type::CellType;
-use mobile_verifier::heartbeats::{HbType, Heartbeat, ValidatedHeartbeat};
+use mobile_verifier::heartbeats::{Heartbeat, ValidatedHeartbeat};
 use mobile_verifier::seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -14,7 +14,6 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let mut heartbeat = ValidatedHeartbeat {
         heartbeat: Heartbeat {
-            hb_type: HbType::Wifi,
             hotspot_key: "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
                 .parse()
                 .unwrap(),

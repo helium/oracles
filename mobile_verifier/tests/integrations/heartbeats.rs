@@ -4,7 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
 use mobile_verifier::{
     cell_type::CellType,
-    heartbeats::{HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
+    heartbeats::{Heartbeat, HeartbeatReward, ValidatedHeartbeat},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -16,7 +16,6 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let heartbeat = ValidatedHeartbeat {
         heartbeat: Heartbeat {
-            hb_type: HbType::Wifi,
             hotspot_key: "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
                 .parse()
                 .unwrap(),

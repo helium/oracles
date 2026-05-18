@@ -17,7 +17,7 @@ use mobile_config::{boosted_hex_info::BoostedHexInfo, sub_dao_epoch_reward_info:
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
-    heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
     unique_connections::{self, MINIMUM_UNIQUE_CONNECTIONS},
 };
@@ -1080,7 +1080,6 @@ async fn seed_heartbeats_v2(
         );
         let wifi_heartbeat1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
                 operation_mode: true,
                 lat: 0.0,
@@ -1109,7 +1108,6 @@ async fn seed_heartbeats_v2(
         );
         let wifi_heartbeat2 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
                 operation_mode: true,
                 lat: 0.0,
@@ -1138,7 +1136,6 @@ async fn seed_heartbeats_v2(
         );
         let wifi_heartbeat3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
                 operation_mode: true,
                 lat: 0.0,
@@ -1195,7 +1192,6 @@ async fn seed_heartbeats_with_location_trust(
         );
         let wifi_heartbeat1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
                 operation_mode: true,
                 lat: 0.0,
@@ -1224,7 +1220,6 @@ async fn seed_heartbeats_with_location_trust(
         );
         let wifi_heartbeat2 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
                 operation_mode: true,
                 lat: 0.0,
@@ -1253,7 +1248,6 @@ async fn seed_heartbeats_with_location_trust(
         );
         let wifi_heartbeat3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
 
                 operation_mode: true,
@@ -1304,7 +1298,6 @@ async fn seed_heartbeats_v4(
         );
         let wifi_heartbeat1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
 
                 operation_mode: true,
@@ -1334,7 +1327,6 @@ async fn seed_heartbeats_v4(
         );
         let wifi_heartbeat2 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
 
                 operation_mode: true,
@@ -1364,7 +1356,6 @@ async fn seed_heartbeats_v4(
         );
         let wifi_heartbeat3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key4,
 
                 operation_mode: true,
@@ -1544,7 +1535,7 @@ async fn save_seniority_object(
         INSERT INTO seniority
           (radio_key, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason, radio_type)
         VALUES
-          ($1, $2, $3, $4, $5, $6, $7)
+          ($1, $2, $3, $4, $5, $6, 'wifi'::radio_type)
         "#,
     )
     .bind(hb.heartbeat.key())
@@ -1553,7 +1544,6 @@ async fn save_seniority_object(
     .bind(ts)
     .bind(ts)
     .bind(SeniorityUpdateReason::NewCoverageClaimTime as i32)
-    .bind(hb.heartbeat.hb_type)
     .execute(&mut **exec)
     .await?;
     Ok(())

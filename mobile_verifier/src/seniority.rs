@@ -1,11 +1,12 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::file_sink::FileSinkClient;
+use helium_crypto::PublicKeyBinary;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use helium_proto::services::poc_mobile as proto;
 
-use crate::heartbeats::{KeyType, ValidatedHeartbeat};
+use crate::heartbeats::ValidatedHeartbeat;
 
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct Seniority {
@@ -18,7 +19,7 @@ pub struct Seniority {
 
 impl Seniority {
     pub async fn fetch_latest(
-        key: KeyType<'_>,
+        key: &PublicKeyBinary,
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(
@@ -32,7 +33,7 @@ impl Seniority {
 
 #[derive(Debug)]
 pub struct SeniorityUpdate<'a> {
-    key: KeyType<'a>,
+    key: &'a PublicKeyBinary,
     heartbeat_ts: DateTime<Utc>,
     uuid: Uuid,
     pub action: SeniorityUpdateAction,
@@ -52,7 +53,7 @@ pub enum SeniorityUpdateAction {
 
 impl<'a> SeniorityUpdate<'a> {
     pub fn new(
-        key: KeyType<'a>,
+        key: &'a PublicKeyBinary,
         heartbeat_ts: DateTime<Utc>,
         uuid: Uuid,
         action: SeniorityUpdateAction,
@@ -149,7 +150,9 @@ impl SeniorityUpdate<'_> {
             seniorities
                 .write(
                     proto::SeniorityUpdate {
-                        key_type: Some(self.key.into()),
+                        key_type: Some(proto::seniority_update::KeyType::HotspotKey(
+                            self.key.clone().into(),
+                        )),
                         new_seniority_timestamp: new_seniority.timestamp() as u64,
                         reason: update_reason as i32,
                         new_seniority_timestamp_ms: new_seniority.timestamp_millis() as u64,
@@ -173,7 +176,7 @@ impl SeniorityUpdate<'_> {
                     INSERT INTO seniority
                       (radio_key, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason, radio_type)
                     VALUES
-                      ($1, $2, $3, $4, $5, $6, $7)
+                      ($1, $2, $3, $4, $5, $6, 'wifi'::radio_type)
                     ON CONFLICT (radio_key, radio_type, seniority_ts) DO UPDATE SET
                       uuid = EXCLUDED.uuid,
                       last_heartbeat = EXCLUDED.last_heartbeat,
@@ -186,7 +189,6 @@ impl SeniorityUpdate<'_> {
                 .bind(new_seniority)
                 .bind(Utc::now())
                 .bind(update_reason as i32)
-                .bind(self.key.hb_type())
                 .execute(&mut **exec)
                 .await?;
             }
@@ -232,7 +234,6 @@ mod tests {
         fn generate() -> anyhow::Result<Self> {
             Ok(Self {
                 heartbeat: Heartbeat {
-                    hb_type: crate::heartbeats::HbType::Wifi,
                     hotspot_key: PublicKeyBinary::from_str("1trSuseaaeZSW8pqSsYKFkFYTfFVvy8DbPCcne6fYYfry6XqzdN1PwAsqinbGKW2ux9554Dw4ciw1uDTdKjBZfjYeuzCEpd95kmZMPGiHaT5ZwasdPgSzXCSYzqmGeQ97riiqEik9xKKhxU52tjCgLd7HNfpLGT9ceY71FCcKBM3fooUZCSiNNibsVvorBWdWjvetgsHLwjTGuwYMGQ2BpmA15r9t3EGNnrfKMv6E1VmoBcuyPYgi7bBLZYpW16Yua3aHd78Jz8QqBVz51S5xRTwDBmgK41e9tSVSqMcQbcZkXi5W7Jru8QEiUTHWyghHgSYpsvCfcQkVBKkP7fHpM4Jh1YTxY2MEvLaoTzxFLRtrM")?,
                     operation_mode: true,
                     lat: 0.0,

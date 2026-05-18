@@ -1,8 +1,4 @@
-use crate::{
-    heartbeats::{HbType, KeyType, OwnedKeyType},
-    seniority::Seniority,
-    IsAuthorized, Settings,
-};
+use crate::{seniority::Seniority, IsAuthorized, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
@@ -18,6 +14,7 @@ use futures::{
     TryStreamExt,
 };
 use h3o::{CellIndex, LatLng};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
@@ -254,11 +251,9 @@ impl CoverageObject {
         matches!(self.validity, CoverageObjectValidity::Valid)
     }
 
-    pub fn key(&self) -> KeyType<'_> {
+    pub fn key(&self) -> &PublicKeyBinary {
         match self.coverage_object.key_type {
-            file_store_oracles::coverage::KeyType::HotspotKey(ref hotspot_key) => {
-                KeyType::Wifi(hotspot_key)
-            }
+            file_store_oracles::coverage::KeyType::HotspotKey(ref hotspot_key) => hotspot_key,
         }
     }
 
@@ -299,12 +294,10 @@ impl CoverageObject {
     pub async fn save(&self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
         let key = self.key();
-        let hb_type = key.hb_type();
-        let key = key.to_owned();
 
         sqlx::query(r#"
             INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, 'wifi'::radio_type, $2, $3, $4, $5, $6)
             ON CONFLICT (uuid) DO UPDATE SET
                 radio_type = EXCLUDED.radio_type,
                 radio_key = EXCLUDED.radio_key,
@@ -314,8 +307,7 @@ impl CoverageObject {
                 inserted_at = EXCLUDED.inserted_at
         "#)
         .bind(self.coverage_object.uuid)
-        .bind(hb_type)
-        .bind(&key)
+        .bind(key)
         .bind(self.coverage_object.indoor)
         .bind(self.coverage_object.coverage_claim_time)
         .bind(self.coverage_object.trust_score as i32)
@@ -359,7 +351,7 @@ pub async fn set_invalidated_at(
     exec: &mut Transaction<'_, Postgres>,
     invalidated_at: DateTime<Utc>,
     inserted_at: Option<DateTime<Utc>>,
-    radio_key: KeyType<'_>,
+    radio_key: &PublicKeyBinary,
     uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     sqlx::query(
@@ -388,7 +380,7 @@ pub struct HexCoverage {
     #[sqlx(try_from = "i64")]
     pub hex: Cell,
     pub indoor: bool,
-    pub radio_key: OwnedKeyType,
+    pub radio_key: PublicKeyBinary,
     pub signal_level: SignalLevel,
     pub signal_power: i32,
     pub coverage_claim_time: DateTime<Utc>,
@@ -401,14 +393,14 @@ pub struct HexCoverage {
 pub trait CoveredHexStream {
     async fn covered_hex_stream<'a>(
         &'a self,
-        radio_key: KeyType<'a>,
+        radio_key: &'a PublicKeyBinary,
         coverage_obj: &'a Uuid,
         seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
 
     async fn fetch_seniority(
         &self,
-        key: KeyType<'_>,
+        key: &PublicKeyBinary,
         period_end: DateTime<Utc>,
     ) -> Result<Seniority, sqlx::Error>;
 }
@@ -417,7 +409,7 @@ pub trait CoveredHexStream {
 impl CoveredHexStream for Pool<Postgres> {
     async fn covered_hex_stream<'a>(
         &'a self,
-        key: KeyType<'a>,
+        key: &'a PublicKeyBinary,
         coverage_obj: &'a Uuid,
         seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
@@ -453,7 +445,7 @@ impl CoveredHexStream for Pool<Postgres> {
 
     async fn fetch_seniority(
         &self,
-        key: KeyType<'_>,
+        key: &PublicKeyBinary,
         period_end: DateTime<Utc>,
     ) -> Result<Seniority, sqlx::Error> {
         sqlx::query_as(
@@ -516,7 +508,7 @@ pub async fn clear_coverage_objects(
     Ok(())
 }
 
-type CoverageClaimTimeKey = ((String, HbType), Option<Uuid>);
+type CoverageClaimTimeKey = (PublicKeyBinary, Option<Uuid>);
 
 pub struct CoverageClaimTimeCache {
     cache: Arc<Cache<CoverageClaimTimeKey, DateTime<Utc>>>,
@@ -542,11 +534,11 @@ impl CoverageClaimTimeCache {
 
     pub async fn fetch_coverage_claim_time<'a>(
         &self,
-        radio_key: KeyType<'a>,
+        radio_key: &'a PublicKeyBinary,
         coverage_object: &'a Option<Uuid>,
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
-        let key = (radio_key.to_id(), *coverage_object);
+        let key = (radio_key.clone(), *coverage_object);
         if let Some(coverage_claim_time) = self.cache.get(&key).await {
             Ok(Some(*coverage_claim_time))
         } else {
@@ -598,7 +590,7 @@ impl CoverageObjectCache {
     pub async fn fetch_coverage_object(
         &self,
         uuid: &Uuid,
-        key: KeyType<'_>,
+        key: &PublicKeyBinary,
     ) -> Result<Option<CachedCoverageObject<'_>>, sqlx::Error> {
         let coverage_meta: Option<CoverageObjectMeta> = sqlx::query_as(
 	    "SELECT inserted_at, indoor FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"

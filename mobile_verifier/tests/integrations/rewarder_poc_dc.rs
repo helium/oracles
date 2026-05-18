@@ -16,7 +16,7 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,
-    heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{Heartbeat, ValidatedHeartbeat},
     reward_shares::{self, DataTransferAndPocAllocatedRewardBuckets},
     rewarder, speedtests, unique_connections,
 };
@@ -291,7 +291,6 @@ async fn seed_heartbeats(
         );
         let wifi_heartbeat_1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
                 operation_mode: true,
                 lat: 0.0,
@@ -320,7 +319,6 @@ async fn seed_heartbeats(
         );
         let wifi_heartbeat_2 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
                 operation_mode: true,
                 lat: 0.0,
@@ -349,7 +347,6 @@ async fn seed_heartbeats(
         );
         let wifi_heartbeat_3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
                 operation_mode: true,
                 lat: 0.0,
@@ -553,7 +550,7 @@ async fn save_seniority_object(
         INSERT INTO seniority
           (radio_key, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason, radio_type)
         VALUES
-          ($1, $2, $3, $4, $5, $6, $7)
+          ($1, $2, $3, $4, $5, $6, 'wifi'::radio_type)
         "#,
     )
     .bind(hb.heartbeat.key())
@@ -562,7 +559,6 @@ async fn save_seniority_object(
     .bind(ts)
     .bind(ts)
     .bind(proto::SeniorityUpdateReason::NewCoverageClaimTime as i32)
-    .bind(hb.heartbeat.hb_type)
     .execute(&mut **exec)
     .await?;
     Ok(())

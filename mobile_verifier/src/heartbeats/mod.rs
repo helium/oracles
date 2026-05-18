@@ -21,10 +21,7 @@ use mobile_config::gateway::service::info::DeviceType;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::{
-    postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
-    Decode, Encode, Postgres, Transaction, Type,
-};
+use sqlx::{Postgres, Transaction};
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
@@ -33,127 +30,8 @@ use self::last_location::{LastLocation, LocationCache};
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type, Debug)]
-#[sqlx(type_name = "radio_type")]
-#[sqlx(rename_all = "lowercase")]
-pub enum HbType {
-    Wifi,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum KeyType<'a> {
-    Wifi(&'a PublicKeyBinary),
-}
-
-impl From<KeyType<'_>> for proto::seniority_update::KeyType {
-    fn from(kt: KeyType<'_>) -> Self {
-        match kt {
-            KeyType::Wifi(key) => proto::seniority_update::KeyType::HotspotKey(key.clone().into()),
-        }
-    }
-}
-
-impl KeyType<'_> {
-    pub fn to_owned(self) -> OwnedKeyType {
-        match self {
-            Self::Wifi(key) => OwnedKeyType::Wifi(key.to_owned()),
-        }
-    }
-
-    pub fn to_id(self) -> (String, HbType) {
-        match self {
-            Self::Wifi(wifi) => (wifi.to_string(), HbType::Wifi),
-        }
-    }
-
-    pub fn hb_type(self) -> HbType {
-        match self {
-            Self::Wifi(_) => HbType::Wifi,
-        }
-    }
-}
-
-impl<'a> From<&'a PublicKeyBinary> for KeyType<'a> {
-    fn from(wifi: &'a PublicKeyBinary) -> Self {
-        Self::Wifi(wifi)
-    }
-}
-
-impl Type<Postgres> for KeyType<'_> {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("TEXT")
-    }
-}
-
-impl<'a> Encode<'a, Postgres> for KeyType<'a> {
-    fn encode_by_ref(
-        &self,
-        buf: &mut PgArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        match self {
-            Self::Wifi(wifi) => wifi.encode_by_ref(buf),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum OwnedKeyType {
-    Wifi(PublicKeyBinary),
-}
-
-impl OwnedKeyType {
-    pub fn to_ref(&self) -> KeyType<'_> {
-        match self {
-            OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
-        }
-    }
-}
-
-impl From<PublicKeyBinary> for OwnedKeyType {
-    fn from(w: PublicKeyBinary) -> Self {
-        Self::Wifi(w)
-    }
-}
-
-impl PartialEq<KeyType<'_>> for OwnedKeyType {
-    fn eq(&self, rhs: &KeyType<'_>) -> bool {
-        match (self, rhs) {
-            (Self::Wifi(lhs), KeyType::Wifi(rhs)) => lhs == *rhs,
-        }
-    }
-}
-
-impl Type<Postgres> for OwnedKeyType {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("TEXT")
-    }
-}
-
-impl Encode<'_, Postgres> for OwnedKeyType {
-    fn encode_by_ref(
-        &self,
-        buf: &mut PgArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        match self {
-            Self::Wifi(wifi) => wifi.encode_by_ref(buf),
-        }
-    }
-}
-
-impl<'r> Decode<'r, Postgres> for OwnedKeyType {
-    fn decode(value: PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let text = <&str as Decode<Postgres>>::decode(value)?;
-        // Try decoding to a public key binary
-        match text.parse() {
-            Ok(pubkey) => Ok(OwnedKeyType::Wifi(pubkey)),
-            Err(e) => Err(e)?,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct Heartbeat {
-    pub hb_type: HbType,
     pub hotspot_key: PublicKeyBinary,
     pub operation_mode: bool,
     pub lat: f64,
@@ -170,8 +48,8 @@ impl Heartbeat {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub fn key(&self) -> KeyType<'_> {
-        KeyType::from(&self.hotspot_key)
+    pub fn key(&self) -> &PublicKeyBinary {
+        &self.hotspot_key
     }
 
     pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
@@ -195,7 +73,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             .location_validation_timestamp
             .filter(|ts| received_timestamp.signed_duration_since(ts) <= Duration::hours(24));
         Self {
-            hb_type: HbType::Wifi,
             coverage_object: value.report.coverage_object(),
             hotspot_key: value.report.pubkey,
             operation_mode: value.report.operation_mode,
@@ -218,8 +95,8 @@ pub struct HeartbeatReward {
 }
 
 impl HeartbeatReward {
-    pub fn key(&self) -> KeyType<'_> {
-        KeyType::Wifi(&self.hotspot_key)
+    pub fn key(&self) -> &PublicKeyBinary {
+        &self.hotspot_key
     }
 
     pub fn id(&self) -> String {
@@ -339,14 +216,10 @@ impl ValidatedHeartbeat {
             ));
         };
 
-        let cell_type = match heartbeat.hb_type {
-            HbType::Wifi => {
-                if coverage_object.meta.indoor {
-                    CellType::NovaGenericWifiIndoor
-                } else {
-                    CellType::NovaGenericWifiOutdoor
-                }
-            }
+        let cell_type = if coverage_object.meta.indoor {
+            CellType::NovaGenericWifiIndoor
+        } else {
+            CellType::NovaGenericWifiOutdoor
         };
 
         if !heartbeat.operation_mode {
@@ -425,21 +298,17 @@ impl ValidatedHeartbeat {
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::GatewayNotFound,
             )),
-            GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
-                Ok(Self::new(
-                    heartbeat,
-                    cell_type,
-                    dec!(0),
-                    None,
-                    None,
-                    None,
-                    Some(coverage_object.meta),
-                    proto::HeartbeatValidity::GatewayNotAsserted,
-                ))
-            }
-            GatewayResolution::AssertedLocation(location, device_type)
-                if heartbeat.hb_type == HbType::Wifi =>
-            {
+            GatewayResolution::GatewayNotAsserted => Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                None,
+                None,
+                Some(coverage_object.meta),
+                proto::HeartbeatValidity::GatewayNotAsserted,
+            )),
+            GatewayResolution::AssertedLocation(location, device_type) => {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
@@ -485,9 +354,10 @@ impl ValidatedHeartbeat {
                     use coverage_point_calculator::{
                         asserted_distance_to_trust_multiplier, RadioType,
                     };
-                    let radio_type = match (heartbeat.hb_type, coverage_object.meta.indoor) {
-                        (HbType::Wifi, true) => RadioType::IndoorWifi,
-                        (HbType::Wifi, false) => RadioType::OutdoorWifi,
+                    let radio_type = if coverage_object.meta.indoor {
+                        RadioType::IndoorWifi
+                    } else {
+                        RadioType::OutdoorWifi
                     };
                     asserted_distance_to_trust_multiplier(radio_type, distance_to_asserted as u32)
                 };
@@ -503,16 +373,6 @@ impl ValidatedHeartbeat {
                     proto::HeartbeatValidity::Valid,
                 ))
             }
-            _ => Ok(Self::new(
-                heartbeat,
-                cell_type,
-                dec!(1.0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
-                proto::HeartbeatValidity::Valid,
-            )),
         }
     }
 
@@ -583,13 +443,6 @@ impl ValidatedHeartbeat {
             self.heartbeat.coverage_object,
         )
         .await?;
-        // Save the heartbeat
-        match self.heartbeat.hb_type {
-            HbType::Wifi => self.save_wifi_hb(exec).await,
-        }
-    }
-
-    async fn save_wifi_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
@@ -734,7 +587,6 @@ mod test {
         ValidatedHeartbeat {
             cell_type: CellType::CellTypeNone,
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: PublicKeyBinary::from(Vec::new()),
                 timestamp,
                 lon: 0.0,

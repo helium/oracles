@@ -146,7 +146,6 @@ mod tests {
 
         let wifi_heartbeat = heartbeats::ValidatedHeartbeat {
             heartbeat: heartbeats::Heartbeat {
-                hb_type: heartbeats::HbType::Wifi,
                 hotspot_key: wifi_pubkey_bin.clone(),
                 operation_mode: true,
                 lat: 0.0,
