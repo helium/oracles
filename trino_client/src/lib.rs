@@ -19,8 +19,18 @@ pub trait SqlStatement {
     fn to_statement(&self) -> Statement;
 }
 
+impl<T: SqlStatement + ?Sized> SqlStatement for &T {
+    fn to_statement(&self) -> Statement {
+        (*self).to_statement()
+    }
+}
+
 pub trait SqlQuery: SqlStatement {
     type Row;
+}
+
+impl<T: SqlQuery + ?Sized> SqlQuery for &T {
+    type Row = T::Row;
 }
 
 pub struct Client {
@@ -72,12 +82,12 @@ impl Client {
         &self.inner
     }
 
-    pub async fn execute<S: SqlStatement>(&self, sql_statement: &S) -> Result<()> {
+    pub async fn execute<S: SqlStatement>(&self, sql_statement: S) -> Result<()> {
         self.execute_raw(sql_statement.to_statement().render()?)
             .await
     }
 
-    pub async fn get_all<S: SqlQuery>(&self, sql_query: &S) -> Result<Vec<S::Row>>
+    pub async fn get_all<S: SqlQuery>(&self, sql_query: S) -> Result<Vec<S::Row>>
     where
         S::Row: trino_rust_client::Trino + 'static,
         for<'de> S::Row: serde::Deserialize<'de> + serde::Serialize,
