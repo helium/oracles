@@ -1,5 +1,5 @@
 [package]
-name = "trino_client"
+name = "trino-client"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
