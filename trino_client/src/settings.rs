@@ -127,7 +127,10 @@ mod tests {
         }))
         .unwrap();
         assert!(s.secure);
-        assert_eq!(s.ca_cert_path.unwrap().to_str().unwrap(), "/etc/ssl/trino-ca.pem");
+        assert_eq!(
+            s.ca_cert_path.unwrap().to_str().unwrap(),
+            "/etc/ssl/trino-ca.pem"
+        );
         assert!(!s.insecure_skip_tls_verify);
     }
 }
