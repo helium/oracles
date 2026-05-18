@@ -503,9 +503,17 @@ mod tests {
     }
 
     #[test]
-    fn no_parameters_errors() {
-        let err = Statement::new("SELECT 1").render().unwrap_err();
-        assert!(matches!(err, Error::NoParameters));
+    fn no_parameters_passes_sql_through_unchanged() {
+        let r = Statement::new("SELECT 1").render().unwrap();
+        assert_eq!(r, "SELECT 1");
+    }
+
+    #[test]
+    fn no_parameters_works_for_ddl() {
+        let r = Statement::new("CREATE TABLE foo (id BIGINT)")
+            .render()
+            .unwrap();
+        assert_eq!(r, "CREATE TABLE foo (id BIGINT)");
     }
 
     #[test]
