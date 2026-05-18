@@ -4,8 +4,10 @@ use trino_client::{Client, Settings, SqlQuery, SqlStatement, Statement};
 use trino_rust_client::Trino;
 
 fn client() -> Client {
+    let host = std::env::var("TRINO_HOST").unwrap_or_else(|_| "localhost".to_string());
+
     let settings = Settings {
-        host: "localhost".into(),
+        host,
         port: 8080,
         user: "admin".into(),
         catalog: None,
@@ -15,6 +17,7 @@ fn client() -> Client {
         insecure_skip_tls_verify: false,
         auth: None,
     };
+
     Client::from_settings(&settings).expect("build trino client")
 }
 
