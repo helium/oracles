@@ -309,7 +309,7 @@ fn render_internal(sql: &str, params: &[(String, Param)]) -> Result<String> {
     }
 
     if placeholder_values.is_empty() {
-        return Err(Error::NoParameters);
+        return Ok(out);
     }
 
     let escaped = out.replace('\'', "''");

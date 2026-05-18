@@ -6,9 +6,6 @@ pub enum Error {
     #[error("missing bind parameter: {0}")]
     MissingParameter(String),
 
-    #[error("no parameters bound; use execute_raw / get_all_raw for non-parameterized SQL")]
-    NoParameters,
-
     #[error("invalid parameter value: {0}")]
     InvalidParam(String),
 
