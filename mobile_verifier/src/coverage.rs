@@ -1,4 +1,4 @@
-use crate::{seniority::Seniority, IsAuthorized, Settings};
+use crate::{cell_type::CellType, seniority::Seniority, IsAuthorized, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
@@ -660,5 +660,19 @@ impl CachedCoverageObject<'_> {
             let cov = LatLng::from(*curr_cov);
             curr_max.max(cov.distance_m(latlng))
         })
+    }
+
+    pub fn to_cell_type(&self) -> CellType {
+        match self.meta.indoor {
+            true => CellType::NovaGenericWifiIndoor,
+            false => CellType::NovaGenericWifiOutdoor,
+        }
+    }
+
+    pub fn to_radio_type(&self) -> coverage_point_calculator::RadioType {
+        match self.meta.indoor {
+            true => coverage_point_calculator::RadioType::IndoorWifi,
+            false => coverage_point_calculator::RadioType::OutdoorWifi,
+        }
     }
 }

@@ -176,8 +176,38 @@ impl ValidatedHeartbeat {
         }
     }
 
+    fn new_invalid(
+        heartbeat: Heartbeat,
+        cell_type: CellType,
+        coverage_meta: CoverageObjectMeta,
+        validity: proto::HeartbeatValidity,
+    ) -> Self {
+        Self {
+            heartbeat,
+            cell_type,
+            location_trust_score_multiplier: dec!(0),
+            distance_to_asserted: None,
+            asserted_location: None,
+            device_type: None,
+            coverage_meta: Some(coverage_meta),
+            validity,
+        }
+    }
+
+    fn new_no_coverage(heartbeat: Heartbeat, validity: proto::HeartbeatValidity) -> Self {
+        Self {
+            heartbeat,
+            cell_type: CellType::CellTypeNone,
+            location_trust_score_multiplier: dec!(0),
+            distance_to_asserted: None,
+            asserted_location: None,
+            device_type: None,
+            coverage_meta: None,
+            validity,
+        }
+    }
+
     /// Validate a heartbeat in the given epoch.
-    #[allow(clippy::too_many_arguments)]
     pub async fn validate(
         mut heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
@@ -187,89 +217,57 @@ impl ValidatedHeartbeat {
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
     ) -> anyhow::Result<Self> {
-        let Some(coverage_object) = heartbeat.coverage_object else {
-            return Ok(Self::new(
+        let Some(coverage_object_uuid) = heartbeat.coverage_object else {
+            return Ok(Self::new_no_coverage(
                 heartbeat,
-                CellType::CellTypeNone,
-                dec!(0),
-                None,
-                None,
-                None,
-                None,
                 proto::HeartbeatValidity::BadCoverageObject,
             ));
         };
 
         let Some(coverage_object) = coverage_object_cache
-            .fetch_coverage_object(&coverage_object, heartbeat.key())
+            .fetch_coverage_object(&coverage_object_uuid, heartbeat.key())
             .await?
         else {
-            return Ok(Self::new(
+            return Ok(Self::new_no_coverage(
                 heartbeat,
-                CellType::CellTypeNone,
-                dec!(0),
-                None,
-                None,
-                None,
-                None,
                 proto::HeartbeatValidity::NoSuchCoverageObject,
             ));
         };
 
-        let cell_type = if coverage_object.meta.indoor {
-            CellType::NovaGenericWifiIndoor
-        } else {
-            CellType::NovaGenericWifiOutdoor
-        };
+        let cell_type = coverage_object.to_cell_type();
 
         if !heartbeat.operation_mode {
-            return Ok(Self::new(
+            return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::NotOperational,
             ));
         }
 
         if !epoch.contains(&heartbeat.timestamp) {
-            return Ok(Self::new(
+            return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::HeartbeatOutsideRange,
             ));
         }
 
         let Ok(mut hb_latlng) = heartbeat.centered_latlng() else {
-            return Ok(Self::new(
+            return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::InvalidLatLon,
             ));
         };
 
         if !geofence.in_valid_region(&heartbeat) {
-            return Ok(Self::new(
+            return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::UnsupportedLocation,
             ));
         }
@@ -278,34 +276,22 @@ impl ValidatedHeartbeat {
             .resolve_gateway(&heartbeat.hotspot_key, &heartbeat.timestamp)
             .await?
         {
-            GatewayResolution::DataOnly => Ok(Self::new(
+            GatewayResolution::DataOnly => Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::InvalidDeviceType,
             )),
-            GatewayResolution::GatewayNotFound => Ok(Self::new(
+            GatewayResolution::GatewayNotFound => Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::GatewayNotFound,
             )),
-            GatewayResolution::GatewayNotAsserted => Ok(Self::new(
+            GatewayResolution::GatewayNotAsserted => Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                dec!(0),
-                None,
-                None,
-                None,
-                Some(coverage_object.meta),
+                coverage_object.meta,
                 proto::HeartbeatValidity::GatewayNotAsserted,
             )),
             GatewayResolution::AssertedLocation(location, device_type) => {
@@ -351,15 +337,10 @@ impl ValidatedHeartbeat {
                     dec!(0)
                 } else {
                     // HIP-119 maximum asserted distance check
-                    use coverage_point_calculator::{
-                        asserted_distance_to_trust_multiplier, RadioType,
-                    };
-                    let radio_type = if coverage_object.meta.indoor {
-                        RadioType::IndoorWifi
-                    } else {
-                        RadioType::OutdoorWifi
-                    };
-                    asserted_distance_to_trust_multiplier(radio_type, distance_to_asserted as u32)
+                    coverage_point_calculator::asserted_distance_to_trust_multiplier(
+                        coverage_object.to_radio_type(),
+                        distance_to_asserted as u32,
+                    )
                 };
 
                 Ok(Self::new(
