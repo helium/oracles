@@ -135,7 +135,7 @@ impl From<file_store_oracles::validated_heartbeat::ValidatedHeartbeat> for Icebe
 /// Recover the hotspot's `DeviceType` from the wire `cell_type` field for
 /// backfill rows. `WifiDataOnly` is unreachable here — the wire enum doesn't
 /// carry it and those hotspots don't emit heartbeats anyway.
-fn cell_type_to_device_type(cell_type: ProtoCellType) -> Option<DeviceType> {
+pub(crate) fn cell_type_to_device_type(cell_type: ProtoCellType) -> Option<DeviceType> {
     match cell_type {
         ProtoCellType::Nova436h
         | ProtoCellType::Nova430i
