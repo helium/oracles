@@ -160,10 +160,7 @@ fn device_type_string(device_type: DeviceType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        cell_type::CellType,
-        heartbeats::{HbType, Heartbeat},
-    };
+    use crate::{cell_type::CellType, heartbeats::Heartbeat};
     use chrono::Utc;
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
@@ -180,7 +177,6 @@ mod tests {
         let now = Utc::now();
         ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
                 hotspot_key: PublicKeyBinary::from(vec![1, 2, 3]),
                 operation_mode: true,
                 lat: 37.7749,

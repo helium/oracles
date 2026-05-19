@@ -9,7 +9,7 @@ use mobile_config::gateway::service::info::DeviceType;
 use mobile_verifier::{
     backfill::BackfillOptions,
     cell_type::CellType,
-    heartbeats::{backfill::HeartbeatBackfiller, HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{backfill::HeartbeatBackfiller, Heartbeat, ValidatedHeartbeat},
     iceberg::{self, heartbeat::IcebergHeartbeat},
 };
 use rust_decimal_macros::dec;
@@ -71,7 +71,6 @@ fn make_validated_heartbeat(index: u8) -> ValidatedHeartbeat {
 
     ValidatedHeartbeat {
         heartbeat: Heartbeat {
-            hb_type: HbType::Wifi,
             hotspot_key: PublicKeyBinary::from(vec![index, index, index]),
             operation_mode: true,
             lat: 37.0 + f64::from(index),
@@ -124,7 +123,6 @@ async fn write_heartbeat_with_no_optional_fields() -> anyhow::Result<()> {
     let now = truncated_now();
     let vhb = ValidatedHeartbeat {
         heartbeat: Heartbeat {
-            hb_type: HbType::Wifi,
             hotspot_key: PublicKeyBinary::from(vec![10, 20, 30]),
             operation_mode: true,
             lat: 40.0,
@@ -201,7 +199,6 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
         .map(|(i, (dt, _))| {
             let vhb = ValidatedHeartbeat {
                 heartbeat: Heartbeat {
-                    hb_type: HbType::Wifi,
                     hotspot_key: PublicKeyBinary::from(vec![i as u8 + 50]),
                     operation_mode: true,
                     lat: 37.0,

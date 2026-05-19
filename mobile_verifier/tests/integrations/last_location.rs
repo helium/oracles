@@ -8,7 +8,7 @@ use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{last_location::LocationCache, Heartbeat, ValidatedHeartbeat},
 };
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -267,7 +267,6 @@ impl HeartbeatBuilder {
         });
 
         Heartbeat {
-            hb_type: HbType::Wifi,
             hotspot_key: self.hotspot,
             operation_mode: true,
             lat,

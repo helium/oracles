@@ -21,9 +21,7 @@ use mobile_verifier::{
     banning::BannedRadios,
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{
-        last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
-    },
+    heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -60,7 +58,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     let key: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
         .parse()
         .unwrap();
-    let key = KeyType::from(&key);
+    let key = &key;
 
     assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
@@ -127,7 +125,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     let bkey: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
         .parse()
         .unwrap();
-    let key = KeyType::from(&bkey);
+    let key = &bkey;
 
     assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 

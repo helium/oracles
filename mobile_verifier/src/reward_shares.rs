@@ -551,7 +551,7 @@ mod test {
     use crate::{
         coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
-        heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
+        heartbeats::HeartbeatReward,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
     };
@@ -831,22 +831,22 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl CoveredHexStream for HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> {
+    impl CoveredHexStream for HashMap<(PublicKeyBinary, Uuid), Vec<HexCoverage>> {
         async fn covered_hex_stream<'a>(
             &'a self,
-            key: KeyType<'a>,
+            key: &'a PublicKeyBinary,
             coverage_obj: &'a Uuid,
             _seniority: &'a Seniority,
         ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
             Ok(
-                stream::iter(self.get(&(key.to_owned(), *coverage_obj)).unwrap().clone())
+                stream::iter(self.get(&(key.clone(), *coverage_obj)).unwrap().clone())
                     .map(Ok)
                     .boxed(),
             )
         }
         async fn fetch_seniority(
             &self,
-            _key: KeyType<'_>,
+            _key: &PublicKeyBinary,
             _period_end: DateTime<Utc>,
         ) -> Result<Seniority, sqlx::Error> {
             Ok(Seniority {
@@ -859,9 +859,8 @@ mod test {
         }
     }
 
-    fn simple_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
-        let key = key.into();
-        let radio_key = key.to_owned();
+    fn simple_hex_coverage(key: &PublicKeyBinary, hex: u64) -> Vec<HexCoverage> {
+        let radio_key = key.clone();
         let hex = hex.try_into().expect("valid h3 cell");
 
         vec![HexCoverage {
@@ -877,9 +876,8 @@ mod test {
         }]
     }
 
-    fn bad_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
-        let key = key.into();
-        let radio_key = key.to_owned();
+    fn bad_hex_coverage(key: &PublicKeyBinary, hex: u64) -> Vec<HexCoverage> {
+        let radio_key = key.clone();
         let hex = hex.try_into().expect("valid h3 cell");
 
         vec![HexCoverage {
@@ -922,7 +920,7 @@ mod test {
 
         let mut hex_coverage = HashMap::new();
         hex_coverage.insert(
-            (OwnedKeyType::Wifi(gw1.clone()), cov_obj_1),
+            (gw1.clone(), cov_obj_1),
             simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
         );
 
@@ -1068,19 +1066,19 @@ mod test {
         // Setup hex coverages
         let mut hex_coverage = HashMap::new();
         hex_coverage.insert(
-            (OwnedKeyType::Wifi(gw10.clone()), cov_obj_10),
+            (gw10.clone(), cov_obj_10),
             simple_hex_coverage(&gw10, 0x8a1fb46622dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(gw20.clone()), cov_obj_20),
+            (gw20.clone(), cov_obj_20),
             simple_hex_coverage(&gw20, 0x8a1fb46632dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(gw21.clone()), cov_obj_21),
+            (gw21.clone(), cov_obj_21),
             simple_hex_coverage(&gw21, 0x8a1fb46642dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(gw30.clone()), cov_obj_30),
+            (gw30.clone(), cov_obj_30),
             simple_hex_coverage(&gw30, 0x8a1fb46652dffff),
         );
 
@@ -1256,13 +1254,14 @@ mod test {
         averages.insert(gw2.clone(), gw2_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
-        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        let mut hex_coverage: HashMap<(PublicKeyBinary, Uuid), Vec<HexCoverage>> =
+            Default::default();
         hex_coverage.insert(
-            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            (gw1.clone(), g1_cov_obj),
             bad_hex_coverage(&gw1, 0x8a1fb46622dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(gw2.clone()), g2_cov_obj),
+            (gw2.clone(), g2_cov_obj),
             bad_hex_coverage(&gw2, 0x8a1fb46642dffff),
         );
 

@@ -4,7 +4,6 @@ use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use mobile_verifier::{
     coverage::{CoveredHexStream, HexCoverage},
-    heartbeats::KeyType,
     seniority::Seniority,
 };
 use sqlx::PgPool;
@@ -19,7 +18,7 @@ async fn test_covered_hex_stream(pool: PgPool) {
         .expect("failed gw1 parse");
 
     // WIFI should work
-    let wifi_key = KeyType::Wifi(&wifi_pub_key);
+    let wifi_key = &wifi_pub_key;
     let seniority = Seniority::fetch_latest(wifi_key, &mut txn)
         .await
         .unwrap()

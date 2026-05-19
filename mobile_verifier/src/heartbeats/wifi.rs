@@ -13,7 +13,7 @@ use file_store_oracles::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
 use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
-use sqlx::{Pool, Postgres};
+use sqlx::PgPool;
 use std::{
     sync::Arc,
     time::{self, Instant},
@@ -22,7 +22,7 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 pub struct WifiHeartbeatDaemon<GIR, GFV> {
-    pool: sqlx::Pool<sqlx::Postgres>,
+    pool: PgPool,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     max_distance_to_coverage: u32,
@@ -39,7 +39,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
-        pool: Pool<Postgres>,
+        pool: PgPool,
         settings: &Settings,
         bucket_client: BucketClient,
         gateway_resolver: GIR,
