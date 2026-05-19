@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
@@ -14,10 +13,6 @@ pub struct Settings {
     /// `auth` is set unless the server is on the same host.
     #[serde(default)]
     pub secure: bool,
-    /// Path to a PEM-encoded CA certificate to trust in addition to the
-    /// platform roots.
-    #[serde(default)]
-    pub ca_cert_path: Option<PathBuf>,
     /// Skip TLS certificate verification. For local development only.
     #[serde(default)]
     pub insecure_skip_tls_verify: bool,
@@ -122,15 +117,10 @@ mod tests {
             "port": 443,
             "user": "alice",
             "secure": true,
-            "ca_cert_path": "/etc/ssl/trino-ca.pem",
             "insecure_skip_tls_verify": false,
         }))
         .unwrap();
         assert!(s.secure);
-        assert_eq!(
-            s.ca_cert_path.unwrap().to_str().unwrap(),
-            "/etc/ssl/trino-ca.pem"
-        );
         assert!(!s.insecure_skip_tls_verify);
     }
 }

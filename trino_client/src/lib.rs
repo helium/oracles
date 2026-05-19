@@ -12,7 +12,6 @@ pub use settings::{AuthSettings, Settings};
 pub use statement::{Param, Statement, TypedStatement};
 
 use trino_rust_client::auth::Auth;
-use trino_rust_client::ssl::Ssl;
 use trino_rust_client::ClientBuilder as UpstreamClientBuilder;
 
 pub trait SqlStatement {
@@ -51,13 +50,6 @@ impl Client {
         }
         if settings.insecure_skip_tls_verify {
             builder = builder.no_verify(true);
-        }
-        if let Some(path) = &settings.ca_cert_path {
-            let cert = Ssl::read_pem(path)
-                .map_err(|e| Error::Build(format!("read ca cert {path:?}: {e:?}")))?;
-            builder = builder.ssl(Ssl {
-                root_cert: Some(cert),
-            });
         }
         if let Some(auth) = &settings.auth {
             builder = builder.auth(match auth {

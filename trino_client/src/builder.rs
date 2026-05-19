@@ -1,7 +1,6 @@
 use crate::error::Result;
 use crate::settings::{AuthSettings, Settings};
 use crate::Client;
-use std::path::PathBuf;
 
 pub struct ClientBuilder {
     host: String,
@@ -10,7 +9,6 @@ pub struct ClientBuilder {
     catalog: Option<String>,
     schema: Option<String>,
     secure: bool,
-    ca_cert_path: Option<PathBuf>,
     insecure_skip_tls_verify: bool,
     auth: Option<AuthSettings>,
 }
@@ -24,7 +22,6 @@ impl ClientBuilder {
             catalog: None,
             schema: None,
             secure: false,
-            ca_cert_path: None,
             insecure_skip_tls_verify: false,
             auth: None,
         }
@@ -42,11 +39,6 @@ impl ClientBuilder {
 
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
-        self
-    }
-
-    pub fn ca_cert_path(mut self, path: impl Into<PathBuf>) -> Self {
-        self.ca_cert_path = Some(path.into());
         self
     }
 
@@ -78,7 +70,6 @@ impl ClientBuilder {
             catalog: self.catalog,
             schema: self.schema,
             secure: self.secure,
-            ca_cert_path: self.ca_cert_path,
             insecure_skip_tls_verify: self.insecure_skip_tls_verify,
             auth: self.auth,
         };
