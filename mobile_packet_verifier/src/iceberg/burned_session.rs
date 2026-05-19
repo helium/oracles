@@ -3,12 +3,12 @@ use file_store::FileInfo;
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
 use serde::{Deserialize, Serialize};
-use trino_rust_client::Trino;
+use trino_client::TrinoFromRow;
 
 pub use super::NAMESPACE;
 pub const TABLE_NAME: &str = "burned_sessions";
 
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
 pub struct IcebergBurnedDataTransferSession {
     pub_key: String,
     payer: String,
@@ -46,14 +46,14 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
 }
 
 pub async fn get_all(
-    trino: &trino_rust_client::Client,
+    trino: &trino_client::Client,
 ) -> anyhow::Result<Vec<IcebergBurnedDataTransferSession>> {
     let all = match trino
-        .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
+        .get_all_raw(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
         .await
     {
-        Ok(all) => all.into_vec(),
-        Err(trino_rust_client::error::Error::EmptyData) => vec![],
+        Ok(all) => all,
+        Err(trino_client::Error::EmptyData) => vec![],
         Err(err) => return Err(err.into()),
     };
     Ok(all)

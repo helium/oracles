@@ -19,19 +19,19 @@ use helium_iceberg::{
 };
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
-use trino_rust_client::Trino;
+use trino_client::TrinoFromRow;
 
 const NAMESPACE: &str = "default";
 const TABLE: &str = "people";
 
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
 struct Person {
     name: String,
     age: u32,
     inserted: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
 struct Count {
     c: i64,
 }
@@ -66,9 +66,8 @@ async fn fresh_table(harness: &IcebergTestHarness) -> anyhow::Result<IcebergTabl
 async fn count_in_iceberg(harness: &IcebergTestHarness) -> anyhow::Result<i64> {
     let counts: Vec<Count> = harness
         .trino()
-        .get_all::<Count>(format!("SELECT count(*) AS c FROM {NAMESPACE}.{TABLE}"))
-        .await?
-        .into_vec();
+        .get_all_raw::<Count>(format!("SELECT count(*) AS c FROM {NAMESPACE}.{TABLE}"))
+        .await?;
     Ok(counts.first().map(|c| c.c).unwrap_or(0))
 }
 
@@ -283,9 +282,8 @@ async fn replays_leftover_spool_on_startup() -> anyhow::Result<()> {
     expected.sort_by(|a, b| a.name.cmp(&b.name));
     let queried: Vec<Person> = harness
         .trino()
-        .get_all::<Person>(format!("SELECT * FROM {NAMESPACE}.{TABLE} ORDER BY name"))
-        .await?
-        .into_vec();
+        .get_all_raw::<Person>(format!("SELECT * FROM {NAMESPACE}.{TABLE} ORDER BY name"))
+        .await?;
     assert_eq!(queried, expected);
 
     assert_eq!(count_spool_files(spool_dir.path()).await?, 0);

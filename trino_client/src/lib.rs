@@ -97,10 +97,7 @@ impl Client {
         T: trino_rust_client::Trino + 'static,
         for<'de> T: serde::Deserialize<'de> + serde::Serialize,
     {
-        match self.inner.get_all::<T>(sql.into()).await {
-            Ok(ds) => Ok(ds.into_vec()),
-            Err(trino_rust_client::error::Error::EmptyData) => Ok(Vec::new()),
-            Err(e) => Err(e.into()),
-        }
+        let ds = self.inner.get_all::<T>(sql.into()).await?;
+        Ok(ds.into_vec())
     }
 }

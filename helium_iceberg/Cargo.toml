@@ -43,6 +43,7 @@ triggered = { workspace = true }
 
 # Test harness dependencies (optional)
 trino-rust-client = { version = "0.9", optional = true }
+trino-client = { path = "../trino_client" }
 derive_builder = { workspace = true, optional = true }
 
 [dev-dependencies]

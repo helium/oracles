@@ -34,7 +34,6 @@ use derive_builder::Builder;
 use futures::TryFutureExt;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use trino_rust_client::ClientBuilder;
 
 use crate::settings::{AuthConfig, S3Config, Settings};
 use crate::writer::IntoBoxedDataWriter;
@@ -61,10 +60,10 @@ enum TestHarnessError {
     PolarisTokenParse(reqwest::Error),
 
     #[error("failed to create trino client: {0}")]
-    TrinoClientBuild(trino_rust_client::error::Error),
+    TrinoClientBuild(trino_client::Error),
 
     #[error("failed to register catalog with Trino: {0}")]
-    TrinoRegisterCatalog(trino_rust_client::error::Error),
+    TrinoRegisterCatalog(trino_client::Error),
 }
 
 /// Generate a unique catalog name for the test.
@@ -110,7 +109,7 @@ fn generate_catalog_name() -> String {
 /// so queries can reference tables directly without qualification.
 pub struct IcebergTestHarness {
     catalog_name: String,
-    trino: trino_rust_client::Client,
+    trino: trino_client::Client,
     iceberg_catalog: Catalog,
     table_namespaces: Mutex<HashMap<String, String>>,
     pub config: HarnessConfig,
@@ -230,11 +229,11 @@ impl IcebergTestHarness {
     ///
     /// The client is pre-configured with the test's catalog and schema,
     /// so you can reference tables directly (e.g., `SELECT * FROM my_table`).
-    pub fn trino(&self) -> &trino_rust_client::Client {
+    pub fn trino(&self) -> &trino_client::Client {
         &self.trino
     }
 
-    pub async fn owned_trino(&self) -> Result<trino_rust_client::Client> {
+    pub async fn owned_trino(&self) -> Result<trino_client::Client> {
         create_trino_client(&self.config, &self.catalog_name).await
     }
 
@@ -444,8 +443,8 @@ impl HarnessConfig {
         self.catalog_host_qualified.with_path("/api/catalog")
     }
 
-    pub fn trino_client_builder(&self) -> ClientBuilder {
-        ClientBuilder::new(&self.trino_user, &self.trino_host).port(self.trino_port)
+    pub fn trino_client_builder(&self) -> trino_client::ClientBuilder {
+        trino_client::ClientBuilder::new(&self.trino_host, self.trino_port, &self.trino_user)
     }
 }
 
@@ -606,7 +605,7 @@ async fn register_trino_catalog(config: &HarnessConfig, catalog_name: &str) -> R
     );
 
     trino
-        .execute(sql)
+        .execute_raw(&sql)
         .map_err(TestHarnessError::TrinoRegisterCatalog)
         .await?;
 
@@ -650,7 +649,7 @@ async fn connect_to_iceberg_catalog_with_namespace(
 async fn create_trino_client(
     config: &HarnessConfig,
     catalog_name: &str,
-) -> Result<trino_rust_client::Client> {
+) -> Result<trino_client::Client> {
     config
         .trino_client_builder()
         .catalog(catalog_name)
@@ -839,9 +838,9 @@ mod tests {
     use chrono::{DateTime, Duration, DurationRound, FixedOffset, Utc};
     use iceberg::spec::PrimitiveType;
     use serde::{Deserialize, Serialize};
-    use trino_rust_client::Trino;
+    use trino_client::TrinoFromRow;
 
-    #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
     struct Person {
         name: String,
         age: u32,
@@ -887,9 +886,9 @@ mod tests {
     async fn test_query_table() -> anyhow::Result<()> {
         let harness = IcebergTestHarness::new_with_tables([person_table_def()?]).await?;
 
-        let _res = harness
+        harness
             .trino()
-            .execute("SELECT * FROM default.people".to_string())
+            .execute_raw("SELECT * FROM default.people".to_string())
             .await?;
 
         Ok(())
@@ -901,7 +900,7 @@ mod tests {
 
         let res = harness
             .trino()
-            .execute("SELECT * FROM default.bad_table".to_string())
+            .execute_raw("SELECT * FROM default.bad_table".to_string())
             .await;
 
         assert!(res.is_err());
@@ -915,7 +914,7 @@ mod tests {
 
         let res = harness
             .trino()
-            .execute("SELECT no_field FROM default.people".to_string())
+            .execute_raw("SELECT no_field FROM default.people".to_string())
             .await;
 
         assert!(res.is_err());
@@ -945,9 +944,8 @@ mod tests {
 
         let queried_people = harness
             .trino()
-            .get_all::<Person>("SELECT * FROM default.people".to_string())
-            .await?
-            .into_vec();
+            .get_all_raw::<Person>("SELECT * FROM default.people".to_string())
+            .await?;
         assert_eq!(queried_people, people);
 
         Ok(())
@@ -955,7 +953,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_nested_field_types() -> anyhow::Result<()> {
-        #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+        #[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
         struct Outer {
             id: u64,
             tags: Option<Vec<String>>,
@@ -965,7 +963,7 @@ mod tests {
             name: String,
         }
 
-        #[derive(Default, Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+        #[derive(Default, Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
         struct Inner {
             one: u64,
             two: u64,
@@ -1009,10 +1007,9 @@ mod tests {
 
         let out = harness
             .trino()
-            .get_all::<Outer>("SELECT * from default.list_items".to_string())
+            .get_all_raw::<Outer>("SELECT * from default.list_items".to_string())
             .await
-            .context("read data")?
-            .into_vec();
+            .context("read data")?;
 
         assert_eq!(data, out);
 

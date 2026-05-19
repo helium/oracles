@@ -18,9 +18,9 @@ use helium_iceberg::{
     DataWriter, FieldDefinition, IcebergTestHarness, PartitionDefinition, TableDefinition,
 };
 use serde::{Deserialize, Serialize};
-use trino_rust_client::Trino;
+use trino_client::{Statement, TrinoFromRow};
 
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
 struct Person {
     name: String,
     age: u32,
@@ -96,13 +96,12 @@ async fn write_idempotent_skips_duplicate_id_across_instances() -> anyhow::Resul
     expected.sort_by(|x, y| x.name.cmp(&y.name));
     let queried = harness
         .trino()
-        .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
-        .await?
-        .into_vec();
+        .get_all(Statement::new("SELECT * FROM default.people ORDER BY name").typed::<Person>())
+        .await?;
     assert_eq!(queried, expected);
 
     // Exactly one snapshot should carry the write_id in its summary.
-    #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, TrinoFromRow, Serialize, Deserialize, PartialEq)]
     struct Count {
         c: i64,
     }
@@ -111,13 +110,14 @@ async fn write_idempotent_skips_duplicate_id_across_instances() -> anyhow::Resul
     // calls (no write_id stamped).
     let counts = harness
         .trino()
-        .get_all::<Count>(
-            "SELECT count(*) AS c FROM default.\"people$snapshots\"
-             WHERE element_at(summary, 'helium.write_id') = 'dup-id'"
-                .to_string(),
+        .get_all(
+            Statement::new(
+                "SELECT count(*) AS c FROM default.\"people$snapshots\"
+                WHERE element_at(summary, 'helium.write_id') = 'dup-id'",
+            )
+            .typed::<Count>(),
         )
-        .await?
-        .into_vec();
+        .await?;
     assert_eq!(counts, vec![Count { c: 1 }]);
 
     Ok(())
@@ -203,9 +203,8 @@ async fn concurrent_writes_dont_clobber() -> anyhow::Result<()> {
     expected.sort_by(|x, y| x.name.cmp(&y.name));
     let queried = harness
         .trino()
-        .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
-        .await?
-        .into_vec();
+        .get_all(Statement::new("SELECT * FROM default.people ORDER BY name").typed::<Person>())
+        .await?;
     assert_eq!(queried, expected);
 
     Ok(())
@@ -236,16 +235,17 @@ async fn delete_between_writes_is_preserved() -> anyhow::Result<()> {
     // External DELETE lands on main between our two writes.
     harness
         .trino()
-        .execute("DELETE FROM default.people WHERE name = 'Alice'".to_string())
+        .execute(Statement::new(
+            "DELETE FROM default.people WHERE name = 'Alice'",
+        ))
         .await?;
 
     writer.write_idempotent("b", vec![bob.clone()]).await?;
 
     let queried = harness
         .trino()
-        .get_all::<Person>("SELECT * FROM default.people ORDER BY name".to_string())
-        .await?
-        .into_vec();
+        .get_all(Statement::new("SELECT * FROM default.people ORDER BY name").typed::<Person>())
+        .await?;
     assert_eq!(queried, vec![bob]);
 
     Ok(())
