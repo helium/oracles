@@ -202,7 +202,7 @@ async fn backfill_writes_bans_to_iceberg(pool: PgPool) -> anyhow::Result<()> {
 
     let opts = test_backfill_options("test-backfill", start_time, end_time);
     let (backfiller, server) =
-        BanBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts)).await?;
+        BanBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -252,7 +252,7 @@ async fn backfill_filters_invalid_bans(pool: PgPool) -> anyhow::Result<()> {
 
     let opts = test_backfill_options("test-backfill-filter", start_time, end_time);
     let (backfiller, server) =
-        BanBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts)).await?;
+        BanBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -315,7 +315,7 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
 
     let opts = test_backfill_options("test-backfill-stop", start_time, stop_time);
     let (backfiller, server) =
-        BanBackfiller::create_batched(pool, awsl.bucket_client(), Some(writer), Some(opts)).await?;
+        BanBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,

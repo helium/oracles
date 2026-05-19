@@ -168,13 +168,8 @@ async fn backfill_writes_speedtest_avgs_to_iceberg(pool: PgPool) -> anyhow::Resu
     .await?;
 
     let opts = test_backfill_options("test-avg-backfill", start_time, end_time);
-    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
-        pool,
-        awsl.bucket_client(),
-        Some(writer),
-        Some(opts),
-    )
-    .await?;
+    let (backfiller, server) =
+        SpeedtestAvgBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -230,13 +225,8 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     }
 
     let opts = test_backfill_options("test-avg-backfill-stop", start_time, stop_time);
-    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
-        pool,
-        awsl.bucket_client(),
-        Some(writer),
-        Some(opts),
-    )
-    .await?;
+    let (backfiller, server) =
+        SpeedtestAvgBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -293,13 +283,8 @@ async fn backfill_filters_invalid_speedtest_avgs(pool: PgPool) -> anyhow::Result
     .await?;
 
     let opts = test_backfill_options("test-avg-backfill-filter", start_time, end_time);
-    let (backfiller, server) = SpeedtestAvgBackfiller::create_batched(
-        pool,
-        awsl.bucket_client(),
-        Some(writer),
-        Some(opts),
-    )
-    .await?;
+    let (backfiller, server) =
+        SpeedtestAvgBackfiller::create_batched(pool, awsl.bucket_client(), writer, opts).await?;
 
     tokio::time::timeout(
         TEST_TIMEOUT,
