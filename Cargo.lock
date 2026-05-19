@@ -11754,6 +11754,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "593eddbc8a11f3e099e942c8c065fe376b9d1776741430888f2796682e08ab43"
 
 [[package]]
+name = "trino-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "trino-rust-client",
+]
+
+[[package]]
 name = "trino-rust-client"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

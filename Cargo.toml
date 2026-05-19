@@ -24,6 +24,7 @@ members = [
   "task_manager",
   "hex_assignments",
   "tls_init",
+  "trino_client",
 ]
 resolver = "2"
 
