@@ -11759,10 +11759,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "humantime-serde",
+ "notify",
  "serde",
  "serde_json",
+ "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
+ "triggered",
  "trino-rust-client",
 ]
 
