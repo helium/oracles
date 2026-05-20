@@ -120,7 +120,7 @@ async fn backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Result<()>
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -202,7 +202,7 @@ async fn backfill_stops_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -289,7 +289,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -321,7 +321,7 @@ async fn backfill_resumes_after_interruption(pool: PgPool) -> anyhow::Result<()>
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -387,7 +387,7 @@ async fn backfill_filters_invalid_sessions(pool: PgPool) -> anyhow::Result<()> {
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -463,7 +463,7 @@ async fn burned_backfill_writes_sessions_to_iceberg(pool: PgPool) -> anyhow::Res
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )
@@ -523,7 +523,7 @@ async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
         TaskManager::builder()
             .add_task(writer_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build()
             .start(),
     )

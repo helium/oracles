@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use chrono::Utc;
 use file_store::BucketClient;
 use file_store::{
@@ -16,7 +18,7 @@ use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
-use task_manager::{ManagedTask, TaskManager};
+use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
@@ -53,9 +55,22 @@ pub struct BanIngestor {
     iceberg_writer: Option<iceberg::BanWriter>,
 }
 
-impl ManagedTask for BanIngestor {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for BanIngestor {
+    type Item = FileInfoStream<BanReport>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.report_rx.recv().await
+    }
+
+    async fn handle(&mut self, file_info_stream: Self::Item) -> anyhow::Result<()> {
+        self.process_file(file_info_stream).await
+    }
+
+    async fn on_receiver_closed(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        Err(anyhow::anyhow!(
+            "hotspot ban FileInfoPoller sender was dropped unexpectedly"
+        ))
     }
 }
 
@@ -96,7 +111,7 @@ impl BanIngestor {
         Ok(TaskManager::builder()
             .add_task(verified_sink_server)
             .add_task(ingest_server)
-            .add_task(ingestor)
+            .add_task(task_manager::channel_consumer(ingestor))
             .build())
     }
 
@@ -114,27 +129,6 @@ impl BanIngestor {
             verified_sink,
             iceberg_writer,
         }
-    }
-
-    async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting ban ingestor");
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => break,
-                msg = self.report_rx.recv() => {
-                    let Some(file_info_stream) = msg else {
-                        anyhow::bail!("hotspot ban FileInfoPoller sender was dropped unexpectedly");
-                    };
-                    self.process_file(file_info_stream).await?;
-                }
-            }
-        }
-
-        tracing::info!("stopping ban ingestor");
-
-        Ok(())
     }
 
     async fn process_file(

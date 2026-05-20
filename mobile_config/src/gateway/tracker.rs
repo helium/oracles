@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
-use task_manager::ManagedTask;
+use task_manager::Periodic;
 
 const EXECUTE_DURATION_METRIC: &str =
     concat!(env!("CARGO_PKG_NAME"), "-", "tracker-execute-duration");
@@ -17,9 +17,18 @@ pub struct Tracker {
     interval: Duration,
 }
 
-impl ManagedTask for Tracker {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl Periodic for Tracker {
+    type Error = anyhow::Error;
+
+    fn interval(&self) -> Duration {
+        self.interval
+    }
+
+    async fn tick(&mut self) -> anyhow::Result<()> {
+        if let Err(err) = execute(&self.pool, &self.metadata).await {
+            tracing::error!(?err, "error in tracking changes to mobile radios");
+        }
+        Ok(())
     }
 }
 
@@ -30,27 +39,6 @@ impl Tracker {
             metadata,
             interval,
         }
-    }
-
-    async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting with interval: {:?}", self.interval);
-        let mut interval = tokio::time::interval(self.interval);
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => break,
-                _ = interval.tick() => {
-                    if let Err(err) = execute(&self.pool, &self.metadata).await {
-                        tracing::error!(?err, "error in tracking changes to mobile radios");
-                    }
-                }
-            }
-        }
-
-        tracing::info!("stopping");
-
-        Ok(())
     }
 }
 

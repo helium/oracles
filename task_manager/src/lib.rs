@@ -21,6 +21,8 @@
 //!     .await?;
 //! ```
 
+mod channel_consumer;
+mod periodic;
 mod select_all;
 
 use std::pin::pin;
@@ -28,6 +30,9 @@ use std::pin::pin;
 use crate::select_all::select_all;
 use futures::{future::BoxFuture, Future, FutureExt, StreamExt, TryFutureExt};
 use tokio::signal;
+
+pub use crate::channel_consumer::{channel_consumer, ChannelConsumer};
+pub use crate::periodic::{periodic, Periodic};
 
 /// A boxed error type for task errors from user code.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;

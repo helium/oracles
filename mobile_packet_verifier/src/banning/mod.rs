@@ -55,8 +55,8 @@ pub async fn create_managed_task(
 
     Ok(TaskManager::builder()
         .add_task(ban_report_server)
-        .add_task(ingestor)
-        .add_task(purger)
+        .add_task(task_manager::channel_consumer(ingestor))
+        .add_task(task_manager::periodic(purger))
         .build())
 }
 

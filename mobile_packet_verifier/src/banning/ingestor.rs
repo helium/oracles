@@ -1,8 +1,10 @@
+use std::ops::ControlFlow;
+
 use file_store::file_info_poller::FileInfoStream;
 use file_store_oracles::mobile_ban::VerifiedBanReport;
 use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
-use task_manager::ManagedTask;
+use task_manager::ChannelConsumer;
 use tokio::sync::mpsc::Receiver;
 
 use super::db;
@@ -12,36 +14,28 @@ pub struct BanIngestor {
     report_rx: Receiver<FileInfoStream<VerifiedBanReport>>,
 }
 
-impl ManagedTask for BanIngestor {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for BanIngestor {
+    type Item = FileInfoStream<VerifiedBanReport>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.report_rx.recv().await
+    }
+
+    async fn handle(&mut self, file_info_stream: Self::Item) -> anyhow::Result<()> {
+        self.handle_ban_report_file(file_info_stream).await
+    }
+
+    async fn on_receiver_closed(&mut self) -> anyhow::Result<ControlFlow<()>> {
+        Err(anyhow::anyhow!(
+            "hotspot ban FileInfoPoller sender was dropped unexpectedly"
+        ))
     }
 }
 
 impl BanIngestor {
     pub fn new(pool: PgPool, report_rx: Receiver<FileInfoStream<VerifiedBanReport>>) -> Self {
         Self { pool, report_rx }
-    }
-
-    async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting ban ingestor");
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => break,
-                file = self.report_rx.recv() => {
-                    let Some(file_info_stream) = file else {
-                        anyhow::bail!("hotspot ban FileInfoPoller sender was dropped unexpectedly");
-                    };
-                    self.handle_ban_report_file(file_info_stream).await?;
-                }
-
-            }
-        }
-
-        tracing::info!("stopping ban ingestor");
-        Ok(())
     }
 
     async fn handle_ban_report_file(

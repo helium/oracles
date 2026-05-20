@@ -81,11 +81,11 @@ impl Server {
 
         TaskManager::builder()
             .add_task(grpc_server)
-            .add_task(Tracker::new(
+            .add_task(task_manager::periodic(Tracker::new(
                 pool.clone(),
                 metadata_pool.clone(),
                 settings.gateway_tracker_interval,
-            ))
+            )))
             .build()
             .start()
             .await?;

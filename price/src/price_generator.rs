@@ -5,8 +5,8 @@ use futures::TryFutureExt;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
-use task_manager::ManagedTask;
-use tokio::{fs, time};
+use task_manager::Periodic;
+use tokio::fs;
 
 const LATEST_PRICE_FILE: &str = "hnt.latest";
 const TOKEN: &str = "hnt";
@@ -37,9 +37,30 @@ pub struct PriceGenerator {
     sinks: Vec<Box<dyn PriceSink>>,
 }
 
-impl ManagedTask for PriceGenerator {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl Periodic for PriceGenerator {
+    type Error = anyhow::Error;
+
+    fn interval(&self) -> Duration {
+        self.interval_duration
+    }
+
+    async fn on_start(&mut self) -> Result<()> {
+        tracing::info!(token = TOKEN, "starting price generator");
+        self.last_price_opt = self.read_price_file().await;
+        Ok(())
+    }
+
+    async fn tick(&mut self) -> Result<()> {
+        match self.default_price {
+            Some(price) => {
+                let price = Price::new(Utc::now(), price);
+                self.write_price_to_sink(&price).await?;
+            }
+            None => {
+                self.retrieve_and_update_price().await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -65,34 +86,6 @@ impl PriceGenerator {
             latest_price_file: settings.cache.join(LATEST_PRICE_FILE),
             sinks,
         })
-    }
-
-    pub async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!(token = TOKEN, "starting price generator");
-
-        let mut trigger = time::interval(self.interval_duration);
-        self.last_price_opt = self.read_price_file().await;
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => break,
-                _ = trigger.tick() => {
-                    match self.default_price {
-                        Some(price) => {
-                            let price = Price::new(Utc::now(), price);
-                            self.write_price_to_sink(&price).await?;
-                        }
-                        None => {
-                            self.retrieve_and_update_price().await?;
-                        }
-                    }
-                }
-            }
-        }
-
-        tracing::info!(token = TOKEN, "stopping price generator");
-        Ok(())
     }
 
     async fn write_price_to_sink(&self, price: &Price) -> Result<()> {

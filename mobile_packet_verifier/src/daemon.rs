@@ -351,7 +351,7 @@ impl Cmd {
             .add_task(verified_sessions_server)
             .add_task(reports_server)
             .add_task(banning)
-            .add_task(event_id_purger)
+            .add_task(task_manager::periodic(event_id_purger))
             .add_task(daemon)
             .build()
             .start()

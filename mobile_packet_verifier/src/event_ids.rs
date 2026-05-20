@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Postgres, Transaction};
 use std::time::Duration;
-use task_manager::ManagedTask;
+use task_manager::Periodic;
 
 use crate::settings::Settings;
 
@@ -25,9 +25,15 @@ pub struct EventIdPurger {
     max_age: Duration,
 }
 
-impl ManagedTask for EventIdPurger {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl Periodic for EventIdPurger {
+    type Error = anyhow::Error;
+
+    fn interval(&self) -> Duration {
+        self.interval
+    }
+
+    async fn tick(&mut self) -> anyhow::Result<()> {
+        purge(&self.conn, self.max_age).await
     }
 }
 
@@ -37,21 +43,6 @@ impl EventIdPurger {
             conn,
             interval: settings.purger_interval,
             max_age: settings.purger_max_age,
-        }
-    }
-
-    pub async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let mut timer = tokio::time::interval(self.interval);
-
-        loop {
-            tokio::select! {
-                _ = &mut shutdown => {
-                    return Ok(())
-                }
-                _ = timer.tick() => {
-                    purge(&self.conn, self.max_age).await?;
-                }
-            }
         }
     }
 }

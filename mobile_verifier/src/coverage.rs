@@ -30,7 +30,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use task_manager::{ManagedTask, TaskManager};
+use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use uuid::Uuid;
 
@@ -112,7 +112,7 @@ impl CoverageDaemon {
         Ok(TaskManager::builder()
             .add_task(valid_coverage_objs_server)
             .add_task(coverage_objs_server)
-            .add_task(coverage_daemon)
+            .add_task(task_manager::channel_consumer(coverage_daemon))
             .build())
     }
 
@@ -130,25 +130,6 @@ impl CoverageDaemon {
             coverage_obj_sink,
             new_coverage_object_notifier,
         }
-    }
-
-    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        loop {
-            tokio::select! {
-                _ = shutdown.clone() => {
-                    tracing::info!("CoverageDaemon shutting down");
-                    break;
-                }
-                Some(file) = self.coverage_objs.recv() => {
-                    let start = Instant::now();
-                    self.process_file(file).await?;
-                    metrics::histogram!("coverage_object_processing_time")
-                        .record(start.elapsed());
-                }
-            }
-        }
-
-        Ok(())
     }
 
     async fn process_file(
@@ -182,9 +163,19 @@ impl CoverageDaemon {
     }
 }
 
-impl ManagedTask for CoverageDaemon {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for CoverageDaemon {
+    type Item = FileInfoStream<CoverageObjectIngestReport>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.coverage_objs.recv().await
+    }
+
+    async fn handle(&mut self, file: Self::Item) -> anyhow::Result<()> {
+        let start = Instant::now();
+        self.process_file(file).await?;
+        metrics::histogram!("coverage_object_processing_time").record(start.elapsed());
+        Ok(())
     }
 }
 

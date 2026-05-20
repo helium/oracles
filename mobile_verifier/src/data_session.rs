@@ -1,14 +1,11 @@
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
-use futures::{
-    stream::{Stream, StreamExt, TryStreamExt},
-    TryFutureExt,
-};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
-use task_manager::{ManagedTask, TaskManager};
+use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::Settings;
@@ -45,7 +42,7 @@ impl DataSessionIngestor {
 
         Ok(TaskManager::builder()
             .add_task(data_session_ingest_server)
-            .add_task(data_session_ingestor)
+            .add_task(task_manager::channel_consumer(data_session_ingestor))
             .build())
     }
 
@@ -54,32 +51,6 @@ impl DataSessionIngestor {
         receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
     ) -> Self {
         Self { pool, receiver }
-    }
-
-    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting DataSessionIngestor");
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("DataSessionIngestor shutting down");
-                        break;
-                    }
-                    Some(file) = self.receiver.recv() => {
-                        let start = Instant::now();
-                        self.process_file(file).await?;
-                        metrics::histogram!("valid_data_transfer_session_processing_time")
-                            .record(start.elapsed());
-                    }
-                }
-            }
-
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
     }
 
     async fn process_file(
@@ -110,9 +81,19 @@ impl DataSessionIngestor {
     }
 }
 
-impl ManagedTask for DataSessionIngestor {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for DataSessionIngestor {
+    type Item = FileInfoStream<ValidDataTransferSession>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.receiver.recv().await
+    }
+
+    async fn handle(&mut self, file: Self::Item) -> anyhow::Result<()> {
+        let start = Instant::now();
+        self.process_file(file).await?;
+        metrics::histogram!("valid_data_transfer_session_processing_time").record(start.elapsed());
+        Ok(())
     }
 }
 

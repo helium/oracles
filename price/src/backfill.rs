@@ -10,7 +10,8 @@ use futures::StreamExt;
 use helium_iceberg::{BatchedWriter, BatchedWriterConfig};
 use helium_proto::PriceReportV1;
 use sqlx::{PgPool, Pool, Postgres};
-use task_manager::{ManagedTask, TaskManager};
+use std::ops::ControlFlow;
+use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, clap::Args)]
@@ -156,37 +157,11 @@ impl PriceReportBackfiller {
         Ok(TaskManager::builder()
             .add_task(batched_task)
             .add_task(server)
-            .add_task(backfiller)
+            .add_task(task_manager::channel_consumer(backfiller))
             .build())
     }
 
-    async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!("price backfiller starting");
-        loop {
-            if self.done {
-                tracing::info!("price backfiller complete");
-                return Ok(());
-            }
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => {
-                    tracing::info!("price backfiller shutting down");
-                    return Ok(());
-                }
-                file = self.reports.recv() => {
-                    self.handle(file).await?;
-                }
-            }
-        }
-    }
-
-    async fn handle(&mut self, file: Option<FileInfoStream<PriceReportV1>>) -> Result<()> {
-        let Some(file_info_stream) = file else {
-            tracing::info!("price backfiller completed (channel closed)");
-            self.done = true;
-            return Ok(());
-        };
-
+    async fn process(&mut self, file_info_stream: FileInfoStream<PriceReportV1>) -> Result<()> {
         let file_info = file_info_stream.file_info.clone();
         tracing::info!(
             file = %file_info,
@@ -243,9 +218,32 @@ impl PriceReportBackfiller {
     }
 }
 
-impl ManagedTask for PriceReportBackfiller {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(self.run(shutdown))
+impl ChannelConsumer for PriceReportBackfiller {
+    type Item = FileInfoStream<PriceReportV1>;
+    type Error = anyhow::Error;
+
+    async fn recv(&mut self) -> Option<Self::Item> {
+        self.reports.recv().await
+    }
+
+    async fn on_start(&mut self) -> Result<ControlFlow<()>> {
+        tracing::info!("price backfiller starting");
+        if self.done {
+            tracing::info!("price backfiller complete");
+            Ok(ControlFlow::Break(()))
+        } else {
+            Ok(ControlFlow::Continue(()))
+        }
+    }
+
+    async fn handle(&mut self, file_info_stream: Self::Item) -> Result<()> {
+        self.process(file_info_stream).await
+    }
+
+    async fn on_receiver_closed(&mut self) -> Result<ControlFlow<()>> {
+        tracing::info!("price backfiller completed (channel closed)");
+        self.done = true;
+        Ok(ControlFlow::Break(()))
     }
 }
 
