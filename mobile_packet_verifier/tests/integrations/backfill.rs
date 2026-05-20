@@ -550,10 +550,9 @@ async fn burned_backfill_uses_file_timestamp_when_burn_timestamp_is_epoch(
 
     let files = harness
         .trino()
-        .get_all::<FileRow>(query)
+        .get_all_raw::<FileRow>(query)
         .await
-        .context("get all")?
-        .into_vec();
+        .context("get all")?;
 
     assert_eq!(files.len(), 1, "expected 1 file");
 

@@ -3808,6 +3808,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
  "uuid",
 ]
@@ -5381,6 +5382,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
 ]
 
@@ -5446,6 +5448,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
  "uuid",
 ]

@@ -50,14 +50,14 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
 }
 
 pub async fn get_all(
-    trino: &trino_rust_client::Client,
+    trino: &trino_client::Client,
 ) -> anyhow::Result<Vec<IcebergDataTransferSession>> {
     let all = match trino
-        .get_all(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
+        .get_all_raw(format!("SELECT * from {NAMESPACE}.{TABLE_NAME}"))
         .await
     {
-        Ok(all) => all.into_vec(),
-        Err(trino_rust_client::error::Error::EmptyData) => vec![],
+        Ok(all) => all,
+        Err(trino_client::Error::EmptyData) => vec![],
         Err(err) => return Err(err.into()),
     };
     Ok(all)

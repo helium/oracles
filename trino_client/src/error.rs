@@ -10,7 +10,19 @@ pub enum Error {
     InvalidParam(String),
 
     #[error(transparent)]
-    Client(#[from] trino_rust_client::error::Error),
+    Client(trino_rust_client::error::Error),
+
+    #[error("empty data")]
+    EmptyData,
+}
+
+impl From<trino_rust_client::error::Error> for Error {
+    fn from(err: trino_rust_client::error::Error) -> Self {
+        match err {
+            trino_rust_client::error::Error::EmptyData => Error::EmptyData,
+            other => Error::Client(other),
+        }
+    }
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;

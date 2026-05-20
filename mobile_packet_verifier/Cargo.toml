@@ -47,7 +47,8 @@ task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
 
 helium-iceberg = { path = "../helium_iceberg", features = ["test-harness"] }
-trino-rust-client = { version = "0.9" }
+trino-client = { path = "../trino_client" }
+trino-rust-client = "0.9"
 
 [dev-dependencies]
 reqwest = { workspace = true }
