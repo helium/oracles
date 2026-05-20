@@ -64,11 +64,7 @@ impl ClientBuilder {
         self
     }
 
-    pub fn jwt_file_auth(
-        mut self,
-        path: impl Into<PathBuf>,
-        refresh_interval: Duration,
-    ) -> Self {
+    pub fn jwt_file_auth(mut self, path: impl Into<PathBuf>, refresh_interval: Duration) -> Self {
         self.auth = Some(AuthSettings::JwtFile {
             path: path.into(),
             refresh_interval,

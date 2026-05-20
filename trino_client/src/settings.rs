@@ -37,10 +37,7 @@ pub enum AuthSettings {
     },
     JwtFile {
         path: PathBuf,
-        #[serde(
-            with = "humantime_serde",
-            default = "default_jwt_refresh_interval"
-        )]
+        #[serde(with = "humantime_serde", default = "default_jwt_refresh_interval")]
         refresh_interval: Duration,
     },
 }
@@ -183,7 +180,10 @@ mod tests {
         }))
         .unwrap();
         match s.auth.unwrap() {
-            AuthSettings::JwtFile { path, refresh_interval } => {
+            AuthSettings::JwtFile {
+                path,
+                refresh_interval,
+            } => {
                 assert_eq!(path, PathBuf::from("/var/run/trino.jwt"));
                 assert_eq!(refresh_interval, Duration::from_secs(60));
             }
@@ -206,7 +206,9 @@ mod tests {
         }))
         .unwrap();
         match s.auth.unwrap() {
-            AuthSettings::JwtFile { refresh_interval, .. } => {
+            AuthSettings::JwtFile {
+                refresh_interval, ..
+            } => {
                 assert_eq!(refresh_interval, Duration::from_secs(30));
             }
             _ => panic!("expected jwt_file auth"),
@@ -257,7 +259,10 @@ mod tests {
             path: f.path().to_path_buf(),
             refresh_interval: Duration::from_secs(60),
         }));
-        assert_eq!(s.resolve_jwt_token().unwrap(), Some("my-secret-token".into()));
+        assert_eq!(
+            s.resolve_jwt_token().unwrap(),
+            Some("my-secret-token".into())
+        );
     }
 
     #[test]
@@ -267,7 +272,10 @@ mod tests {
             path: f.path().to_path_buf(),
             refresh_interval: Duration::from_secs(60),
         }));
-        assert_eq!(s.resolve_jwt_token().unwrap(), Some("my-secret-token".into()));
+        assert_eq!(
+            s.resolve_jwt_token().unwrap(),
+            Some("my-secret-token".into())
+        );
     }
 
     #[test]

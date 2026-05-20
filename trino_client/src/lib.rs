@@ -134,10 +134,7 @@ impl Client {
 
 #[cfg(feature = "task-manager")]
 impl task_manager::ManagedTask for Client {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(async move { self.watch_jwt(shutdown)?.await })
     }
 }

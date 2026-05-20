@@ -117,7 +117,9 @@ mod tests {
             path: PathBuf::from("/nonexistent/path/to/token.jwt"),
             refresh_interval: Duration::from_millis(50),
         }));
-        let err = Client::from_settings(&settings).err().expect("expected error");
+        let err = Client::from_settings(&settings)
+            .err()
+            .expect("expected error");
         assert!(matches!(err, Error::Io(_)));
     }
 
