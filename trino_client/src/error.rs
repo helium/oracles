@@ -15,8 +15,8 @@ pub enum Error {
     #[error("notify error: {0}")]
     Watcher(#[from] notify::Error),
 
-    #[error("watch_jwt requires AuthSettings::JwtFile")]
-    JwtWatchUnsupported,
+    #[error("no tokio runtime available to spawn jwt watcher")]
+    NoTokioRuntime,
 
     #[error("watch channel send: {0}")]
     WatchSend(String),

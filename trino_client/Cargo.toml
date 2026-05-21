@@ -10,16 +10,10 @@ chrono = { workspace = true }
 humantime-serde = { workspace = true }
 notify = { version = "6", default-features = false }
 serde = { workspace = true }
-task-manager = { path = "../task_manager", optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-triggered = { workspace = true }
 trino-rust-client = "0.9"
-
-[features]
-default = []
-task-manager = ["dep:task-manager"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 notify = { version = "6", default-features = false, features = [

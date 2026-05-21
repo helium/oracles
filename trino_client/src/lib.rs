@@ -9,13 +9,13 @@ mod statement;
 
 pub use builder::ClientBuilder;
 pub use error::{Error, Result};
-pub use jwt_watcher::JwtWatcher;
 pub use settings::{AuthSettings, Settings};
 pub use statement::{Param, Statement, TypedStatement};
 
-use std::future::Future;
+use jwt_watcher::JwtWatcher;
 use std::sync::Arc;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use trino_rust_client::auth::Auth;
 use trino_rust_client::ClientBuilder as UpstreamClientBuilder;
 
@@ -41,64 +41,86 @@ impl<T: SqlQuery + ?Sized> SqlQuery for &T {
 
 #[derive(Clone)]
 pub struct Client {
+    inner: Arc<ClientInner>,
+}
+
+struct ClientInner {
     inner_rx: watch::Receiver<InnerClient>,
-    updater: watch::Sender<InnerClient>,
     settings: Settings,
+    // Aborted on Drop. `None` for non-`JwtFile` auth.
+    watcher_task: Option<JoinHandle<()>>,
+}
+
+impl Drop for ClientInner {
+    fn drop(&mut self) {
+        if let Some(handle) = self.watcher_task.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl Client {
+    /// Build a client from settings. If `settings.auth` is
+    /// [`AuthSettings::JwtFile`], a background task is spawned on the current
+    /// tokio runtime to watch the token file and swap the inner Trino client
+    /// each time the file changes. The task is automatically aborted when the
+    /// last clone of the returned `Client` is dropped.
+    ///
+    /// Returns [`Error::NoTokioRuntime`] when called outside any tokio runtime
+    /// with `JwtFile` auth.
     pub fn from_settings(settings: &Settings) -> Result<Self> {
         let token = settings.resolve_jwt_token()?;
-        let inner = build_inner_client(settings, token.as_deref())?;
-        let (updater, inner_rx) = watch::channel(inner);
-        Ok(Self {
-            inner_rx,
-            updater,
-            settings: settings.clone(),
-        })
-    }
+        let initial = build_inner_client(settings, token.as_deref())?;
+        let (updater, inner_rx) = watch::channel(initial);
 
-    pub fn from_inner(inner: trino_rust_client::Client, settings: Settings) -> Self {
-        let (updater, inner_rx) = watch::channel(Arc::new(inner));
-        Self {
-            inner_rx,
-            updater,
-            settings,
-        }
+        let watcher_task = match &settings.auth {
+            Some(AuthSettings::JwtFile {
+                path,
+                refresh_interval,
+            }) => {
+                // Refuse to silently no-op outside a runtime.
+                let rt =
+                    tokio::runtime::Handle::try_current().map_err(|_| Error::NoTokioRuntime)?;
+
+                let watcher = JwtWatcher::new(settings.clone(), updater)?;
+                let poll_watcher = watcher.start(path, *refresh_interval)?;
+
+                // The spawned task's only job is to keep `poll_watcher` alive.
+                // Aborting it via the JoinHandle on Drop releases the watcher,
+                // which stops its internal polling thread.
+                Some(rt.spawn(async move {
+                    let _watcher = poll_watcher;
+                    std::future::pending::<()>().await;
+                }))
+            }
+            _ => {
+                // No watcher: keep `updater` alive on `Client` only via
+                // `inner_rx` — but `watch::Receiver` doesn't hold the sender
+                // alive. We don't need to refresh the inner client, so just
+                // drop the sender. The receiver still holds the last value.
+                drop(updater);
+                None
+            }
+        };
+
+        Ok(Self {
+            inner: Arc::new(ClientInner {
+                inner_rx,
+                settings: settings.clone(),
+                watcher_task,
+            }),
+        })
     }
 
     /// Returns the current inner client. JWT refreshes swap the value behind
     /// this `Arc`, so callers should call `inner()` per request rather than
     /// caching the returned `Arc` long-term.
     pub fn inner(&self) -> InnerClient {
-        self.inner_rx.borrow().clone()
+        self.inner.inner_rx.borrow().clone()
     }
 
     pub fn settings(&self) -> &Settings {
-        &self.settings
-    }
-
-    /// Spawns a JWT token-file watcher and returns a future that runs until
-    /// `shutdown` is triggered. The watcher rebuilds the inner Trino client
-    /// each time the token file changes, so callers continue to use a single
-    /// `Client` across token rotations.
-    ///
-    /// Returns [`Error::JwtWatchUnsupported`] when `auth` is not
-    /// [`AuthSettings::JwtFile`].
-    pub fn watch_jwt(
-        &self,
-        shutdown: triggered::Listener,
-    ) -> Result<impl Future<Output = Result<()>>> {
-        let (path, refresh_interval) = match &self.settings.auth {
-            Some(AuthSettings::JwtFile {
-                path,
-                refresh_interval,
-            }) => (path.clone(), *refresh_interval),
-            _ => return Err(Error::JwtWatchUnsupported),
-        };
-
-        let watcher = JwtWatcher::new(self.settings.clone(), self.updater.clone())?;
-        watcher.make_watcher(&path, refresh_interval, shutdown)
+        &self.inner.settings
     }
 
     pub async fn execute<S: SqlStatement>(&self, sql_statement: S) -> Result<()> {
@@ -129,13 +151,6 @@ impl Client {
             Err(trino_rust_client::error::Error::EmptyData) => Ok(Vec::new()),
             Err(e) => Err(e.into()),
         }
-    }
-}
-
-#[cfg(feature = "task-manager")]
-impl task_manager::ManagedTask for Client {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
-        task_manager::spawn(async move { self.watch_jwt(shutdown)?.await })
     }
 }
 
