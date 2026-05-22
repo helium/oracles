@@ -13,9 +13,9 @@ pub use settings::{AuthSettings, Settings};
 pub use statement::{Param, Statement, TypedStatement};
 
 use jwt_watcher::JwtWatcher;
+use notify::PollWatcher;
 use std::sync::Arc;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 use trino_rust_client::auth::Auth;
 use trino_rust_client::ClientBuilder as UpstreamClientBuilder;
 
@@ -45,59 +45,36 @@ pub struct Client {
 }
 
 struct ClientInner {
+    // Declared first so it drops first: dropping the `PollWatcher` signals its
+    // internal polling thread to stop *before* the watch::Receiver disappears,
+    // minimizing the race where a tick observes a closed channel.
+    _watcher: Option<PollWatcher>,
     inner_rx: watch::Receiver<InnerClient>,
     settings: Settings,
-    // Aborted on Drop. `None` for non-`JwtFile` auth.
-    watcher_task: Option<JoinHandle<()>>,
-}
-
-impl Drop for ClientInner {
-    fn drop(&mut self) {
-        if let Some(handle) = self.watcher_task.take() {
-            handle.abort();
-        }
-    }
 }
 
 impl Client {
     /// Build a client from settings. If `settings.auth` is
-    /// [`AuthSettings::JwtFile`], a background task is spawned on the current
-    /// tokio runtime to watch the token file and swap the inner Trino client
-    /// each time the file changes. The task is automatically aborted when the
-    /// last clone of the returned `Client` is dropped.
+    /// [`AuthSettings::JwtFile`], a background `notify::PollWatcher` is started
+    /// that watches the token file and swaps the inner Trino client each time
+    /// the file changes. The watcher's polling thread stops automatically when
+    /// the last clone of the returned `Client` is dropped.
     ///
-    /// Returns [`Error::NoTokioRuntime`] when called outside any tokio runtime
-    /// with `JwtFile` auth.
+    /// This is a fully synchronous constructor — it does not require a tokio
+    /// runtime to be active.
     pub fn from_settings(settings: &Settings) -> Result<Self> {
         let token = settings.resolve_jwt_token()?;
         let initial = build_inner_client(settings, token.as_deref())?;
         let (updater, inner_rx) = watch::channel(initial);
 
-        let watcher_task = match &settings.auth {
+        let watcher = match &settings.auth {
             Some(AuthSettings::JwtFile {
                 path,
                 refresh_interval,
-            }) => {
-                // Refuse to silently no-op outside a runtime.
-                let rt =
-                    tokio::runtime::Handle::try_current().map_err(|_| Error::NoTokioRuntime)?;
-
-                let watcher = JwtWatcher::new(settings.clone(), updater)?;
-                let poll_watcher = watcher.start(path, *refresh_interval)?;
-
-                // The spawned task's only job is to keep `poll_watcher` alive.
-                // Aborting it via the JoinHandle on Drop releases the watcher,
-                // which stops its internal polling thread.
-                Some(rt.spawn(async move {
-                    let _watcher = poll_watcher;
-                    std::future::pending::<()>().await;
-                }))
-            }
+            }) => Some(JwtWatcher::new(settings.clone(), updater)?.start(path, *refresh_interval)?),
             _ => {
-                // No watcher: keep `updater` alive on `Client` only via
-                // `inner_rx` — but `watch::Receiver` doesn't hold the sender
-                // alive. We don't need to refresh the inner client, so just
-                // drop the sender. The receiver still holds the last value.
+                // No watcher: the receiver still holds the last value even
+                // after the sender is dropped.
                 drop(updater);
                 None
             }
@@ -105,9 +82,9 @@ impl Client {
 
         Ok(Self {
             inner: Arc::new(ClientInner {
+                _watcher: watcher,
                 inner_rx,
                 settings: settings.clone(),
-                watcher_task,
             }),
         })
     }

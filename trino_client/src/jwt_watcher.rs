@@ -70,8 +70,14 @@ impl notify::EventHandler for JwtWatcher {
             return;
         }
 
-        if let Err(err) = self.create_and_send_new_inner() {
-            tracing::error!(?err, "failed to refresh trino client");
+        match self.create_and_send_new_inner() {
+            Ok(()) => {}
+            Err(Error::WatchSend(_)) => {
+                // All receivers have been dropped — we're on the way down.
+                // Benign during shutdown; loud at `error!` would be noise.
+                tracing::debug!("jwt refresh skipped: no receivers");
+            }
+            Err(err) => tracing::error!(?err, "failed to refresh trino client"),
         }
     }
 }
@@ -113,23 +119,17 @@ mod tests {
     }
 
     #[test]
-    fn from_settings_errors_without_tokio_runtime() {
-        // Use a fresh thread that has no tokio runtime context. The current
-        // process's runtime (if any from another test) would not be visible
-        // here.
-        let handle = std::thread::spawn(|| {
-            let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join("token.jwt");
-            std::fs::write(&path, b"some-token").unwrap();
-            let settings = base_settings(Some(AuthSettings::JwtFile {
-                path,
-                refresh_interval: Duration::from_millis(50),
-            }));
-            Client::from_settings(&settings)
-        });
-        let result = handle.join().unwrap();
-        let err = result.err().expect("expected error");
-        assert!(matches!(err, Error::NoTokioRuntime), "got: {err:?}");
+    fn from_settings_works_without_tokio_runtime() {
+        // Constructor is fully synchronous: no runtime is required.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("token.jwt");
+        std::fs::write(&path, b"some-token").unwrap();
+        let settings = base_settings(Some(AuthSettings::JwtFile {
+            path,
+            refresh_interval: Duration::from_millis(50),
+        }));
+        let client = Client::from_settings(&settings).expect("constructor must not require tokio");
+        drop(client);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
