@@ -1,0 +1,61 @@
+# Settings file for `mobile-verifier compare-trino`.
+#
+# This is a *minimal* config that only carries what the diff CLI needs:
+#   - a Postgres URL for the mobile_verifier database
+#   - a Trino endpoint to query the corresponding Iceberg tables
+#
+# The full mobile_verifier daemon needs much more (buckets, signing keypair,
+# config client, …). Don't reuse this file for `mobile-verifier server`.
+#
+# Usage:
+#   cargo run -p mobile-verifier -- -c ./compare-trino-settings.toml \
+#       compare-trino --start 2026-05-20T00:00:00Z --end 2026-05-21T00:00:00Z all
+#
+# Any value can be overridden by env var, prefix `MV__`, double underscore as
+# the path separator. Examples:
+#   MV__DATABASE__URL=postgres://...
+#   MV__TRINO__AUTH__PASSWORD=... mobile-verifier -c ... compare-trino ...
+
+# Optional: tracing filter. Defaults to "mobile_verifier=info".
+# log = "mobile_verifier=debug,sqlx=warn"
+
+# ── Postgres (mobile_verifier database) ──────────────────────────────────────
+# This is the same `[database]` block used by the rest of mobile_verifier; if
+# you already have a working mobile_verifier settings.toml, copy that block
+# here verbatim.
+[database]
+url = "postgres://postgres:postgres@127.0.0.1:5432/mobile_verifier"
+max_connections = 10
+
+# Optional CA bundle for TLS to RDS, etc.
+# ca_path = "/etc/ssl/certs/rds-ca-bundle.pem"
+
+# ── Trino ────────────────────────────────────────────────────────────────────
+# The Trino coordinator that fronts the Iceberg catalog holding `poc.*` and
+# `rewards.*`. `catalog` should be the catalog name configured in Trino for
+# your Iceberg REST catalog (commonly "iceberg").
+[trino]
+host = "trino.example.com"
+port = 443
+user = "mobile-verifier-compare"
+secure = true
+catalog = "iceberg"
+# `schema` is optional — every query in this CLI is fully qualified (poc.*,
+# rewards.*), so the default schema doesn't actually matter.
+# schema = "default"
+
+# For local dev against a Trino with a self-signed cert:
+# insecure_skip_tls_verify = true
+
+# Pick exactly one auth block, or omit entirely for anonymous access.
+
+# --- Basic auth ---
+# [trino.auth]
+# type = "basic"
+# username = "alice"
+# password = "hunter2"
+
+# --- JWT bearer token ---
+# [trino.auth]
+# type = "jwt"
+# token = "eyJhbGciOi..."
