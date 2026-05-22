@@ -1,7 +1,7 @@
 use crate::diff::{DiffTable, FloatEq, DEFAULT_F64_EPSILON};
 use crate::CommonArgs;
-use mobile_verifier::data_session::sum_data_sessions_to_dc_by_payer;
 use anyhow::{Context, Result};
+use mobile_verifier::data_session::sum_data_sessions_to_dc_by_payer;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::collections::BTreeMap;

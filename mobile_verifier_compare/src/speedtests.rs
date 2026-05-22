@@ -1,9 +1,9 @@
 use crate::diff::{DiffTable, FloatEq, DEFAULT_F64_EPSILON};
 use crate::CommonArgs;
-use mobile_verifier::speedtests::{aggregate_epoch_speedtests, get_latest_speedtests_for_pubkey};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
+use mobile_verifier::speedtests::{aggregate_epoch_speedtests, get_latest_speedtests_for_pubkey};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::collections::BTreeMap;

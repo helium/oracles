@@ -1,8 +1,8 @@
 use crate::diff::{DiffTable, FloatEq, DEFAULT_F64_EPSILON};
 use crate::CommonArgs;
-use mobile_verifier::heartbeats::HeartbeatReward;
 use anyhow::{Context, Result};
 use futures::TryStreamExt;
+use mobile_verifier::heartbeats::HeartbeatReward;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};

@@ -153,15 +153,19 @@ async fn main() -> Result<()> {
     // Seed is config-free: it bootstraps the very databases the settings
     // file would otherwise point at. Everything else needs `-c <toml>`.
     if let Sub::Seed(cmd) = cli.sub {
-        custom_tracing::init("mobile_verifier_compare=info".to_string(), Default::default()).await?;
+        custom_tracing::init(
+            "mobile_verifier_compare=info".to_string(),
+            Default::default(),
+        )
+        .await?;
         return seed::run(cmd).await;
     }
 
     let settings = Settings::new(cli.config)?;
     custom_tracing::init(settings.log.clone(), Default::default()).await?;
 
-    let trino = trino_client::Client::from_settings(&settings.trino)
-        .context("building Trino client")?;
+    let trino =
+        trino_client::Client::from_settings(&settings.trino).context("building Trino client")?;
     let pg = settings
         .database
         .connect("mobile-verifier-compare")
