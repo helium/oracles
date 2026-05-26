@@ -12,6 +12,8 @@ pub use error::{Error, Result};
 pub use settings::{AuthSettings, Settings};
 pub use statement::{Param, Statement, TypedStatement};
 
+pub use jwt_watcher::JwtWatcherError;
+
 use jwt_watcher::JwtWatcher;
 use notify::PollWatcher;
 use std::sync::Arc;
@@ -19,7 +21,10 @@ use tokio::sync::watch;
 use trino_rust_client::auth::Auth;
 use trino_rust_client::ClientBuilder as UpstreamClientBuilder;
 
-pub type InnerClient = Arc<trino_rust_client::Client>;
+type TrinoClient = Arc<trino_rust_client::Client>;
+type TrinoClientSender = watch::Sender<TrinoClient>;
+type TrinoClientReceiver = watch::Receiver<TrinoClient>;
+type TrinoClientSendError = watch::error::SendError<TrinoClient>;
 
 pub trait SqlStatement {
     fn to_statement(&self) -> Statement;
@@ -49,8 +54,7 @@ struct ClientInner {
     // internal polling thread to stop *before* the watch::Receiver disappears,
     // minimizing the race where a tick observes a closed channel.
     _watcher: Option<PollWatcher>,
-    inner_rx: watch::Receiver<InnerClient>,
-    settings: Settings,
+    inner_rx: TrinoClientReceiver,
 }
 
 impl Client {
@@ -72,19 +76,13 @@ impl Client {
                 path,
                 refresh_interval,
             }) => Some(JwtWatcher::new(settings.clone(), updater)?.start(path, *refresh_interval)?),
-            _ => {
-                // No watcher: the receiver still holds the last value even
-                // after the sender is dropped.
-                drop(updater);
-                None
-            }
+            _ => None,
         };
 
         Ok(Self {
             inner: Arc::new(ClientInner {
                 _watcher: watcher,
                 inner_rx,
-                settings: settings.clone(),
             }),
         })
     }
@@ -92,12 +90,8 @@ impl Client {
     /// Returns the current inner client. JWT refreshes swap the value behind
     /// this `Arc`, so callers should call `inner()` per request rather than
     /// caching the returned `Arc` long-term.
-    pub fn inner(&self) -> InnerClient {
+    fn inner(&self) -> TrinoClient {
         self.inner.inner_rx.borrow().clone()
-    }
-
-    pub fn settings(&self) -> &Settings {
-        &self.inner.settings
     }
 
     pub async fn execute<S: SqlStatement>(&self, sql_statement: S) -> Result<()> {
@@ -134,7 +128,7 @@ impl Client {
 pub(crate) fn build_inner_client(
     settings: &Settings,
     jwt_override: Option<&str>,
-) -> Result<InnerClient> {
+) -> std::result::Result<TrinoClient, trino_rust_client::error::Error> {
     let mut builder = UpstreamClientBuilder::new(&settings.user, &settings.host)
         .port(settings.port)
         .secure(settings.secure);
@@ -163,8 +157,6 @@ pub(crate) fn build_inner_client(
         None => {}
     }
 
-    let inner = builder
-        .build()
-        .map_err(|e| Error::Build(format!("{e:?}")))?;
+    let inner = builder.build()?;
     Ok(Arc::new(inner))
 }

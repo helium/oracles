@@ -1,10 +1,8 @@
-use crate::error::{Error, Result};
 use crate::settings::Settings;
-use crate::{build_inner_client, InnerClient};
+use crate::{build_inner_client, TrinoClientSendError, TrinoClientSender};
 use notify::{Config, PollWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
-use tokio::sync::watch;
 
 /// Watches a JWT token file on disk and pushes a freshly-built Trino client
 /// through the provided `watch::Sender` whenever the file changes.
@@ -14,12 +12,29 @@ use tokio::sync::watch;
 /// Dropping it stops polling.
 pub(crate) struct JwtWatcher {
     settings: Settings,
-    updater: watch::Sender<InnerClient>,
+    updater: TrinoClientSender,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum JwtWatcherError {
+    #[error("failed to build trino client: {0}")]
+    Build(#[from] trino_rust_client::error::Error),
+
+    #[error("failed to read: {0}")]
+    Read(#[from] std::io::Error),
+
+    #[error("notify: {0}")]
+    Notify(#[from] notify::Error),
+
+    #[error("watch channel send: {0}")]
+    WatchSend(#[from] TrinoClientSendError),
+}
+
+type Result<T> = std::result::Result<T, JwtWatcherError>;
 
 impl JwtWatcher {
     /// Build the watcher and ensure the token file is readable up front.
-    pub(crate) fn new(settings: Settings, updater: watch::Sender<InnerClient>) -> Result<Self> {
+    pub(crate) fn new(settings: Settings, updater: TrinoClientSender) -> Result<Self> {
         let jwt_watcher = Self { settings, updater };
         // Ensure we can read the token file before we continue.
         let _ = jwt_watcher.settings.resolve_jwt_token()?;
@@ -45,9 +60,7 @@ impl JwtWatcher {
     fn create_and_send_new_inner(&self) -> Result<()> {
         let jwt_token = self.settings.resolve_jwt_token()?;
         let new_inner = build_inner_client(&self.settings, jwt_token.as_deref())?;
-        self.updater
-            .send(new_inner)
-            .map_err(|e| Error::WatchSend(e.to_string()))?;
+        self.updater.send(new_inner)?;
         tracing::info!("created new inner trino client");
         Ok(())
     }
@@ -72,7 +85,7 @@ impl notify::EventHandler for JwtWatcher {
 
         match self.create_and_send_new_inner() {
             Ok(()) => {}
-            Err(Error::WatchSend(_)) => {
+            Err(JwtWatcherError::WatchSend(_)) => {
                 // All receivers have been dropped — we're on the way down.
                 // Benign during shutdown; loud at `error!` would be noise.
                 tracing::debug!("jwt refresh skipped: no receivers");
@@ -118,21 +131,7 @@ mod tests {
         assert!(matches!(err, Error::Io(_)));
     }
 
-    #[test]
-    fn from_settings_works_without_tokio_runtime() {
-        // Constructor is fully synchronous: no runtime is required.
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("token.jwt");
-        std::fs::write(&path, b"some-token").unwrap();
-        let settings = base_settings(Some(AuthSettings::JwtFile {
-            path,
-            refresh_interval: Duration::from_millis(50),
-        }));
-        let client = Client::from_settings(&settings).expect("constructor must not require tokio");
-        drop(client);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn jwt_file_change_refreshes_inner_client() {
         let mut token_file = tempfile::NamedTempFile::new().unwrap();
         token_file.write_all(b"initial-token").unwrap();

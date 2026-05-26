@@ -1,4 +1,3 @@
-use crate::error::Result;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -53,7 +52,7 @@ impl Settings {
     /// - `JwtFile { path, .. }`: reads the file, trims whitespace, and returns
     ///   `None` if the resulting string is empty.
     /// - `Basic` or `None`: returns `None`.
-    pub fn resolve_jwt_token(&self) -> Result<Option<String>> {
+    pub fn resolve_jwt_token(&self) -> std::io::Result<Option<String>> {
         match &self.auth {
             Some(AuthSettings::Jwt { token }) => Ok(Some(token.clone())),
             Some(AuthSettings::JwtFile { path, .. }) => {
