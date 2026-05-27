@@ -1,6 +1,8 @@
 use crate::error::Result;
 use crate::settings::{AuthSettings, Settings};
 use crate::Client;
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct ClientBuilder {
     host: String,
@@ -58,6 +60,14 @@ impl ClientBuilder {
     pub fn jwt_auth(mut self, token: impl Into<String>) -> Self {
         self.auth = Some(AuthSettings::Jwt {
             token: token.into(),
+        });
+        self
+    }
+
+    pub fn jwt_file_auth(mut self, path: impl Into<PathBuf>, refresh_interval: Duration) -> Self {
+        self.auth = Some(AuthSettings::JwtFile {
+            path: path.into(),
+            refresh_interval,
         });
         self
     }
