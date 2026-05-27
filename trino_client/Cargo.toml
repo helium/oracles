@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 chrono = { workspace = true }
 humantime-serde = { workspace = true }
-notify = { version = "6", default-features = false }
+notify = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -16,9 +16,7 @@ tracing = { workspace = true }
 trino-rust-client = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-notify = { version = "6", default-features = false, features = [
-  "macos_fsevent",
-] }
+notify = { workspace = true, features = ["macos_fsevent"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }
