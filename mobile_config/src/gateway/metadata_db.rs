@@ -107,7 +107,9 @@ fn parse_wifi_deployment(row: &sqlx::postgres::PgRow, column: &str) -> (Option<u
     };
 
     match deployment_info {
-        Some(DeploymentInfo::WifiDeploymentInfo(wifi)) => (Some(wifi.antenna), Some(wifi.elevation)),
+        Some(DeploymentInfo::WifiDeploymentInfo(wifi)) => {
+            (Some(wifi.antenna), Some(wifi.elevation))
+        }
         _ => (None, None),
     }
 }
