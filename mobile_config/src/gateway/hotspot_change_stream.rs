@@ -6,7 +6,7 @@
 
 use crate::gateway::{
     db::{Gateway, GatewayType},
-    metadata_db::MobileHotspotInfo,
+    metadata_db,
     service::info::DeviceType,
 };
 use chrono::{DateTime, Utc};
@@ -157,7 +157,7 @@ impl HotspotChangeDaemon {
         };
 
         let (antenna, elevation) =
-            MobileHotspotInfo::fetch_antenna_and_elevation(&self.metadata, &change.entity_key)
+            metadata_db::fetch_antenna_and_elevation(&self.metadata, &change.entity_key)
                 .await
                 .unwrap_or_else(|err| {
                     tracing::warn!(

@@ -1,195 +1,113 @@
-use crate::gateway::{
-    db::{Gateway, GatewayType},
-    service::info::{DeploymentInfo, DeviceType},
-};
-use chrono::{DateTime, Utc};
-use futures::Stream;
+//! Single-purpose helpers against the on-chain metadata Postgres
+//! (`mobile_hotspot_infos`, `key_to_assets`).
+//!
+//! The chain_rewardable_entities S3 stream is the primary source of gateway
+//! updates. These helpers exist solely to recover the WiFi `(antenna,
+//! elevation)` pair, which is not carried by the proto and must be looked
+//! up from `mobile_hotspot_infos.deployment_info`.
+
+use crate::gateway::service::info::DeploymentInfo;
 use helium_crypto::PublicKeyBinary;
-use serde_json;
 use sqlx::{Pool, Postgres, Row};
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
-#[derive(Debug, Clone)]
-pub struct MobileHotspotInfo {
-    entity_key: PublicKeyBinary,
-    refreshed_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    location: Option<i64>,
-    // is_full_hotspot, is_active, and dc_onboarding_fee_paid are still SELECTed
-    // and deserialized for parity with the metadata DB schema, but no longer
-    // contribute to change detection — the chain_rewardable_entities stream
-    // does not carry them. Slated for removal in a follow-up.
-    #[allow(dead_code)]
-    is_full_hotspot: Option<bool>,
-    num_location_asserts: Option<i32>,
-    #[allow(dead_code)]
-    is_active: Option<bool>,
-    #[allow(dead_code)]
-    dc_onboarding_fee_paid: Option<i64>,
-    device_type: DeviceType,
-    deployment_info: Option<DeploymentInfo>,
-    owner: Option<String>,
+/// Single-row variant used by the hotspot change stream daemon — looks up
+/// `(antenna, elevation)` for one entity at change-event time.
+///
+/// Returns `(None, None)` when the metadata DB does not yet have a row for
+/// the entity, or when the row's `deployment_info` is missing/CBRS. The
+/// reconciliation [`crate::gateway::tracker::Tracker`] backfills any nulls
+/// left behind.
+pub async fn fetch_antenna_and_elevation(
+    pool: &Pool<Postgres>,
+    entity_key: &PublicKeyBinary,
+) -> sqlx::Result<(Option<u32>, Option<u32>)> {
+    let entity_key_bytes = entity_key_storage_form(entity_key)?;
+
+    let row = sqlx::query(
+        r#"
+            SELECT mhi.deployment_info::text AS deployment_info
+            FROM key_to_assets kta
+            INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
+            WHERE kta.entity_key = $1
+            ORDER BY mhi.refreshed_at DESC NULLS LAST
+            LIMIT 1
+        "#,
+    )
+    .bind(entity_key_bytes)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok((None, None));
+    };
+
+    Ok(parse_wifi_deployment(&row, "deployment_info"))
 }
 
-impl MobileHotspotInfo {
-    pub fn stream(pool: &Pool<Postgres>) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
-        sqlx::query_as::<_, Self>(
-            r#"
-                SELECT
-                    DISTINCT ON (kta.entity_key)
-                    kta.entity_key,
-                    mhi.refreshed_at,
-                    mhi.created_at,
-                    mhi.location::bigint,
-                    mhi.is_full_hotspot,
-                    mhi.num_location_asserts,
-                    mhi.is_active,
-                    mhi.dc_onboarding_fee_paid::bigint,
-                    mhi.device_type::text,
-                    mhi.deployment_info::text,
-                    ao.owner
-                FROM key_to_assets kta
-                INNER JOIN mobile_hotspot_infos mhi ON
-                    kta.asset = mhi.asset
-                LEFT JOIN asset_owners ao ON
-                    kta.asset = ao.asset
-                WHERE kta.entity_key IS NOT NULL
-                    AND mhi.refreshed_at IS NOT NULL
-                ORDER BY kta.entity_key, refreshed_at DESC
-            "#,
-        )
-        .fetch(pool)
+/// Batched variant used by the reconciliation tracker — fetches
+/// `(antenna, elevation)` for many entities in a single query.
+///
+/// Entities with no matching row in `key_to_assets` / `mobile_hotspot_infos`
+/// are simply absent from the returned map.
+pub async fn fetch_antenna_and_elevation_batch(
+    pool: &Pool<Postgres>,
+    entity_keys: &[PublicKeyBinary],
+) -> sqlx::Result<HashMap<PublicKeyBinary, (Option<u32>, Option<u32>)>> {
+    if entity_keys.is_empty() {
+        return Ok(HashMap::new());
     }
 
-    pub fn to_gateway(&self) -> anyhow::Result<Option<Gateway>> {
-        // We filter out CBRS devices as they are not supported in the Gateway table
-        if self.device_type == DeviceType::Cbrs {
-            return Ok(None);
-        }
+    let storage_keys: Vec<Vec<u8>> = entity_keys
+        .iter()
+        .map(entity_key_storage_form)
+        .collect::<sqlx::Result<_>>()?;
 
-        let location = self.location.map(|loc| loc as u64);
+    let rows = sqlx::query(
+        r#"
+            SELECT
+                DISTINCT ON (kta.entity_key)
+                kta.entity_key,
+                mhi.deployment_info::text AS deployment_info
+            FROM key_to_assets kta
+            INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
+            WHERE kta.entity_key = ANY($1)
+            ORDER BY kta.entity_key, mhi.refreshed_at DESC NULLS LAST
+        "#,
+    )
+    .bind(storage_keys)
+    .fetch_all(pool)
+    .await?;
 
-        let (antenna, elevation, azimuth) = match self.deployment_info {
-            Some(ref info) => match info {
-                DeploymentInfo::WifiDeploymentInfo(ref wifi) => {
-                    (Some(wifi.antenna), Some(wifi.elevation), Some(wifi.azimuth))
-                }
-                // Only here to satisfy the match, we return None above if DeviceType::Cbrs
-                DeploymentInfo::CbrsDeploymentInfo(_) => (None, None, None),
-            },
-            None => (None, None, None),
-        };
-
-        let refreshed_at = self.refreshed_at.unwrap_or_else(Utc::now);
-
-        Ok(Some(Gateway {
-            address: self.entity_key.clone(),
-            gateway_type: GatewayType::try_from(self.device_type)?,
-            created_at: self.created_at,
-            inserted_at: Utc::now(),
-            last_changed_at: refreshed_at,
-            hash: String::new(), // write-ignored; insert computes from row
-            antenna,
-            elevation,
-            azimuth,
-            location,
-            // Set to refreshed_at when hotspot has a location, None otherwise
-            location_changed_at: if location.is_some() {
-                Some(refreshed_at)
-            } else {
-                None
-            },
-            location_asserts: self.num_location_asserts.map(|n| n as u32),
-            owner: self.owner.clone(),
-            owner_changed_at: Some(refreshed_at),
-        }))
-    }
-
-    /// Fetch the WiFi `(antenna, elevation)` pair for an entity from
-    /// `mobile_hotspot_infos.deployment_info`. These two fields are not
-    /// carried by the `chain_rewardable_entities.mobile_hotspot_change_report`
-    /// stream, so the stream consumer reads them from the metadata DB at
-    /// event time.
-    ///
-    /// Returns `(None, None)` when the metadata DB does not yet have a row for
-    /// the entity, or when the row's `deployment_info` is missing/CBRS. The
-    /// daily reconciliation [`crate::gateway::tracker::Tracker`] backfills
-    /// any nulls left behind.
-    pub async fn fetch_antenna_and_elevation(
-        pool: &Pool<Postgres>,
-        entity_key: &PublicKeyBinary,
-    ) -> sqlx::Result<(Option<u32>, Option<u32>)> {
-        // `key_to_assets.entity_key` is stored as the bs58check-decoded form
-        // (network byte + inner key + 4-byte checksum), not the raw inner
-        // bytes returned by `PublicKeyBinary::as_ref()`. Round-trip through
-        // the bs58 string to match the storage encoding.
-        let entity_key_bytes = bs58::decode(entity_key.to_string())
-            .into_vec()
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-
-        let row = sqlx::query(
-            r#"
-                SELECT mhi.deployment_info::text AS deployment_info
-                FROM key_to_assets kta
-                INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
-                WHERE kta.entity_key = $1
-                ORDER BY mhi.refreshed_at DESC NULLS LAST
-                LIMIT 1
-            "#,
-        )
-        .bind(entity_key_bytes)
-        .fetch_optional(pool)
-        .await?;
-
-        let Some(row) = row else {
-            return Ok((None, None));
-        };
-
-        let deployment_info: Option<DeploymentInfo> =
-            match row.try_get::<Option<String>, _>("deployment_info") {
-                Ok(Some(s)) if !s.is_empty() => serde_json::from_str(&s).ok(),
-                _ => None,
-            };
-
-        Ok(match deployment_info {
-            Some(DeploymentInfo::WifiDeploymentInfo(wifi)) => {
-                (Some(wifi.antenna), Some(wifi.elevation))
-            }
-            _ => (None, None),
+    rows.into_iter()
+        .map(|row| {
+            let bytes: &[u8] = row.try_get("entity_key")?;
+            let pkb = PublicKeyBinary::from_str(&bs58::encode(bytes).into_string())
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            let pair = parse_wifi_deployment(&row, "deployment_info");
+            Ok((pkb, pair))
         })
-    }
+        .collect()
 }
 
-impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for MobileHotspotInfo {
-    fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-        // device_type came as TEXT from `::text` on jsonb; it may look like `"wifiIndoor"`
-        let dt_raw: String = row.try_get("device_type")?;
-        let dt_clean = dt_raw.trim_matches('"'); // handle jsonb -> text of a JSON string
-        let device_type =
-            DeviceType::from_str(dt_clean).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+/// `key_to_assets.entity_key` is stored as the bs58check-decoded form
+/// (network byte + inner key + 4-byte checksum), not the raw inner bytes
+/// returned by `PublicKeyBinary::as_ref()`. Round-trip through the bs58
+/// string to match the storage encoding.
+fn entity_key_storage_form(entity_key: &PublicKeyBinary) -> sqlx::Result<Vec<u8>> {
+    bs58::decode(entity_key.to_string())
+        .into_vec()
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))
+}
 
-        let deployment_info: Option<DeploymentInfo> =
-            match row.try_get::<Option<String>, _>("deployment_info") {
-                Ok(Some(s)) if !s.is_empty() => serde_json::from_str::<DeploymentInfo>(&s).ok(),
-                Ok(_) => None,
-                Err(_) => None, // be lenient for backward-compat
-            };
+fn parse_wifi_deployment(row: &sqlx::postgres::PgRow, column: &str) -> (Option<u32>, Option<u32>) {
+    let deployment_info: Option<DeploymentInfo> = match row.try_get::<Option<String>, _>(column) {
+        Ok(Some(s)) if !s.is_empty() => serde_json::from_str(&s).ok(),
+        _ => None,
+    };
 
-        Ok(Self {
-            entity_key: PublicKeyBinary::from_str(
-                &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
-            )
-            .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
-            refreshed_at: row.get::<Option<DateTime<Utc>>, &str>("refreshed_at"),
-            created_at: row.get::<DateTime<Utc>, &str>("created_at"),
-            location: row.get::<Option<i64>, &str>("location"),
-            is_full_hotspot: row.get::<Option<bool>, &str>("is_full_hotspot"),
-            num_location_asserts: row.get::<Option<i32>, &str>("num_location_asserts"),
-            is_active: row.get::<Option<bool>, &str>("is_active"),
-            dc_onboarding_fee_paid: row.get::<Option<i64>, &str>("dc_onboarding_fee_paid"),
-            owner: row.get::<Option<String>, &str>("owner"),
-            device_type,
-            deployment_info,
-        })
+    match deployment_info {
+        Some(DeploymentInfo::WifiDeploymentInfo(wifi)) => (Some(wifi.antenna), Some(wifi.elevation)),
+        _ => (None, None),
     }
 }

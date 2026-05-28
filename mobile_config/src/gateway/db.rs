@@ -341,6 +341,35 @@ impl Gateway {
         Ok(gateway)
     }
 
+    /// Stream the latest history row per gateway address. Used by the
+    /// reconciliation tracker to walk every known gateway exactly once.
+    pub fn stream_latest_per_address(
+        pool: &PgPool,
+    ) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
+        sqlx::query_as::<_, Self>(
+            r#"
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts,
+                owner,
+                owner_changed_at
+            FROM gateways
+            ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .fetch(pool)
+    }
+
     pub fn stream_by_addresses<'a>(
         db: impl PgExecutor<'a> + 'a,
         addresses: Vec<PublicKeyBinary>,

@@ -71,10 +71,7 @@ async fn creates_new_wifi_gateway(pool: PgPool) -> anyhow::Result<()> {
 
     // Sanity-check the metadata DB lookup before driving the daemon.
     let deployment_lookup =
-        mobile_config::gateway::metadata_db::MobileHotspotInfo::fetch_antenna_and_elevation(
-            &pool, &pk,
-        )
-        .await?;
+        mobile_config::gateway::metadata_db::fetch_antenna_and_elevation(&pool, &pk).await?;
     assert_eq!(deployment_lookup, (Some(11), Some(22)));
 
     let mut daemon = make_daemon(&pool, &pool);

@@ -1,18 +1,28 @@
-use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
+//! Reconciliation pass that fixes `antenna`/`elevation` drift in the
+//! `gateways` table from `mobile_hotspot_infos.deployment_info`.
+//!
+//! Everything else on a gateway row comes from the
+//! `chain_rewardable_entities` S3 change streams. The stream daemon does a
+//! best-effort `(antenna, elevation)` lookup at event time
+//! ([`crate::gateway::hotspot_change_stream`]); this tracker is the daily
+//! safety net for the case where the metadata DB hadn't caught up yet —
+//! and the only metadata-DB consumer that walks the full gateways table.
+
+use crate::gateway::{db::Gateway, metadata_db};
+use chrono::Utc;
 use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
-use sqlx::{Pool, Postgres};
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use sqlx::{PgPool, Pool, Postgres};
+use std::time::{Duration, Instant};
 use task_manager::Periodic;
 
 const EXECUTE_DURATION_METRIC: &str =
     concat!(env!("CARGO_PKG_NAME"), "-", "tracker-execute-duration");
 
+const BATCH_SIZE: usize = 500;
+
 pub struct Tracker {
-    pool: Pool<Postgres>,
+    pool: PgPool,
     metadata: Pool<Postgres>,
     interval: Duration,
 }
@@ -26,14 +36,14 @@ impl Periodic for Tracker {
 
     async fn tick(&mut self) -> anyhow::Result<()> {
         if let Err(err) = execute(&self.pool, &self.metadata).await {
-            tracing::error!(?err, "error in tracking changes to mobile radios");
+            tracing::error!(?err, "error reconciling antenna/elevation");
         }
         Ok(())
     }
 }
 
 impl Tracker {
-    pub fn new(pool: Pool<Postgres>, metadata: Pool<Postgres>, interval: Duration) -> Self {
+    pub fn new(pool: PgPool, metadata: Pool<Postgres>, interval: Duration) -> Self {
         Self {
             pool,
             metadata,
@@ -42,96 +52,58 @@ impl Tracker {
     }
 }
 
-pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
-    tracing::info!("starting execute");
+pub async fn execute(pool: &PgPool, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
+    tracing::info!("starting antenna/elevation reconciliation");
     let start = Instant::now();
 
-    const BATCH_SIZE: usize = 1_000;
-
-    let total: u64 = MobileHotspotInfo::stream(metadata)
+    let updated = Gateway::stream_latest_per_address(pool)
         .map_err(anyhow::Error::from)
-        .try_filter_map(|mhi| async move {
-            match mhi.to_gateway() {
-                Ok(Some(gw)) => Ok({
-                    // Temporary, will be removed in next PR
-                    // NOTE: last_changed_at = to_gateway in to_gateway()
-                    let refreshed_at = gw.last_changed_at;
-                    Some((gw, refreshed_at))
-                }),
-                Ok(None) => Ok(None),
-                Err(e) => {
-                    tracing::error!(?e, "error converting gateway");
-                    Err(e)
-                }
-            }
-        })
         .try_chunks(BATCH_SIZE)
-        .map_err(|TryChunksError(_gateways, err)| err)
-        .try_fold(0, |total, batch| async move {
-            let addresses: Vec<_> = batch.iter().map(|(gw, _)| gw.address.clone()).collect();
-            let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
-            let mut existing_map = existing_gateways
-                .into_iter()
-                .map(|gw| (gw.address.clone(), gw))
-                .collect::<HashMap<_, _>>();
-
-            let mut to_insert = Vec::with_capacity(batch.len());
-
-            for (mut gw, refreshed_at) in batch {
-                match existing_map.remove(&gw.address) {
-                    None => {
-                        // New gateway
-                        to_insert.push(gw);
-                    }
-                    Some(last_gw) => {
-                        let loc_changed = gw.location != last_gw.location;
-                        // FYI hash includes location
-                        // owner (at this moment) is not included in hash
-                        // Gateway::insert binds compute_hash() rather than the
-                        // struct's field, so compute on the fly here too.
-                        let hash_changed = gw.compute_hash() != last_gw.hash;
-
-                        let owner_changed = if gw.owner.is_none() {
-                            false
-                        } else {
-                            gw.owner != last_gw.owner
-                        };
-
-                        gw.last_changed_at = if hash_changed || owner_changed {
-                            refreshed_at
-                        } else {
-                            last_gw.last_changed_at
-                        };
-
-                        gw.location_changed_at = if loc_changed {
-                            Some(refreshed_at)
-                        } else {
-                            last_gw.location_changed_at
-                        };
-
-                        gw.owner_changed_at = if owner_changed {
-                            Some(refreshed_at)
-                        } else {
-                            last_gw.owner_changed_at
-                        };
-
-                        // We only add record if something changed
-                        // FYI hash includes location
-                        if hash_changed || owner_changed {
-                            to_insert.push(gw);
-                        }
-                    }
-                }
-            }
-
-            let affected = Gateway::insert_bulk(pool, &to_insert).await?;
-            Ok(total + affected)
+        .map_err(|TryChunksError(_, err)| err)
+        .try_fold(0u64, |total, batch| async move {
+            Ok(total + reconcile_batch(pool, metadata, batch).await?)
         })
         .await?;
 
     let elapsed = start.elapsed();
-    tracing::info!(?elapsed, affected = total, "done execute");
+    tracing::info!(?elapsed, updated, "reconciliation complete");
     metrics::histogram!(EXECUTE_DURATION_METRIC).record(elapsed);
-
     Ok(())
+}
+
+async fn reconcile_batch(
+    pool: &PgPool,
+    metadata: &Pool<Postgres>,
+    batch: Vec<Gateway>,
+) -> anyhow::Result<u64> {
+    let addresses: Vec<_> = batch.iter().map(|g| g.address.clone()).collect();
+    let lookups = metadata_db::fetch_antenna_and_elevation_batch(metadata, &addresses).await?;
+
+    let now = Utc::now();
+    let mut updated = 0u64;
+    for gw in batch {
+        let Some(&(meta_antenna, meta_elevation)) = lookups.get(&gw.address) else {
+            continue;
+        };
+
+        // Only adopt non-null metadata values; never regress to null. This
+        // avoids clobbering a value the stream daemon's per-event lookup
+        // already captured if the metadata DB later loses it.
+        let next_antenna = meta_antenna.or(gw.antenna);
+        let next_elevation = meta_elevation.or(gw.elevation);
+        if next_antenna == gw.antenna && next_elevation == gw.elevation {
+            continue;
+        }
+
+        let next = Gateway {
+            antenna: next_antenna,
+            elevation: next_elevation,
+            last_changed_at: now,
+            ..gw
+        };
+        next.insert(pool).await?;
+        updated += 1;
+    }
+
+    Ok(updated)
 }
