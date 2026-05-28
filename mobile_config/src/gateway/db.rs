@@ -105,6 +105,47 @@ pub struct LocationChangedAtUpdate {
 }
 
 impl Gateway {
+    /// Stable change-detection hash over the fields both the periodic
+    /// metadata-DB tracker and the S3 change-stream consumers can populate.
+    /// Excludes fields the stream does not carry (is_active, is_full_hotspot,
+    /// dc_onboarding_fee_paid) so the two paths agree on whether anything
+    /// observable changed.
+    pub fn compute_hash(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(
+            self.location
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 8])
+                .as_ref(),
+        );
+        hasher.update(
+            self.location_asserts
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(self.gateway_type.to_string().as_ref());
+        hasher.update(
+            self.antenna
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.elevation
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.azimuth
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.finalize().to_string()
+    }
+
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
         if rows.is_empty() {
             return Ok(0);
@@ -132,7 +173,9 @@ impl Gateway {
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
                 .push_bind(g.last_changed_at)
-                .push_bind(g.hash.as_str())
+                // Always derived from row contents — the struct's `hash`
+                // field is read-side only and ignored here.
+                .push_bind(g.compute_hash())
                 .push_bind(g.antenna.map(|v| v as i64))
                 .push_bind(g.elevation.map(|v| v as i64))
                 .push_bind(g.azimuth.map(|v| v as i64))
@@ -147,7 +190,7 @@ impl Gateway {
         Ok(res.rows_affected())
     }
 
-    pub async fn insert(&self, pool: &PgPool) -> anyhow::Result<()> {
+    pub async fn insert<'a>(&self, db: impl PgExecutor<'a>) -> anyhow::Result<()> {
         sqlx::query(
             r#"
             INSERT INTO gateways (
@@ -175,7 +218,9 @@ impl Gateway {
         .bind(self.gateway_type)
         .bind(self.created_at)
         .bind(self.last_changed_at)
-        .bind(self.hash.as_str())
+        // Always derived from row contents — the struct's `hash` field is
+        // read-side only and ignored here.
+        .bind(self.compute_hash())
         .bind(self.antenna.map(|v| v as i64))
         .bind(self.elevation.map(|v| v as i64))
         .bind(self.azimuth.map(|v| v as i64))
@@ -184,7 +229,7 @@ impl Gateway {
         .bind(self.location_asserts.map(|v| v as i64))
         .bind(self.owner.as_deref())
         .bind(self.owner_changed_at)
-        .execute(pool)
+        .execute(db)
         .await?;
 
         Ok(())

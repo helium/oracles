@@ -15,9 +15,16 @@ pub struct MobileHotspotInfo {
     refreshed_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     location: Option<i64>,
+    // is_full_hotspot, is_active, and dc_onboarding_fee_paid are still SELECTed
+    // and deserialized for parity with the metadata DB schema, but no longer
+    // contribute to change detection — the chain_rewardable_entities stream
+    // does not carry them. Slated for removal in a follow-up.
+    #[allow(dead_code)]
     is_full_hotspot: Option<bool>,
     num_location_asserts: Option<i32>,
+    #[allow(dead_code)]
     is_active: Option<bool>,
+    #[allow(dead_code)]
     dc_onboarding_fee_paid: Option<i64>,
     device_type: DeviceType,
     deployment_info: Option<DeploymentInfo>,
@@ -25,56 +32,6 @@ pub struct MobileHotspotInfo {
 }
 
 impl MobileHotspotInfo {
-    fn compute_hash(&self) -> String {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(
-            self.location
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 8])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.is_full_hotspot
-                .map(|l| (l as u32).to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.num_location_asserts
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.is_active
-                .map(|l| (l as u32).to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-
-        hasher.update(
-            self.dc_onboarding_fee_paid
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 8])
-                .as_ref(),
-        );
-
-        hasher.update(self.device_type.to_string().as_ref());
-
-        hasher.update(
-            self.deployment_info
-                .as_ref()
-                .and_then(|d| d.to_json().ok())
-                .unwrap_or_default()
-                .as_ref(),
-        );
-
-        hasher.finalize().to_string()
-    }
-
     pub fn stream(pool: &Pool<Postgres>) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
         sqlx::query_as::<_, Self>(
             r#"
@@ -131,7 +88,7 @@ impl MobileHotspotInfo {
             created_at: self.created_at,
             inserted_at: Utc::now(),
             last_changed_at: refreshed_at,
-            hash: self.compute_hash(),
+            hash: String::new(), // write-ignored; insert computes from row
             antenna,
             elevation,
             azimuth,
@@ -146,6 +103,60 @@ impl MobileHotspotInfo {
             owner: self.owner.clone(),
             owner_changed_at: Some(refreshed_at),
         }))
+    }
+
+    /// Fetch the WiFi `(antenna, elevation)` pair for an entity from
+    /// `mobile_hotspot_infos.deployment_info`. These two fields are not
+    /// carried by the `chain_rewardable_entities.mobile_hotspot_change_report`
+    /// stream, so the stream consumer reads them from the metadata DB at
+    /// event time.
+    ///
+    /// Returns `(None, None)` when the metadata DB does not yet have a row for
+    /// the entity, or when the row's `deployment_info` is missing/CBRS. The
+    /// daily reconciliation [`crate::gateway::tracker::Tracker`] backfills
+    /// any nulls left behind.
+    pub async fn fetch_antenna_and_elevation(
+        pool: &Pool<Postgres>,
+        entity_key: &PublicKeyBinary,
+    ) -> sqlx::Result<(Option<u32>, Option<u32>)> {
+        // `key_to_assets.entity_key` is stored as the bs58check-decoded form
+        // (network byte + inner key + 4-byte checksum), not the raw inner
+        // bytes returned by `PublicKeyBinary::as_ref()`. Round-trip through
+        // the bs58 string to match the storage encoding.
+        let entity_key_bytes = bs58::decode(entity_key.to_string())
+            .into_vec()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+
+        let row = sqlx::query(
+            r#"
+                SELECT mhi.deployment_info::text AS deployment_info
+                FROM key_to_assets kta
+                INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
+                WHERE kta.entity_key = $1
+                ORDER BY mhi.refreshed_at DESC NULLS LAST
+                LIMIT 1
+            "#,
+        )
+        .bind(entity_key_bytes)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok((None, None));
+        };
+
+        let deployment_info: Option<DeploymentInfo> =
+            match row.try_get::<Option<String>, _>("deployment_info") {
+                Ok(Some(s)) if !s.is_empty() => serde_json::from_str(&s).ok(),
+                _ => None,
+            };
+
+        Ok(match deployment_info {
+            Some(DeploymentInfo::WifiDeploymentInfo(wifi)) => {
+                (Some(wifi.antenna), Some(wifi.elevation))
+            }
+            _ => (None, None),
+        })
     }
 }
 

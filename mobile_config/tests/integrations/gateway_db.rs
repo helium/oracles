@@ -10,8 +10,10 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
     let addr = pk_binary();
     let now = Utc::now();
 
+    let before = Utc::now();
     let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
     gateway.insert(&pool).await?;
+    let after = Utc::now();
 
     let gateway = Gateway::get_by_address(&pool, &addr)
         .await?
@@ -19,10 +21,13 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
+    // insert() stamps inserted_at = Utc::now(); sandwich the wall clock
+    // around the call to tolerate microsecond truncation in the DB.
+    assert!(gateway.inserted_at >= common::nanos_trunc(before));
+    assert!(gateway.inserted_at <= after);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
     assert_eq!(gateway.location, Some(123));
-    assert_eq!(gateway.hash, "h0");
+    assert_eq!(gateway.hash, gateway.compute_hash());
     Ok(())
 }
 
@@ -35,7 +40,8 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
     let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
     gateway.insert(&pool).await?;
 
-    // Insert gateway second time with different type
+    // Insert gateway second time with different type — sequential inserts
+    // get distinct inserted_at from Utc::now() so the composite PK holds.
     let gateway = gw(addr.clone(), GatewayType::WifiDataOnly, now);
     gateway.insert(&pool).await?;
 
@@ -48,10 +54,10 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
     // Assert most recent gateway was returned
     assert_eq!(gateway.gateway_type, GatewayType::WifiDataOnly);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
+    assert!(gateway.inserted_at >= common::nanos_trunc(now));
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
     assert_eq!(gateway.location, Some(123));
-    assert_eq!(gateway.hash, "h0");
+    assert_eq!(gateway.hash, gateway.compute_hash());
 
     Ok(())
 }
@@ -68,7 +74,9 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
     let g2 = gw(a2.clone(), GatewayType::WifiOutdoor, now);
     let g3 = gw(a3.clone(), GatewayType::WifiDataOnly, now);
 
+    let before = Utc::now();
     let affected = Gateway::insert_bulk(&pool, &[g1, g2, g3]).await?;
+    let after = Utc::now();
     assert_eq!(affected, 3, "should insert 3 rows");
 
     for addr in [&a1, &a2, &a3] {
@@ -76,10 +84,11 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
             .await?
             .expect("row should exist");
         assert_eq!(got.created_at, common::nanos_trunc(now));
-        assert!(got.inserted_at > now);
+        assert!(got.inserted_at >= common::nanos_trunc(before));
+        assert!(got.inserted_at <= after);
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
         assert_eq!(got.location, Some(123));
-        assert_eq!(got.hash, "h0");
+        assert_eq!(got.hash, got.compute_hash());
     }
 
     Ok(())
@@ -106,7 +115,8 @@ async fn stream_by_addresses_filters_by_min_last_changed_at(pool: PgPool) -> any
     pin_mut!(s);
     assert!(s.next().await.is_none());
 
-    // bump g1.last_changed_at to t2
+    // bump g1.last_changed_at to t2; sequential insert gets a distinct
+    // inserted_at from Utc::now() so the composite PK holds.
     let mut g1b = g1.clone();
     g1b.hash = "x1".to_string();
     g1b.last_changed_at = t2;

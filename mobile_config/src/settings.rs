@@ -29,6 +29,14 @@ pub struct Settings {
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data
     pub metadata: db_store::Settings,
+    /// S3 bucket holding chain_rewardable_entities change reports
+    /// (mobile_hotspot_change_report and entity_ownership_change_report).
+    pub ingest: file_store::BucketSettings,
+    /// Cold-start timestamp for both change-report pollers. Once
+    /// `files_processed` is populated, that table drives the offset
+    /// and this field is only consulted on a fresh DB.
+    #[serde(default = "default_gateway_stream_start_after")]
+    pub gateway_stream_start_after: DateTime<Utc>,
     #[serde(with = "humantime_serde", default = "default_gateway_tracker_interval")]
     pub gateway_tracker_interval: std::time::Duration,
     #[serde(default)]
@@ -42,7 +50,14 @@ fn default_boosted_hex_activation_cutoff() -> DateTime<Utc> {
 }
 
 fn default_gateway_tracker_interval() -> std::time::Duration {
-    humantime::parse_duration("1 hour").unwrap()
+    // Tracker runs as a daily reconciliation pass; the per-event S3 change
+    // streams in mobile_config/src/gateway/{hotspot,ownership}_change_stream.rs
+    // are the primary update path.
+    humantime::parse_duration("1 day").unwrap()
+}
+
+fn default_gateway_stream_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_log() -> String {

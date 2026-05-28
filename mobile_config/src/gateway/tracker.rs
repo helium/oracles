@@ -87,7 +87,9 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         let loc_changed = gw.location != last_gw.location;
                         // FYI hash includes location
                         // owner (at this moment) is not included in hash
-                        let hash_changed = gw.hash != last_gw.hash;
+                        // Gateway::insert binds compute_hash() rather than the
+                        // struct's field, so compute on the fly here too.
+                        let hash_changed = gw.compute_hash() != last_gw.hash;
 
                         let owner_changed = if gw.owner.is_none() {
                             false
