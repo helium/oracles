@@ -194,7 +194,7 @@ impl Gateway {
         Ok(res.rows_affected())
     }
 
-    pub async fn insert<'a>(&self, db: impl PgExecutor<'a>) -> anyhow::Result<()> {
+    pub async fn insert(&self, db: impl PgExecutor<'_>) -> anyhow::Result<()> {
         // `inserted_at` is set via `clock_timestamp()` instead of the column
         // default `now()` because `now()` returns the *transaction* start
         // time — multiple inserts for the same gateway in one transaction

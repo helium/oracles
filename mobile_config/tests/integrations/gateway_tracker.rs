@@ -64,10 +64,16 @@ async fn seed_metadata_deployment(
 }
 
 fn wifi_deployment_info(antenna: u32, elevation: u32) -> String {
-    format!(
-        r#"{{"wifiInfoV0":{{"antenna":{},"elevation":{},"azimuth":0,"mechanicalDownTilt":0,"electricalDownTilt":0}}}}"#,
-        antenna, elevation
-    )
+    serde_json::json!({
+        "wifiInfoV0": {
+            "antenna": antenna,
+            "elevation": elevation,
+            "azimuth": 0,
+            "mechanicalDownTilt": 0,
+            "electricalDownTilt": 0
+        }
+    })
+    .to_string()
 }
 
 async fn row_count(pool: &PgPool, pk: &PublicKeyBinary) -> anyhow::Result<i64> {

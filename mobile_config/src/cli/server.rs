@@ -4,8 +4,8 @@ use crate::{
     carrier_service::CarrierService,
     entity_service::EntityService,
     gateway::{
-        hotspot_change_stream::{self, HotspotChangeDaemon, MobileHotspotChange},
-        ownership_change_stream::{self, OwnershipChange, OwnershipChangeDaemon},
+        hotspot_change_stream::{self, HotspotChangeDaemon},
+        ownership_change_stream::{self, OwnershipChangeDaemon},
         service::GatewayService,
         tracker::Tracker,
     },
@@ -88,25 +88,23 @@ impl Server {
 
         let ingest_bucket = settings.ingest.connect().await;
 
-        let (hotspot_change_rx, hotspot_change_server) =
-            file_source::continuous_source::<MobileHotspotChange, _, _>()
-                .state(pool.clone())
-                .bucket_client(ingest_bucket.clone())
-                .lookback_start_after(settings.gateway_stream_start_after)
-                .prefix(FileType::MobileHotspotChangeReport.to_str())
-                .process_name(hotspot_change_stream::PROCESS_NAME.to_string())
-                .create()
-                .await?;
+        let (hotspot_change_rx, hotspot_change_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .bucket_client(ingest_bucket.clone())
+            .lookback_start_after(settings.gateway_stream_start_after)
+            .prefix(FileType::MobileHotspotChangeReport.to_str())
+            .process_name(hotspot_change_stream::PROCESS_NAME.to_string())
+            .create()
+            .await?;
 
-        let (ownership_change_rx, ownership_change_server) =
-            file_source::continuous_source::<OwnershipChange, _, _>()
-                .state(pool.clone())
-                .bucket_client(ingest_bucket)
-                .lookback_start_after(settings.gateway_stream_start_after)
-                .prefix(FileType::EntityOwnershipChangeReport.to_str())
-                .process_name(ownership_change_stream::PROCESS_NAME.to_string())
-                .create()
-                .await?;
+        let (ownership_change_rx, ownership_change_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .bucket_client(ingest_bucket)
+            .lookback_start_after(settings.gateway_stream_start_after)
+            .prefix(FileType::EntityOwnershipChangeReport.to_str())
+            .process_name(ownership_change_stream::PROCESS_NAME.to_string())
+            .create()
+            .await?;
 
         let hotspot_change_daemon =
             HotspotChangeDaemon::new(pool.clone(), metadata_pool.clone(), hotspot_change_rx);

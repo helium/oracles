@@ -20,7 +20,6 @@ use helium_proto::services::chain_rewardable_entities::{
     MobileHotspotChangeReportV1, MobileHotspotDeviceType,
 };
 use sqlx::{PgPool, Pool, Postgres};
-use std::ops::ControlFlow;
 use task_manager::ChannelConsumer;
 use tokio::sync::mpsc::Receiver;
 
@@ -75,8 +74,11 @@ impl TryFrom<MobileHotspotChangeReportV1> for MobileHotspotChange {
             .ok_or(MobileHotspotChangeError::MissingPubKey)?
             .value;
 
-        let device_type_proto = MobileHotspotDeviceType::try_from(metadata.device_type)
-            .map_err(MobileHotspotChangeError::UnsupportedDeviceType)?;
+        let device_type_proto = file_store_oracles::prost_enum(
+            metadata.device_type,
+            MobileHotspotChangeError::UnsupportedDeviceType,
+        )?;
+
         let device_type = match device_type_proto {
             MobileHotspotDeviceType::Cbrs => DeviceType::Cbrs,
             MobileHotspotDeviceType::WifiIndoor => DeviceType::WifiIndoor,
@@ -230,10 +232,6 @@ impl ChannelConsumer for HotspotChangeDaemon {
 
     async fn handle(&mut self, file: Self::Item) -> anyhow::Result<()> {
         self.process_file(file).await
-    }
-
-    async fn on_receiver_closed(&mut self) -> Result<ControlFlow<()>, Self::Error> {
-        Ok(ControlFlow::Break(()))
     }
 }
 
