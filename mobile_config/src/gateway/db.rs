@@ -105,15 +105,59 @@ pub struct LocationChangedAtUpdate {
 }
 
 impl Gateway {
+    /// Stable change-detection hash over the fields both the periodic
+    /// metadata-DB tracker and the S3 change-stream consumers can populate.
+    /// Excludes fields the stream does not carry (is_active, is_full_hotspot,
+    /// dc_onboarding_fee_paid) so the two paths agree on whether anything
+    /// observable changed.
+    pub fn compute_hash(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(
+            self.location
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 8])
+                .as_ref(),
+        );
+        hasher.update(
+            self.location_asserts
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(self.gateway_type.to_string().as_ref());
+        hasher.update(
+            self.antenna
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.elevation
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.update(
+            self.azimuth
+                .map(|l| l.to_le_bytes())
+                .unwrap_or([0_u8; 4])
+                .as_ref(),
+        );
+        hasher.finalize().to_string()
+    }
+
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
         if rows.is_empty() {
             return Ok(0);
         }
+        // See `Gateway::insert` for why we use `clock_timestamp()` rather
+        // than the column default `now()` for `inserted_at`.
         let mut qb = QueryBuilder::<Postgres>::new(
             "INSERT INTO gateways (
                 address,
                 gateway_type,
                 created_at,
+                inserted_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -131,8 +175,11 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
+                .push("clock_timestamp()")
                 .push_bind(g.last_changed_at)
-                .push_bind(g.hash.as_str())
+                // Always derived from row contents — the struct's `hash`
+                // field is read-side only and ignored here.
+                .push_bind(g.compute_hash())
                 .push_bind(g.antenna.map(|v| v as i64))
                 .push_bind(g.elevation.map(|v| v as i64))
                 .push_bind(g.azimuth.map(|v| v as i64))
@@ -147,13 +194,20 @@ impl Gateway {
         Ok(res.rows_affected())
     }
 
-    pub async fn insert(&self, pool: &PgPool) -> anyhow::Result<()> {
+    pub async fn insert(&self, db: impl PgExecutor<'_>) -> anyhow::Result<()> {
+        // `inserted_at` is set via `clock_timestamp()` instead of the column
+        // default `now()` because `now()` returns the *transaction* start
+        // time — multiple inserts for the same gateway in one transaction
+        // (e.g. several change events in one S3 file) would collide on the
+        // composite PK `(address, inserted_at)`. `clock_timestamp()` returns
+        // the actual wall clock per call.
         sqlx::query(
             r#"
             INSERT INTO gateways (
                 address,
                 gateway_type,
                 created_at,
+                inserted_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -166,7 +220,7 @@ impl Gateway {
                 owner_changed_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6,
+                $1, $2, $3, clock_timestamp(), $4, $5, $6,
                 $7, $8, $9, $10, $11, $12, $13
             )
             "#,
@@ -175,7 +229,9 @@ impl Gateway {
         .bind(self.gateway_type)
         .bind(self.created_at)
         .bind(self.last_changed_at)
-        .bind(self.hash.as_str())
+        // Always derived from row contents — the struct's `hash` field is
+        // read-side only and ignored here.
+        .bind(self.compute_hash())
         .bind(self.antenna.map(|v| v as i64))
         .bind(self.elevation.map(|v| v as i64))
         .bind(self.azimuth.map(|v| v as i64))
@@ -184,7 +240,7 @@ impl Gateway {
         .bind(self.location_asserts.map(|v| v as i64))
         .bind(self.owner.as_deref())
         .bind(self.owner_changed_at)
-        .execute(pool)
+        .execute(db)
         .await?;
 
         Ok(())
@@ -294,6 +350,35 @@ impl Gateway {
         .await?;
 
         Ok(gateway)
+    }
+
+    /// Stream the latest history row per gateway address. Used by the
+    /// reconciliation tracker to walk every known gateway exactly once.
+    pub fn stream_latest_per_address(
+        pool: &PgPool,
+    ) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
+        sqlx::query_as::<_, Self>(
+            r#"
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts,
+                owner,
+                owner_changed_at
+            FROM gateways
+            ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .fetch(pool)
     }
 
     pub fn stream_by_addresses<'a>(

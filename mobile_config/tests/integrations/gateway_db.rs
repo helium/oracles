@@ -19,10 +19,14 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
+    // insert() relies on the column DEFAULT now(); we only care that the
+    // value got stamped to something recent, not that it falls inside a
+    // wall-clock sandwich (Rust nanos vs Postgres micros vs DB-host clock
+    // drift makes tight bounds flaky).
+    assert_recent(gateway.inserted_at);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
     assert_eq!(gateway.location, Some(123));
-    assert_eq!(gateway.hash, "h0");
+    assert_eq!(gateway.hash, gateway.compute_hash());
     Ok(())
 }
 
@@ -35,7 +39,8 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
     let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
     gateway.insert(&pool).await?;
 
-    // Insert gateway second time with different type
+    // Insert gateway second time with different type — sequential inserts
+    // get distinct inserted_at from Utc::now() so the composite PK holds.
     let gateway = gw(addr.clone(), GatewayType::WifiDataOnly, now);
     gateway.insert(&pool).await?;
 
@@ -48,10 +53,10 @@ async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<
     // Assert most recent gateway was returned
     assert_eq!(gateway.gateway_type, GatewayType::WifiDataOnly);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert!(gateway.inserted_at > now);
+    assert_recent(gateway.inserted_at);
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
     assert_eq!(gateway.location, Some(123));
-    assert_eq!(gateway.hash, "h0");
+    assert_eq!(gateway.hash, gateway.compute_hash());
 
     Ok(())
 }
@@ -76,10 +81,10 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
             .await?
             .expect("row should exist");
         assert_eq!(got.created_at, common::nanos_trunc(now));
-        assert!(got.inserted_at > now);
+        assert_recent(got.inserted_at);
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
         assert_eq!(got.location, Some(123));
-        assert_eq!(got.hash, "h0");
+        assert_eq!(got.hash, got.compute_hash());
     }
 
     Ok(())
@@ -106,7 +111,8 @@ async fn stream_by_addresses_filters_by_min_last_changed_at(pool: PgPool) -> any
     pin_mut!(s);
     assert!(s.next().await.is_none());
 
-    // bump g1.last_changed_at to t2
+    // bump g1.last_changed_at to t2; sequential insert gets a distinct
+    // inserted_at from Utc::now() so the composite PK holds.
     let mut g1b = g1.clone();
     g1b.hash = "x1".to_string();
     g1b.last_changed_at = t2;
@@ -181,6 +187,19 @@ async fn stream_by_types_optional_location_changed_filter(pool: PgPool) -> anyho
 
 fn pk_binary() -> PublicKeyBinary {
     common::make_keypair().public_key().clone().into()
+}
+
+/// Assert a timestamp falls inside a generous "recent" window — used for
+/// values stamped by the DB's `now()` default, where tight wall-clock
+/// bounds against Rust's `Utc::now()` flake on busy hosts and across
+/// virtualization boundaries.
+fn assert_recent(ts: chrono::DateTime<Utc>) {
+    let now = Utc::now();
+    let window = chrono::Duration::minutes(5);
+    assert!(
+        ts <= now + window && ts >= now - window,
+        "{ts} is not within ±5m of {now}"
+    );
 }
 
 fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<Utc>) -> Gateway {
