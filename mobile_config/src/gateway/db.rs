@@ -150,11 +150,14 @@ impl Gateway {
         if rows.is_empty() {
             return Ok(0);
         }
+        // See `Gateway::insert` for why we use `clock_timestamp()` rather
+        // than the column default `now()` for `inserted_at`.
         let mut qb = QueryBuilder::<Postgres>::new(
             "INSERT INTO gateways (
                 address,
                 gateway_type,
                 created_at,
+                inserted_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -172,6 +175,7 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
+                .push("clock_timestamp()")
                 .push_bind(g.last_changed_at)
                 // Always derived from row contents — the struct's `hash`
                 // field is read-side only and ignored here.
@@ -191,12 +195,19 @@ impl Gateway {
     }
 
     pub async fn insert<'a>(&self, db: impl PgExecutor<'a>) -> anyhow::Result<()> {
+        // `inserted_at` is set via `clock_timestamp()` instead of the column
+        // default `now()` because `now()` returns the *transaction* start
+        // time — multiple inserts for the same gateway in one transaction
+        // (e.g. several change events in one S3 file) would collide on the
+        // composite PK `(address, inserted_at)`. `clock_timestamp()` returns
+        // the actual wall clock per call.
         sqlx::query(
             r#"
             INSERT INTO gateways (
                 address,
                 gateway_type,
                 created_at,
+                inserted_at,
                 last_changed_at,
                 hash,
                 antenna,
@@ -209,7 +220,7 @@ impl Gateway {
                 owner_changed_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6,
+                $1, $2, $3, clock_timestamp(), $4, $5, $6,
                 $7, $8, $9, $10, $11, $12, $13
             )
             "#,

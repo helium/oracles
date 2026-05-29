@@ -241,6 +241,63 @@ async fn missing_metadata_db_writes_null_antenna(pool: PgPool) -> anyhow::Result
 }
 
 #[sqlx::test]
+async fn location_changed_at_updates_through_round_trip_in_one_file(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    gateway_metadata_db::create_tables(&pool).await;
+
+    let pk: PublicKeyBinary = make_keypair().public_key().clone().into();
+    let loc_a = 0x8528347ffffffff;
+    let loc_b = 0x852834affffffff;
+
+    let mut daemon = make_daemon(&pool, &pool);
+
+    // Establish a baseline row at loc_a.
+    daemon
+        .handle(deliver(vec![change(
+            pk.clone(),
+            DeviceType::WifiIndoor,
+            Some(loc_a),
+            0,
+            1_700_000_000,
+        )]))
+        .await?;
+
+    // One file containing two events for the same hotspot: A -> B -> A.
+    // Both events should produce history rows and the final
+    // location_changed_at should reflect the *most recent* move
+    // (B -> A at t = 1_700_002_000), even though the latest location
+    // equals the original.
+    daemon
+        .handle(deliver(vec![
+            change(
+                pk.clone(),
+                DeviceType::WifiIndoor,
+                Some(loc_b),
+                0,
+                1_700_001_000,
+            ),
+            change(
+                pk.clone(),
+                DeviceType::WifiIndoor,
+                Some(loc_a),
+                0,
+                1_700_002_000,
+            ),
+        ]))
+        .await?;
+
+    let row = Gateway::get_by_address(&pool, &pk).await?.unwrap();
+    assert_eq!(row.location, Some(loc_a));
+    assert_eq!(
+        row.location_changed_at,
+        Some(Utc.timestamp_opt(1_700_002_000, 0).unwrap()),
+    );
+    assert_eq!(row.location_asserts, Some(3));
+    Ok(())
+}
+
+#[sqlx::test]
 async fn carries_owner_forward_on_subsequent_change(pool: PgPool) -> anyhow::Result<()> {
     gateway_metadata_db::create_tables(&pool).await;
 
