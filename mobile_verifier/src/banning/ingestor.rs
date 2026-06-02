@@ -122,11 +122,20 @@ impl BanIngestor {
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
         let mut iceberg_records = vec![];
+        let mut invalid_iceberg_records = vec![];
 
         while let Some(report) = stream.next().await {
             let verified_report = process_ban_report(&mut txn, &self.auth_verifier, report).await?;
-            if verified_report.is_valid() && self.iceberg_writer.is_some() {
-                iceberg_records.push(iceberg::IcebergBan::from(&verified_report));
+            if self.iceberg_writer.is_some() {
+                let record = iceberg::IcebergBan::from(&verified_report);
+                if verified_report.is_valid() {
+                    iceberg_records.push(record);
+                } else {
+                    invalid_iceberg_records.push(iceberg::IcebergInvalidBan::new(
+                        record,
+                        verified_report.status,
+                    ));
+                }
             }
             let status = verified_report.status.as_str_name();
             self.verified_sink
@@ -134,8 +143,11 @@ impl BanIngestor {
                 .await?;
         }
 
-        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
-            .await?;
+        if let Some(writer) = self.iceberg_writer.as_ref() {
+            writer
+                .write(&write_id, iceberg_records, invalid_iceberg_records)
+                .await?;
+        }
 
         self.verified_sink.commit().await?;
         txn.commit().await?;
