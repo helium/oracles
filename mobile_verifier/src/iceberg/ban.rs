@@ -9,16 +9,16 @@ pub const TABLE_NAME: &str = "bans";
 
 #[derive(Default, Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergBan {
-    pubkey: String,
-    ban_pubkey: String,
-    report_timestamp: DateTime<FixedOffset>,
-    received_timestamp: DateTime<FixedOffset>,
-    is_ban: bool,
-    hotspot_serial: Option<String>,
-    message: Option<String>,
-    ban_reason: Option<String>,
-    ban_type: Option<String>,
-    expiration_timestamp: Option<DateTime<FixedOffset>>,
+    pub(crate) pubkey: String,
+    pub(crate) ban_pubkey: String,
+    pub(crate) report_timestamp: DateTime<FixedOffset>,
+    pub(crate) received_timestamp: DateTime<FixedOffset>,
+    pub(crate) is_ban: bool,
+    pub(crate) hotspot_serial: Option<String>,
+    pub(crate) message: Option<String>,
+    pub(crate) ban_reason: Option<String>,
+    pub(crate) ban_type: Option<String>,
+    pub(crate) expiration_timestamp: Option<DateTime<FixedOffset>>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {

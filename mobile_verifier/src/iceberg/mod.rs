@@ -5,25 +5,49 @@ use serde::Serialize;
 pub mod ban;
 pub mod gateway_reward;
 pub mod heartbeat;
+pub mod invalid_ban;
+pub mod invalid_heartbeat;
+pub mod invalid_speedtest;
+pub mod invalid_speedtest_avg;
 pub mod radio_reward;
 pub mod radio_reward_covered_hex;
 pub mod service_provider_reward;
 pub mod speedtest;
 pub mod speedtest_avg;
 pub mod unallocated_reward;
+pub mod valid_invalid;
 
 pub use ban::IcebergBan;
 pub use heartbeat::IcebergHeartbeat;
+pub use invalid_ban::IcebergInvalidBan;
+pub use invalid_heartbeat::IcebergInvalidHeartbeat;
+pub use invalid_speedtest::IcebergInvalidSpeedtest;
+pub use invalid_speedtest_avg::IcebergInvalidSpeedtestAvg;
 pub use speedtest::IcebergSpeedtest;
 pub use speedtest_avg::IcebergSpeedtestAvg;
+pub use valid_invalid::ValidInvalidWriter;
 
 pub const NAMESPACE: &str = "poc";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
-pub type BanWriter = BoxedDataWriter<IcebergBan>;
-pub type HeartbeatWriter = BoxedDataWriter<IcebergHeartbeat>;
-pub type SpeedtestWriter = BoxedDataWriter<IcebergSpeedtest>;
-pub type SpeedtestAvgWriter = BoxedDataWriter<IcebergSpeedtestAvg>;
+/// Column appended to every `invalid_*` table, recording why a record was
+/// rejected (a validity/status enum's string name).
+pub const REASON_COLUMN: &str = "reason";
+
+/// Strip a protobuf enum's `as_str_name()` prefix so a stored reason reads
+/// `gateway_not_found` rather than `heartbeat_validity_gateway_not_found`.
+/// Falls back to the full name if the prefix isn't present.
+pub(crate) fn reason_without_prefix(name: &str, prefix: &str) -> String {
+    name.strip_prefix(prefix).unwrap_or(name).to_string()
+}
+
+// POC tables write accepted records to `poc.<table>` and rejected records to a
+// sibling `poc.invalid_<table>` (same schema plus a `reason` column). See
+// `helium_iceberg::ValidInvalidWriter`.
+pub type BanWriter = ValidInvalidWriter<IcebergBan, IcebergInvalidBan>;
+pub type HeartbeatWriter = ValidInvalidWriter<IcebergHeartbeat, IcebergInvalidHeartbeat>;
+pub type SpeedtestWriter = ValidInvalidWriter<IcebergSpeedtest, IcebergInvalidSpeedtest>;
+pub type SpeedtestAvgWriter = ValidInvalidWriter<IcebergSpeedtestAvg, IcebergInvalidSpeedtestAvg>;
 
 pub struct PocWriters {
     pub ban: Option<BanWriter>,
@@ -47,22 +71,32 @@ impl PocWriters {
         let catalog = settings.connect().await.context("connecting to catalog")?;
         catalog.create_namespace_if_not_exists(NAMESPACE).await?;
 
-        let ban = catalog
-            .create_table_if_not_exists(ban::table_definition()?)
-            .await?
-            .boxed();
-        let heartbeat = catalog
-            .create_table_if_not_exists(heartbeat::table_definition()?)
-            .await?
-            .boxed();
-        let speedtest = catalog
-            .create_table_if_not_exists(speedtest::table_definition()?)
-            .await?
-            .boxed();
-        let speedtest_avg = catalog
-            .create_table_if_not_exists(speedtest_avg::table_definition()?)
-            .await?
-            .boxed();
+        // Each writer creates its valid table plus the sibling `invalid_*`
+        // table (same schema + a `reason` column; see the `invalid_*` modules).
+        let ban = ValidInvalidWriter::create(
+            &catalog,
+            ban::table_definition()?,
+            invalid_ban::table_definition()?,
+        )
+        .await?;
+        let heartbeat = ValidInvalidWriter::create(
+            &catalog,
+            heartbeat::table_definition()?,
+            invalid_heartbeat::table_definition()?,
+        )
+        .await?;
+        let speedtest = ValidInvalidWriter::create(
+            &catalog,
+            speedtest::table_definition()?,
+            invalid_speedtest::table_definition()?,
+        )
+        .await?;
+        let speedtest_avg = ValidInvalidWriter::create(
+            &catalog,
+            speedtest_avg::table_definition()?,
+            invalid_speedtest_avg::table_definition()?,
+        )
+        .await?;
 
         Ok(Self {
             ban: Some(ban),
