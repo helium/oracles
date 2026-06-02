@@ -526,6 +526,23 @@ impl TableDefinition {
         &self.namespace
     }
 
+    /// Return this definition with a different table name, leaving the
+    /// namespace, schema, partitioning, and sort order unchanged. Useful for
+    /// deriving a sibling table (e.g. an `invalid_` variant) from an existing
+    /// definition without redeclaring its schema.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// Append a field to this definition's schema. Fields are added after the
+    /// existing ones; partition and sort sources are resolved by name, so the
+    /// position of the appended field does not affect them.
+    pub fn with_field(mut self, field: FieldDefinition) -> Self {
+        self.fields.push(field);
+        self
+    }
+
     /// Build the Iceberg schema from field definitions.
     fn build_schema(&self) -> Result<Schema> {
         let mut next_id: i32 = 1;
