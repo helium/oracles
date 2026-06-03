@@ -1,10 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use mobile_verifier::{
-    cli::{
-        backfill_ban, backfill_heartbeat, backfill_speedtest, backfill_speedtest_avg,
-        reward_from_db, server, verify_disktree,
-    },
+    cli::{reward_from_db, server, verify_disktree},
     Settings,
 };
 use std::path;
@@ -41,14 +38,6 @@ pub enum Cmd {
     /// Go through every cell and ensure it's value can be turned into an Assignment.
     /// NOTE: This can take a very long time. Run with a --release binary.
     VerifyDisktree(verify_disktree::Cmd),
-    /// Backfill historical VerifiedSpeedtest files to the poc.speedtests iceberg table.
-    BackfillSpeedtest(backfill_speedtest::Cmd),
-    /// Backfill historical SpeedtestAvg files to the poc.speedtest_avgs iceberg table.
-    BackfillSpeedtestAvg(backfill_speedtest_avg::Cmd),
-    /// Backfill historical VerifiedMobileBanReport files to the poc.bans iceberg table.
-    BackfillBan(backfill_ban::Cmd),
-    /// Backfill historical validated Heartbeat files to the poc.heartbeats iceberg table.
-    BackfillHeartbeat(backfill_heartbeat::Cmd),
 }
 
 impl Cmd {
@@ -57,10 +46,6 @@ impl Cmd {
             Self::Server(cmd) => cmd.run(&settings).await,
             Self::RewardFromDb(cmd) => cmd.run(&settings).await,
             Self::VerifyDisktree(cmd) => cmd.run(&settings).await,
-            Self::BackfillSpeedtest(cmd) => cmd.run(&settings).await,
-            Self::BackfillSpeedtestAvg(cmd) => cmd.run(&settings).await,
-            Self::BackfillBan(cmd) => cmd.run(&settings).await,
-            Self::BackfillHeartbeat(cmd) => cmd.run(&settings).await,
         }
     }
 }

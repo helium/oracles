@@ -7,8 +7,6 @@ use sqlx::{PgConnection, PgPool};
 pub mod db;
 pub mod ingestor;
 
-pub use ingestor::BanBackfiller;
-
 pub const BAN_CLEANUP_DAYS: i64 = 7;
 
 #[derive(Debug, Default)]

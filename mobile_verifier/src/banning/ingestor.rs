@@ -21,29 +21,9 @@ use sqlx::{PgConnection, PgPool};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{
-    backfill::{Backfiller, IcebergBackfill},
-    iceberg, Settings,
-};
+use crate::{iceberg, Settings};
 
 use super::db;
-
-// ── Ban backfill ──────────────────────────────────────────────────────────────
-
-pub struct BanConverter;
-pub type BanBackfiller = Backfiller<BanConverter>;
-
-impl IcebergBackfill for BanConverter {
-    type FileRecord = VerifiedBanReport;
-    type IcebergRow = iceberg::IcebergBan;
-    const FILE_TYPE: FileType = FileType::VerifiedMobileBanReport;
-
-    fn convert(record: VerifiedBanReport) -> Option<iceberg::IcebergBan> {
-        record
-            .is_valid()
-            .then(|| iceberg::IcebergBan::from(&record))
-    }
-}
 
 // ── BanIngestor ───────────────────────────────────────────────────────────────
 
