@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use mobile_packet_verifier::{backfill, daemon, settings::Settings};
+use mobile_packet_verifier::{daemon, settings::Settings};
 use std::path::PathBuf;
 
 #[derive(clap::Parser)]
@@ -29,16 +29,12 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Server(daemon::Cmd),
-    BackfillSessions(backfill::BackfillSessionsCmd),
-    BackfillBurned(backfill::BackfillBurnedCmd),
 }
 
 impl Cmd {
     async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
-            Self::BackfillSessions(cmd) => cmd.run(&settings).await,
-            Self::BackfillBurned(cmd) => cmd.run(&settings).await,
         }
     }
 }

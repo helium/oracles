@@ -44,8 +44,6 @@ pub enum DaemonEvent {
     BurnSuccess,
     BurnFailure,
     ReportHandle,
-    BackfillDataSession,
-    BackfillBurnedSession,
 }
 
 pub struct Daemon<S, MCR> {
@@ -170,10 +168,9 @@ pub async fn handle_data_transfer_session_file(
 
 /// Handles the real-time `DataTransferSessionIngestReport` stream for the daemon.
 ///
-/// Mirrors the shape of [`DataSessionsBackfiller`] and [`BurnedSessionsBackfiller`]:
-/// the Daemon holds one of these, calls `recv()` in its `select!`, and forwards the
-/// result to `handle(file, mobile_config)`.  Unlike the backfillers, the channel is
-/// never expected to close while the daemon is running — a dropped sender is an error.
+/// The Daemon holds one of these, calls `recv()` in its `select!`, and forwards the
+/// result to `handle(file, mobile_config)`. The channel is never expected to close
+/// while the daemon is running — a dropped sender is an error.
 ///
 /// The `mobile_config_resolver` is intentionally **not** stored here; the Daemon
 /// passes `&self.mobile_config_resolver` at each call site so ownership stays in one place.
