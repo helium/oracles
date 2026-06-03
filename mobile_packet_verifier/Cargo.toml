@@ -16,7 +16,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = [
     "sqlx-postgres",
-    "multisig",
     "solana",
 ] }
 helium-proto = { workspace = true }
