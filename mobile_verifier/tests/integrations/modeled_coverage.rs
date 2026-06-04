@@ -42,9 +42,6 @@ impl GeofenceValidator for MockGeofence {
     }
 }
 
-const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
-const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
-
 #[sqlx::test]
 async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     let cache = CoverageObjectCache::new(&pool);
@@ -469,7 +466,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3065adff", SignalLevel::High)?, // 120
                 signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.5 = 30 (this hex is
                 // shared
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?, // 0
+                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,    // 0
             ],
             trust_score: 1000,
         },

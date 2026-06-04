@@ -70,13 +70,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let unallocated_reward = unallocated_reward.unwrap();
     assert_eq!(unallocated_reward.amount, 1);
 
-    // assert the boosted hexes in the radio rewards
-    // boosted hexes will contain the used multiplier for each boosted hex
-    // in this test there are no boosted hexes
-    assert_eq!(0, poc_rewards[0].boosted_hexes_len());
-    assert_eq!(0, poc_rewards[1].boosted_hexes_len());
-    assert_eq!(0, poc_rewards[2].boosted_hexes_len());
-
     // assert the dc reward outputs
     assert_eq!(500_000, dc_rewards[0].dc_transfer_reward);
     assert_eq!(500_000, dc_rewards[1].dc_transfer_reward);

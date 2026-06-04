@@ -100,7 +100,6 @@ impl CoverageDaemon {
             .create()
             .await?;
 
-        // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
         let coverage_daemon = CoverageDaemon::new(
             pool,
             auth_client,
