@@ -30,12 +30,8 @@ use helium_proto::{
     ServiceProvider,
 };
 use mobile_config::{
-    boosted_hex_info::BoostedHexes,
-    client::{
-        hex_boosting_client::HexBoostingInfoResolver, sub_dao_client::SubDaoEpochRewardInfoResolver,
-    },
-    sub_dao_epoch_reward_info::EpochRewardInfo,
-    EpochInfo,
+    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
+    sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo,
 };
 use price_tracker::{PriceProvider, PriceTracker};
 use reward_scheduler::Scheduler;
@@ -51,10 +47,9 @@ mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<B, C> {
+pub struct Rewarder<C> {
     sub_dao: SolPubkey,
     pool: Pool<Postgres>,
-    hex_service_client: B,
     sub_dao_epoch_reward_client: C,
     reward_period_duration: Duration,
     reward_offset: Duration,
@@ -64,16 +59,14 @@ pub struct Rewarder<B, C> {
     reward_writers: Option<iceberg::RewardWriters>,
 }
 
-impl<B, C> Rewarder<B, C>
+impl<C> Rewarder<C>
 where
-    B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         reward_writers: Option<iceberg::RewardWriters>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -99,7 +92,6 @@ where
 
         let rewarder = Rewarder::new(
             pool.clone(),
-            hex_boosting_info_resolver,
             sub_dao_epoch_reward_info_resolver,
             settings.reward_period,
             settings.reward_period_offset,
@@ -120,7 +112,6 @@ where
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
-        hex_service_client: B,
         sub_dao_epoch_reward_client: C,
         reward_period_duration: Duration,
         reward_offset: Duration,
@@ -136,7 +127,6 @@ where
         Ok(Self {
             sub_dao,
             pool,
-            hex_service_client,
             sub_dao_epoch_reward_client,
             reward_period_duration,
             reward_offset,
@@ -279,7 +269,6 @@ where
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
-            &self.hex_service_client,
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
@@ -337,9 +326,8 @@ where
     }
 }
 
-impl<B, C> ManagedTask for Rewarder<B, C>
+impl<C> ManagedTask for Rewarder<C>
 where
-    B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
@@ -349,7 +337,6 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
@@ -387,7 +374,6 @@ pub async fn reward_poc_and_dc(
     reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
     let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
-        hex_service_client,
         &mobile_rewards,
         reward_info,
         reward_shares,
@@ -414,7 +400,6 @@ pub async fn reward_poc_and_dc(
 
 pub async fn reward_poc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
@@ -423,8 +408,6 @@ pub async fn reward_poc(
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
-
-    let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
     let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
 
@@ -436,7 +419,6 @@ pub async fn reward_poc(
         pool,
         heartbeats,
         &speedtest_averages,
-        &boosted_hexes,
         &boosted_hex_eligibility,
         &banned_radios,
         &unique_connections,

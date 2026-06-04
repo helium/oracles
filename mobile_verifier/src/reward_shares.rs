@@ -18,7 +18,6 @@ use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::boosted_hex_info::BoostedHexes;
 use radio_reward_v2::RadioRewardV2Ext;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -324,7 +323,7 @@ impl CoverageShares {
             );
         }
 
-        let coverage_map = coverage_map_builder.build(boosted_hexes, reward_period.start);
+        let coverage_map = coverage_map_builder.build();
 
         Ok(Self {
             coverage_map,
@@ -960,7 +959,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &UniqueConnectionCounts::default(),
@@ -1129,7 +1127,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &UniqueConnectionCounts::default(),
@@ -1276,7 +1273,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &unique_connection_counts,
@@ -1350,8 +1346,7 @@ mod test {
                 assignments: hex_assignments_mock(),
             }],
         });
-        let coverage_map =
-            coverage_map.build(&BoostedHexes::default(), rewards_info.epoch_period.start);
+        let coverage_map = coverage_map.build();
 
         let mut radio_infos = HashMap::new();
         radio_infos.insert(
@@ -1432,8 +1427,7 @@ mod test {
     async fn skip_empty_radio_rewards() {
         let rewards_info = rewards_info_1_hour();
         let coverage_shares = CoverageShares {
-            coverage_map: coverage_map::CoverageMapBuilder::default()
-                .build(&BoostedHexes::default(), rewards_info.epoch_period.start),
+            coverage_map: coverage_map::CoverageMapBuilder::default().build(),
             radio_infos: HashMap::new(),
         };
 
