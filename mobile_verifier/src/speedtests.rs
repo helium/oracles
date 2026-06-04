@@ -1,5 +1,4 @@
 use crate::{
-    backfill::{Backfiller, IcebergBackfill},
     iceberg,
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
@@ -11,7 +10,7 @@ use file_store::{
     file_upload::FileUpload, BucketClient,
 };
 use file_store_oracles::{
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport, VerifiedSpeedtest},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
@@ -57,23 +56,6 @@ impl FromRow<'_, PgRow> for Speedtest {
         })
     }
 }
-
-// ── Speedtest backfill ────────────────────────────────────────────────────────
-
-pub struct SpeedtestConverter;
-
-impl IcebergBackfill for SpeedtestConverter {
-    type FileRecord = VerifiedSpeedtest;
-    type IcebergRow = iceberg::IcebergSpeedtest;
-    const FILE_TYPE: FileType = FileType::VerifiedSpeedtest;
-
-    fn convert(record: VerifiedSpeedtest) -> Option<iceberg::IcebergSpeedtest> {
-        (record.result == SpeedtestResult::SpeedtestValid)
-            .then(|| iceberg::IcebergSpeedtest::from(&record.report))
-    }
-}
-
-pub type SpeedtestBackfiller = Backfiller<SpeedtestConverter>;
 
 // ── SpeedtestDaemon ───────────────────────────────────────────────────────────
 

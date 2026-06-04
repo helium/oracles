@@ -1,10 +1,7 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::{
-    BatchedWriter, BatchedWriterConfig, BatchedWriterTask, IcebergTestHarness, TableDefinition,
-};
-use mobile_packet_verifier::{backfill::BackfillOptions, iceberg, MobileConfigResolverExt};
-use serde::Serialize;
+use helium_iceberg::IcebergTestHarness;
+use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
@@ -14,27 +11,6 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     .await?;
 
     Ok(harness)
-}
-
-/// Build a `BatchedWriter` against the harness's catalog with a fresh tempdir
-/// spool. `max_batch_size = 1` makes each `queue_all` flush right away so test
-/// assertions see rows promptly; long timeout so the timer never fires before
-/// shutdown drains the spool.
-pub async fn make_batched_writer<T>(
-    harness: &IcebergTestHarness,
-    table_def: TableDefinition,
-) -> anyhow::Result<(BatchedWriter<T>, BatchedWriterTask<T>, tempfile::TempDir)>
-where
-    T: Serialize + Send + Sync + 'static,
-{
-    let spool_dir = tempfile::tempdir()?;
-    let config = BatchedWriterConfig::new(spool_dir.path().to_path_buf())
-        .with_max_batch_size(1)
-        .with_batch_timeout(std::time::Duration::from_secs(3600));
-    let catalog = harness.iceberg_catalog().clone();
-    let table = catalog.create_table_if_not_exists(table_def).await?;
-    let (writer, task) = BatchedWriter::new(table, config);
-    Ok((writer, task, spool_dir))
 }
 
 enum ValidKeys {
@@ -92,16 +68,6 @@ impl TestMobileConfig {
             valid_routing_keys: ValidKeys::Only(valid),
         }
     }
-}
-
-pub fn test_backfill_options(
-    process_name: &str,
-    start_after: DateTime<Utc>,
-    stop_after: DateTime<Utc>,
-) -> BackfillOptions {
-    BackfillOptions::new(process_name, start_after, stop_after)
-        .poll_duration(std::time::Duration::from_millis(100))
-        .idle_timeout(std::time::Duration::from_millis(500))
 }
 
 pub trait TestChannelExt {

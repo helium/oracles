@@ -1,7 +1,4 @@
 use chrono::{DateTime, FixedOffset, Utc};
-use file_store_oracles::mobile::speedtest::cli::{
-    SpeedtestAverage as FileStoreSpeedtestAverage, SpeedtestAverageEntry,
-};
 use helium_iceberg::{
     FieldDefinition, FieldKind, PartitionDefinition, SortFieldDefinition, TableDefinition,
 };
@@ -76,36 +73,6 @@ pub async fn get_all(
     Ok(all)
 }
 
-impl From<&SpeedtestAverageEntry> for IcebergSpeedtestAvgSample {
-    fn from(value: &SpeedtestAverageEntry) -> Self {
-        Self {
-            upload_speed_bps: value.upload_speed_bps,
-            download_speed_bps: value.download_speed_bps,
-            latency_ms: value.latency_ms,
-            timestamp: value.timestamp.into(),
-        }
-    }
-}
-
-impl From<&FileStoreSpeedtestAverage> for IcebergSpeedtestAvg {
-    fn from(value: &FileStoreSpeedtestAverage) -> Self {
-        Self {
-            hotspot_pubkey: value.pub_key.to_string(),
-            upload_speed_avg_bps: value.upload_speed_avg_bps,
-            download_speed_avg_bps: value.download_speed_avg_bps,
-            latency_avg_ms: value.latency_avg_ms,
-            reward_multiplier: value.reward_multiplier,
-            sample_count: value.speedtests.len() as u32,
-            timestamp: value.timestamp.into(),
-            speedtests: value
-                .speedtests
-                .iter()
-                .map(IcebergSpeedtestAvgSample::from)
-                .collect(),
-        }
-    }
-}
-
 impl From<&InMemorySpeedtestAverage> for IcebergSpeedtestAvg {
     fn from(value: &InMemorySpeedtestAverage) -> Self {
         let timestamp = Utc::now();
@@ -129,45 +96,5 @@ impl From<&InMemorySpeedtestAverage> for IcebergSpeedtestAvg {
             timestamp: timestamp.into(),
             speedtests,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::SubsecRound;
-    use helium_crypto::PublicKeyBinary;
-    use helium_proto::services::poc_mobile::SpeedtestAvgValidity;
-
-    #[test]
-    fn convert_file_store_speedtest_average() {
-        let pub_key: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .unwrap();
-        let now = Utc::now().trunc_subsecs(3);
-        let avg = FileStoreSpeedtestAverage {
-            pub_key: pub_key.clone(),
-            upload_speed_avg_bps: 10_000_000,
-            download_speed_avg_bps: 100_000_000,
-            latency_avg_ms: 25,
-            validity: SpeedtestAvgValidity::Valid,
-            speedtests: vec![SpeedtestAverageEntry {
-                upload_speed_bps: 11_000_000,
-                download_speed_bps: 110_000_000,
-                latency_ms: 20,
-                timestamp: now,
-            }],
-            timestamp: now,
-            reward_multiplier: 1.0,
-        };
-
-        let row = IcebergSpeedtestAvg::from(&avg);
-        assert_eq!(row.hotspot_pubkey, pub_key.to_string());
-        assert_eq!(row.upload_speed_avg_bps, 10_000_000);
-        assert_eq!(row.download_speed_avg_bps, 100_000_000);
-        assert_eq!(row.latency_avg_ms, 25);
-        assert_eq!(row.reward_multiplier, 1.0);
-        assert_eq!(row.sample_count, 1);
-        assert_eq!(row.speedtests.len(), 1);
     }
 }
