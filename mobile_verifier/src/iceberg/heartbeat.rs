@@ -13,18 +13,18 @@ pub const TABLE_NAME: &str = "heartbeats";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergHeartbeat {
-    pub(crate) hotspot_pubkey: String,
-    pub(crate) received_timestamp: DateTime<FixedOffset>,
-    pub(crate) heartbeat_timestamp: DateTime<FixedOffset>,
-    pub(crate) device_type: Option<String>,
-    pub(crate) lat: f64,
-    pub(crate) lon: f64,
-    pub(crate) coverage_object: String,
-    pub(crate) location_validation_timestamp: Option<DateTime<FixedOffset>>,
-    pub(crate) distance_to_asserted: Option<i64>,
-    pub(crate) asserted_location: Option<String>,
-    pub(crate) location_trust_score_multiplier: f64,
-    pub(crate) location_source: String,
+    pub hotspot_pubkey: String,
+    pub received_timestamp: DateTime<FixedOffset>,
+    pub heartbeat_timestamp: DateTime<FixedOffset>,
+    pub device_type: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub coverage_object: String,
+    pub location_validation_timestamp: Option<DateTime<FixedOffset>>,
+    pub distance_to_asserted: Option<i64>,
+    pub asserted_location: Option<String>,
+    pub location_trust_score_multiplier: f64,
+    pub location_source: String,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
