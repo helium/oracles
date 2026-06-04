@@ -26,9 +26,6 @@ pub struct Settings {
     /// Batch size for hotspot metadata stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch_size: u32,
-    /// Batch size for hex boosting stream results. Default 100
-    #[serde(default = "default_hex_boosting_batch_size")]
-    pub hex_boosting_batch_size: u32,
     #[serde(with = "humantime_serde", default = "default_cache_ttl_in_secs")]
     pub cache_ttl: Duration,
 }
@@ -42,10 +39,6 @@ fn default_rpc_timeout() -> Duration {
 }
 
 fn default_batch_size() -> u32 {
-    100
-}
-
-fn default_hex_boosting_batch_size() -> u32 {
     100
 }
 

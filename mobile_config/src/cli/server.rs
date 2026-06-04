@@ -10,7 +10,6 @@ use crate::{
         tracker::Tracker,
     },
     grpc_server::GrpcServer,
-    hex_boosting_service::HexBoostingService,
     key_cache::KeyCache,
     settings::Settings,
     sub_dao_service::SubDaoService,
@@ -61,13 +60,6 @@ impl Server {
             settings.signing_keypair.clone(),
         );
 
-        let hex_boosting_svc = HexBoostingService::new(
-            key_cache.clone(),
-            metadata_pool.clone(),
-            settings.signing_keypair.clone(),
-            settings.boosted_hex_activation_cutoff,
-        );
-
         let sub_dao_svc = SubDaoService::new(
             key_cache.clone(),
             metadata_pool.clone(),
@@ -82,7 +74,6 @@ impl Server {
             auth_svc,
             entity_svc,
             carrier_svc,
-            hex_boosting_svc,
             sub_dao_svc,
         );
 
