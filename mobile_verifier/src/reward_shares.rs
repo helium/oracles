@@ -218,7 +218,6 @@ impl CoverageShares {
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
-        boosted_hexes: &BoostedHexes,
         boosted_hex_eligibility: &BoostedHexEligibility,
         banned_radios: &BannedRadios,
         unique_connections: &UniqueConnectionCounts,

@@ -59,16 +59,10 @@ impl CoverageMapBuilder {
     }
 
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
-    pub fn build(
-        self,
-        boosted_hexes: &impl BoostedHexMap,
-        epoch_start: DateTime<Utc>,
-    ) -> CoverageMap {
+    pub fn build(self) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
-        for coverage in
-            into_indoor_coverage_map(self.indoor_wifi, boosted_hexes, epoch_start).chain(
-                into_outdoor_coverage_map(self.outdoor_wifi, boosted_hexes, epoch_start),
-            )
+        for coverage in into_indoor_coverage_map(self.indoor_wifi)
+            .chain(into_outdoor_coverage_map(self.outdoor_wifi))
         {
             wifi_hotspots
                 .entry(coverage.hotspot_key.clone())
@@ -133,20 +127,6 @@ pub enum SignalLevel {
     None,
 }
 
-pub trait BoostedHexMap {
-    fn get_current_multiplier(&self, cell: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32>;
-}
-
-#[cfg(test)]
-pub(crate) struct NoBoostedHexes;
-
-#[cfg(test)]
-impl BoostedHexMap for NoBoostedHexes {
-    fn get_current_multiplier(&self, _cell: Cell, _ts: DateTime<Utc>) -> Option<NonZeroU32> {
-        None
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -174,7 +154,7 @@ mod test {
             0x8c2681a3064d9ff,
             SignalLevel::High,
         )]);
-        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let submap = submap_builder.build();
         let cov_1 = submap.get_wifi_coverage(&radio1);
         assert_eq!(cov_1.len(), 0);
         let cov_2 = submap.get_wifi_coverage(&radio2);
@@ -204,7 +184,7 @@ mod test {
         ));
         let submap_builder =
             coverage_map_builder.submap(vec![outdoor_wifi_coverage(&radio3, 0x8c2681a3064d9ff, 2)]);
-        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let submap = submap_builder.build();
         let cov_1 = submap.get_wifi_coverage(&radio1);
         assert_eq!(cov_1.len(), 0);
         let cov_2 = submap.get_wifi_coverage(&radio2);
