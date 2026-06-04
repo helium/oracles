@@ -115,13 +115,7 @@ impl TryFrom<GatewayMetadataProto> for GatewayMetadata {
 }
 
 pub fn pubkey_to_hex(args: PubkeyToHex) -> Result<Msg> {
-    let hex = args
-        .pubkey
-        .as_ref()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-    Msg::ok(format!("\\x{hex}"))
+    Msg::ok(format!("\\x{:x}", args.pubkey))
 }
 
 pub async fn device_type_counts(args: DeviceTypeCounts) -> Result<Msg> {

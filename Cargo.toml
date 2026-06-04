@@ -49,7 +49,7 @@ derive_builder = "0"
 futures = "*"
 futures-util = "*"
 h3o = { version = "0", features = ["serde"] }
-helium-crypto = { version = "0.9.3", default-features = false }
+helium-crypto = { version = "0.11.0", default-features = false }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
