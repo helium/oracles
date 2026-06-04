@@ -14,7 +14,6 @@ use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, LocationSource, OracleBoostingHexAssignment, SignalLevel,
 };
 use hex_assignments::{Assignment, HexBoostData};
-use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     banning::BannedRadios,
     boosting_oracles::DataSetDownloaderDaemon,
@@ -476,7 +475,6 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),

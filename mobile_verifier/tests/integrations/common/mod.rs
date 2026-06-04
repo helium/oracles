@@ -3,7 +3,6 @@ use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
 };
-use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
@@ -14,11 +13,7 @@ use helium_proto::services::poc_mobile::{
 use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
 use mobile_config::gateway::service::info::DeviceType;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
-    sub_dao_epoch_reward_info::EpochRewardInfo,
-};
+use mobile_config::{client::ClientError, sub_dao_epoch_reward_info::EpochRewardInfo};
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
@@ -37,32 +32,6 @@ pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1
 pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
 pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct MockHexBoostingClient {
-    boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-impl MockHexBoostingClient {
-    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
-    }
-}
-
-#[async_trait::async_trait]
-impl HexBoostingInfoResolver for MockHexBoostingClient {
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-
-    async fn stream_modified_boosted_hexes_info(
-        &mut self,
-        _timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
 
 pub trait RadioRewardV2Ext {
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;

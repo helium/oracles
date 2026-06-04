@@ -11,11 +11,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
-use hextree::Cell;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexes},
-    client::ClientError,
-};
+use mobile_config::client::ClientError;
 
 use mobile_verifier::{
     banning::BannedRadios,
@@ -31,9 +27,8 @@ use mobile_verifier::{
     IsAuthorized,
 };
 use rust_decimal_macros::dec;
-use solana::SolPubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
+use std::{collections::HashMap, ops::Range, pin::pin};
 use uuid::Uuid;
 
 use crate::common::{self, GatewayClientAllOwnersValid};
@@ -417,7 +412,6 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -528,7 +522,6 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -758,47 +751,6 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     averages.insert(hs_pub_key_5.clone(), SpeedtestAverage::from(speedtests_5));
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let mut boosted_hexes = BoostedHexes::default();
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a3064d9ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a3064d9ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(1).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a3065d3ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a3065d3ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(2).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a306635ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a306635ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(3).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-
     // Make all hotspots eligible to get boosted rewards
     let mut unique_connections = UniqueConnectionCounts::default();
     let hotspots = vec![
@@ -819,7 +771,6 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &boosted_hexes,
         &BoostedHexEligibility::new(unique_connections.clone()),
         &BannedRadios::default(),
         &unique_connections,
@@ -940,7 +891,6 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -1144,14 +1094,12 @@ async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result
 
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let boosted_hexes = BoostedHexes::default();
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -1253,14 +1201,12 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
 
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let boosted_hexes = BoostedHexes::default();
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
