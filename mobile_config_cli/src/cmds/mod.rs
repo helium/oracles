@@ -1,7 +1,7 @@
 use crate::{cmds::env::NetworkArg, NetworkKeyRole, Result};
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
-use helium_crypto::PublicKey;
+use helium_crypto::{PublicKey, PublicKeyBinary};
 use mobile_config::KeyRole;
 use std::path::PathBuf;
 
@@ -171,6 +171,15 @@ pub enum GatewayCommands {
     InfoAtTimestamp(GetHotspotAtTimestamp),
     /// Stream all gateways and print counts by device type
     DeviceTypeCounts(DeviceTypeCounts),
+    /// Convert a base58 hotspot pubkey to the hex bytes stored in
+    /// `gateways.address` (BYTEA) in the mobile-config database
+    PubkeyToHex(PubkeyToHex),
+}
+
+#[derive(Debug, Args)]
+pub struct PubkeyToHex {
+    /// Base58-encoded hotspot pubkey
+    pub pubkey: PublicKeyBinary,
 }
 
 #[derive(Debug, Args)]

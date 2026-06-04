@@ -1,4 +1,7 @@
-use super::{DeviceTypeCounts, GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair};
+use super::{
+    DeviceTypeCounts, GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair,
+    PubkeyToHex,
+};
 use crate::{client, Msg, PrettyJson, Result};
 use angry_purple_tiger::AnimalName;
 use futures::StreamExt;
@@ -109,6 +112,16 @@ impl TryFrom<GatewayMetadataProto> for GatewayMetadata {
             deployment_info: md.deployment_info.map(DeploymentInfo::from),
         })
     }
+}
+
+pub fn pubkey_to_hex(args: PubkeyToHex) -> Result<Msg> {
+    let hex = args
+        .pubkey
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    Msg::ok(format!("\\x{hex}"))
 }
 
 pub async fn device_type_counts(args: DeviceTypeCounts) -> Result<Msg> {
