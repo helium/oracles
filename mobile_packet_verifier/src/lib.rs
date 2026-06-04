@@ -19,7 +19,7 @@ pub mod pending_burns;
 pub mod pending_txns;
 pub mod settings;
 
-const BYTES_PER_DC: u64 = 20_000;
+const BYTES_PER_DC: u64 = 100_000;
 
 pub fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);
@@ -86,8 +86,8 @@ mod tests {
     #[test]
     fn test_bytes_to_dc() {
         assert_eq!(1, bytes_to_dc(1));
-        assert_eq!(1, bytes_to_dc(20_000));
-        assert_eq!(2, bytes_to_dc(20_001));
+        assert_eq!(1, bytes_to_dc(100_000));
+        assert_eq!(2, bytes_to_dc(100_001));
     }
 }
 

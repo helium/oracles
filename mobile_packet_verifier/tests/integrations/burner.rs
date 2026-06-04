@@ -39,7 +39,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     save_data_transfer_sessions(
         &pool,
         &[
-            (&payer_insufficent, &payer_insufficent, 1_000_000_000), // exceed balance
+            (&payer_insufficent, &payer_insufficent, 2_000_000_000), // exceed balance
             (&payer_sufficient, &payer_sufficient, 1_000_000),       // within balance
         ],
     )
