@@ -3,7 +3,6 @@ use helium_proto::services::poc_mobile::{
     radio_reward_v2::{CoveredHex, LocationTrustScore},
     OracleBoostedHexStatus, SpBoostedHexStatus, Speedtest,
 };
-use rust_decimal::prelude::ToPrimitive;
 
 use crate::ToProtoDecimal;
 
@@ -81,7 +80,6 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
             .map(|covered_hex| CoveredHex {
                 location: covered_hex.hex.into_raw(),
                 base_coverage_points: Some(covered_hex.points.base.proto_decimal()),
-                boosted_coverage_points: Some(covered_hex.points.boosted.proto_decimal()),
                 urbanized: covered_hex.assignments.urbanized.into(),
                 footfall: covered_hex.assignments.footfall.into(),
                 landtype: covered_hex.assignments.landtype.into(),
@@ -89,10 +87,9 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
                 assignment_multiplier: Some(covered_hex.assignment_multiplier.proto_decimal()),
                 rank: covered_hex.rank as u32,
                 rank_multiplier: Some(covered_hex.rank_multiplier.proto_decimal()),
-                boosted_multiplier: covered_hex
-                    .boosted_multiplier
-                    .and_then(|x| x.to_u32())
-                    .unwrap_or_default(),
+                // deprecated
+                boosted_coverage_points: None,
+                boosted_multiplier: 0,
             })
             .collect()
     }

@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel, UnrankedCoverage};
 use coverage_point_calculator::{
@@ -42,7 +40,6 @@ fn base_radio_coverage_points() {
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: NonZeroU32::new(0),
     }];
 
     for (radio_type, expected_base_coverage_point) in [
@@ -82,7 +79,6 @@ fn radios_with_coverage() {
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: NonZeroU32::new(0),
     };
     let base_hex_iter = std::iter::repeat(base_hex);
 
@@ -394,7 +390,6 @@ fn ranked_coverage(hex: u64, rank: usize, signal_level: SignalLevel) -> RankedCo
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: None,
         signal_level,
     }
 }

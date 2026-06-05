@@ -301,7 +301,7 @@ where
         // now that the db has been purged, safe to write out the manifest
         let reward_data = ManifestMobileRewardData {
             poc_bones_per_reward_share: Some(poc_dc_shares.normal.proto_decimal()),
-            boosted_poc_bones_per_reward_share: Some(poc_dc_shares.boost.proto_decimal()),
+            boosted_poc_bones_per_reward_share: None,
             service_provider_promotions: vec![],
             token: MobileRewardToken::Hnt as i32,
         };

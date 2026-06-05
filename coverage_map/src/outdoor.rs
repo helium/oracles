@@ -100,7 +100,6 @@ pub fn into_outdoor_coverage_map(outdoor: OutdoorCellTree) -> impl Iterator<Item
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
                 assignments: cov.assignments,
-                boosted: None,
                 signal_level: cov.signal_level,
             })
     })

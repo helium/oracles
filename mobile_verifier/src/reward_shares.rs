@@ -172,11 +172,8 @@ pub fn coverage_point_to_mobile_reward_share(
         hotspot_key: radio_id.clone().into(),
         cbsd_id: String::default(),
         base_coverage_points_sum: Some(coverage_points.coverage_points.base.proto_decimal()),
-        boosted_coverage_points_sum: Some(coverage_points.coverage_points.boosted.proto_decimal()),
         base_reward_shares: Some(coverage_points.total_base_shares().proto_decimal()),
-        boosted_reward_shares: Some(coverage_points.total_boosted_shares().proto_decimal()),
         base_poc_reward: rewards_per_share.base_poc_reward(&coverage_points),
-        boosted_poc_reward: rewards_per_share.boosted_poc_reward(&coverage_points),
         seniority_timestamp: seniority_timestamp.encode_timestamp(),
         coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
         location_trust_scores: coverage_points.proto_location_trust_scores(),
@@ -189,6 +186,10 @@ pub fn coverage_point_to_mobile_reward_share(
         oracle_boosted_hex_status: coverage_points.proto_oracle_boosted_hex_status().into(),
         covered_hexes: coverage_points.proto_covered_hexes(),
         speedtest_average: Some(coverage_points.proto_speedtest_avg()),
+        // deprecated
+        boosted_coverage_points_sum: None,
+        boosted_reward_shares: None,
+        boosted_poc_reward: 0,
     }
 }
 
@@ -464,7 +465,6 @@ impl DataTransferAndPocAllocatedRewardBuckets {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct CalculatedPocRewardShares {
     pub(crate) normal: Decimal,
-    pub(crate) boost: Decimal,
 }
 
 impl CalculatedPocRewardShares {
@@ -481,7 +481,6 @@ impl CalculatedPocRewardShares {
         let shares_per_point = allocated_rewards.total_poc() / total_points;
         Some(CalculatedPocRewardShares {
             normal: shares_per_point,
-            boost: shares_per_point,
         })
     }
 
@@ -491,14 +490,8 @@ impl CalculatedPocRewardShares {
             .unwrap_or_default()
     }
 
-    fn boosted_poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        (self.boost * points.total_boosted_shares())
-            .to_u64()
-            .unwrap_or_default()
-    }
-
     fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        self.base_poc_reward(points) + self.boosted_poc_reward(points)
+        self.base_poc_reward(points)
     }
 }
 

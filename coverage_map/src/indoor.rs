@@ -92,7 +92,6 @@ pub fn into_indoor_coverage_map(indoor: IndoorCellTree) -> impl Iterator<Item = 
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
                 assignments: cov.assignments,
-                boosted: None,
                 signal_level: cov.signal_level,
             })
     })

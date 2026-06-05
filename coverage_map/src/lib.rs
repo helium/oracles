@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroU32};
+use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use hex_assignments::assignment::HexAssignments;
@@ -115,7 +115,6 @@ pub struct RankedCoverage {
     pub rank: usize,
     pub hotspot_key: Vec<u8>,
     pub assignments: HexAssignments,
-    pub boosted: Option<NonZeroU32>,
     pub signal_level: SignalLevel,
 }
 
