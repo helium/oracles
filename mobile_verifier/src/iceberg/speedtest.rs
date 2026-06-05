@@ -9,13 +9,13 @@ pub const TABLE_NAME: &str = "speedtests";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergSpeedtest {
-    hotspot_pubkey: String,
-    serial: String,
-    received_timestamp: DateTime<FixedOffset>,
-    timestamp: DateTime<FixedOffset>,
-    upload_speed: u64,
-    download_speed: u64,
-    latency: u32,
+    pub hotspot_pubkey: String,
+    pub serial: String,
+    pub received_timestamp: DateTime<FixedOffset>,
+    pub timestamp: DateTime<FixedOffset>,
+    pub upload_speed: u64,
+    pub download_speed: u64,
+    pub latency: u32,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {

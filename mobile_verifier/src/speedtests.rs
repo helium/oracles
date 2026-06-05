@@ -176,7 +176,9 @@ where
         let mut speedtests = file.into_stream(&mut transaction).await?;
 
         let mut iceberg_records = Vec::new();
+        let mut invalid_iceberg_records = Vec::new();
         let mut iceberg_avg_records = Vec::new();
+        let mut invalid_iceberg_avg_records = Vec::new();
 
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
@@ -194,25 +196,38 @@ where
                 if self.iceberg_writer.is_some() {
                     iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
                 }
-                if self.speedtest_avg_iceberg_writer.is_some()
-                    && average.validity == SpeedtestAvgValidity::Valid
-                {
-                    iceberg_avg_records.push(iceberg::IcebergSpeedtestAvg::from(&average));
+                if self.speedtest_avg_iceberg_writer.is_some() {
+                    let avg_record = iceberg::IcebergSpeedtestAvg::from(&average);
+                    if average.validity == SpeedtestAvgValidity::Valid {
+                        iceberg_avg_records.push(avg_record);
+                    } else {
+                        invalid_iceberg_avg_records.push(iceberg::IcebergInvalidSpeedtestAvg::new(
+                            avg_record,
+                            average.validity,
+                        ));
+                    }
                 }
+            } else if self.iceberg_writer.is_some() {
+                invalid_iceberg_records.push(iceberg::IcebergInvalidSpeedtest::new(
+                    iceberg::IcebergSpeedtest::from(&speedtest_report),
+                    result,
+                ));
             }
             // write out paper trail of speedtest validity
             self.write_verified_speedtest(speedtest_report, result)
                 .await?;
         }
 
-        iceberg::maybe_write_idempotent(self.iceberg_writer.as_ref(), &write_id, iceberg_records)
-            .await?;
-        iceberg::maybe_write_idempotent(
-            self.speedtest_avg_iceberg_writer.as_ref(),
-            &write_id,
-            iceberg_avg_records,
-        )
-        .await?;
+        if let Some(writer) = self.iceberg_writer.as_ref() {
+            writer
+                .write(&write_id, iceberg_records, invalid_iceberg_records)
+                .await?;
+        }
+        if let Some(writer) = self.speedtest_avg_iceberg_writer.as_ref() {
+            writer
+                .write(&write_id, iceberg_avg_records, invalid_iceberg_avg_records)
+                .await?;
+        }
 
         self.speedtest_avg_file_sink.commit().await?;
         self.verified_speedtest_file_sink.commit().await?;

@@ -522,6 +522,86 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     Ok(())
 }
 
+#[sqlx::test]
+async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer::<iceberg::IcebergDataTransferSession>(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer::<iceberg::IcebergInvalidDataTransferSession>(
+            iceberg::invalid_session::TABLE_NAME,
+        )
+        .await?;
+
+    let valid_gateway = PublicKeyBinary::from(vec![1]);
+    let invalid_gateway = PublicKeyBinary::from(vec![2]);
+
+    let reports = vec![make_report(&valid_gateway), make_report(&invalid_gateway)];
+
+    let mut txn = pool.begin().await?;
+    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
+    let verified_sink = FileSinkClient::new(verified_tx, "test");
+    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+
+    handle_data_transfer_session_file(
+        &mut txn,
+        Some(&session_writer),
+        Some(&invalid_session_writer),
+        "test_write_id",
+        banned_radios,
+        // Only `valid_gateway` is a known gateway; the other is rejected.
+        &TestMobileConfig::valid_gateways(vec![valid_gateway.clone()]),
+        &verified_sink,
+        Utc::now(),
+        futures::stream::iter(reports),
+    )
+    .await?;
+    txn.commit().await?;
+
+    let trino = harness.trino();
+
+    // The valid session went to the sessions table only.
+    let valids = iceberg::session::get_all(trino).await?;
+    assert_eq!(valids.len(), 1);
+
+    // The rejected session went to invalid_sessions, tagged with its status.
+    let invalids = iceberg::invalid_session::get_all(trino).await?;
+    assert_eq!(invalids.len(), 1);
+    assert_eq!(invalids[0].reason, "invalid_gateway_key");
+    assert_eq!(
+        invalids[0].data_transfer_event_pub_key,
+        invalid_gateway.to_string()
+    );
+
+    Ok(())
+}
+
+fn make_report(gateway: &PublicKeyBinary) -> DataTransferSessionIngestReport {
+    DataTransferSessionIngestReport {
+        received_timestamp: Utc::now(),
+        report: DataTransferSessionReq {
+            rewardable_bytes: 1_000,
+            pub_key: gateway.clone(),
+            signature: vec![],
+            carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
+            data_transfer_usage: DataTransferEvent {
+                pub_key: gateway.clone(),
+                upload_bytes: 1_000,
+                download_bytes: 1_000,
+                radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                event_id: format!("event-{gateway}"),
+                payer: PublicKeyBinary::from(vec![0]),
+                timestamp: Utc::now(),
+                signature: vec![],
+            },
+        },
+    }
+}
+
 async fn run_accumulate_sessions(
     pool: &PgPool,
     reports: Vec<DataTransferSessionIngestReport>,
@@ -540,6 +620,7 @@ async fn run_accumulate_sessions(
     handle_data_transfer_session_file(
         &mut txn,
         iceberg_writer.as_ref(),
+        None,
         "test_write_id",
         banned_radios,
         &mobile_config,

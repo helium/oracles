@@ -6,6 +6,7 @@ use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
         iceberg::session::table_definition()?,
+        iceberg::invalid_session::table_definition()?,
         iceberg::burned_session::table_definition()?,
     ])
     .await?;
@@ -66,6 +67,13 @@ impl TestMobileConfig {
         Self {
             valid_gateways: ValidKeys::All,
             valid_routing_keys: ValidKeys::Only(valid),
+        }
+    }
+
+    pub fn valid_keys(gws: Vec<PublicKeyBinary>, routing: Vec<PublicKeyBinary>) -> Self {
+        Self {
+            valid_gateways: ValidKeys::Only(gws),
+            valid_routing_keys: ValidKeys::Only(routing),
         }
     }
 }

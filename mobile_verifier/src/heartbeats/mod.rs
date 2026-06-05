@@ -459,16 +459,25 @@ pub(crate) async fn process_validated_heartbeats(
     iceberg_ctx: Option<(&crate::iceberg::HeartbeatWriter, &str)>,
 ) -> anyhow::Result<()> {
     let mut iceberg_records = Vec::new();
+    let mut invalid_iceberg_records = Vec::new();
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 
-        if !validated_heartbeat.is_valid() {
-            continue;
+        if iceberg_ctx.is_some() {
+            let record = crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat);
+            if validated_heartbeat.is_valid() {
+                iceberg_records.push(record);
+            } else {
+                invalid_iceberg_records.push(crate::iceberg::IcebergInvalidHeartbeat::new(
+                    record,
+                    validated_heartbeat.validity,
+                ));
+            }
         }
 
-        if iceberg_ctx.is_some() {
-            iceberg_records.push(crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat));
+        if !validated_heartbeat.is_valid() {
+            continue;
         }
 
         if let Some(coverage_claim_time) = coverage_claim_time_cache
@@ -502,7 +511,7 @@ pub(crate) async fn process_validated_heartbeats(
 
     if let Some((writer, id)) = iceberg_ctx {
         writer
-            .write_idempotent(id, iceberg_records)
+            .write(id, iceberg_records, invalid_iceberg_records)
             .await
             .context("writing heartbeats idempotently")?;
     }
