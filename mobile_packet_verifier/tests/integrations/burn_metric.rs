@@ -100,6 +100,7 @@ async fn run_accumulate_sessions(
     handle_data_transfer_session_file(
         &mut txn,
         iceberg_writer.as_ref(),
+        None,
         "test_write_id",
         banned_radios,
         &mobile_config,

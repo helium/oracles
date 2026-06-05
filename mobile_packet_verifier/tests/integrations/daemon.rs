@@ -1,9 +1,13 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     aws_local::AwsLocal, file_sink::FileSinkClient, file_source, file_upload, BucketClient,
     FileInfo,
 };
 use file_store_oracles::{
+    mobile_ban::{
+        BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType,
+        VerifiedBanIngestReportStatus, VerifiedBanReport,
+    },
     mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
@@ -17,6 +21,7 @@ use helium_proto::services::{
     },
 };
 use mobile_packet_verifier::{
+    banning::handle_verified_ban_report,
     burner::Burner,
     daemon::{Daemon, IngestReports},
     iceberg,
@@ -37,16 +42,25 @@ fn make_ingest_report(
     event_id: &str,
 ) -> DataTransferSessionIngestReportV1 {
     let key = PublicKeyBinary::from(vec![1]);
+    make_ingest_report_with_keys(timestamp, event_id, key.clone(), key).into()
+}
+
+fn make_ingest_report_with_keys(
+    timestamp: chrono::DateTime<Utc>,
+    event_id: &str,
+    gw_pubkey: PublicKeyBinary,
+    routing_pubkey: PublicKeyBinary,
+) -> DataTransferSessionIngestReportV1 {
     DataTransferSessionIngestReport {
         received_timestamp: timestamp,
         report: DataTransferSessionReq {
             rewardable_bytes: 1_000,
-            pub_key: key.clone(),
+            pub_key: routing_pubkey,
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
             sampling: false,
             data_transfer_usage: DataTransferEvent {
-                pub_key: key,
+                pub_key: gw_pubkey,
                 upload_bytes: 500,
                 download_bytes: 500,
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -58,6 +72,33 @@ fn make_ingest_report(
         },
     }
     .into()
+}
+
+fn make_ban_report(
+    received_timestamp: DateTime<Utc>,
+    hotspot_pubkey: &PublicKeyBinary,
+    expiration: Option<DateTime<Utc>>,
+) -> VerifiedBanReport {
+    VerifiedBanReport {
+        verified_timestamp: received_timestamp,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp,
+            report: BanRequest {
+                hotspot_pubkey: hotspot_pubkey.clone(),
+                timestamp: received_timestamp,
+                ban_pubkey: PublicKeyBinary::from(vec![0]),
+                signature: vec![],
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
+                    message: "test-ban".to_string(),
+                    reason: BanReason::LocationGaming,
+                    ban_type: BanType::All,
+                    expiration_timestamp: expiration,
+                }),
+            },
+        },
+    }
 }
 
 fn mk_data_transfer_session(
@@ -177,6 +218,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         reports,
         verified_sessions_sink,
         Some(session_writer),
+        None,
     );
 
     let daemon = Daemon::new(
@@ -302,6 +344,7 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         reports_rx,
         FileSinkClient::new(verified_tx, "test"),
         None,
+        None,
     );
 
     let daemon = Daemon::new(
@@ -394,6 +437,9 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
     let session_writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
     let burned_writer = harness
         .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
@@ -405,12 +451,39 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
     let start_time = file_time - Duration::minutes(1);
     let payer = PublicKeyBinary::from(vec![0]);
 
+    let valid_gw = PublicKeyBinary::from(vec![1]);
+    let invalid_gw = PublicKeyBinary::from(vec![2]);
+    let banned_gw = PublicKeyBinary::from(vec![3]);
+
+    let valid_routing = PublicKeyBinary::from(vec![4]);
+    let invalid_routing = PublicKeyBinary::from(vec![5]);
+
+    let mk_report = |label: &str, gw: &PublicKeyBinary, routing: &PublicKeyBinary| {
+        make_ingest_report_with_keys(file_time, label, gw.clone(), routing.clone())
+    };
+
+    let ingest_report = mk_report("full-flow-event-1", &valid_gw, &valid_routing);
+    let duplicate_report = ingest_report.clone();
+    let banned_report = mk_report("banned-event-1", &banned_gw, &valid_routing);
+    let unknown_gw_report = mk_report("unknown-gw-event-1", &invalid_gw, &valid_routing);
+    let invalid_routing_report = mk_report("invalid-routing-event-1", &valid_gw, &invalid_routing);
     awsl.put_protos_at_time(
         FileType::DataTransferSessionIngestReport.to_string(),
-        vec![make_ingest_report(file_time, "full-flow-event-1")],
+        vec![
+            ingest_report,
+            duplicate_report,
+            banned_report,
+            unknown_gw_report,
+            invalid_routing_report,
+        ],
         file_time,
     )
     .await?;
+
+    // Bans are not injected into the Daemon, so we ban through the DB.
+    let mut conn = pool.acquire().await?;
+    let ban_report = make_ban_report(Utc::now() - Duration::hours(2), &banned_gw, None);
+    handle_verified_ban_report(&mut conn, ban_report).await?;
 
     // Both file sinks share one FileUpload client / server pair.
     let cache_dir = tempfile::tempdir()?;
@@ -459,6 +532,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         reports,
         verified_sessions_sink,
         Some(session_writer),
+        Some(invalid_session_writer),
     );
 
     let daemon = Daemon::new(
@@ -470,7 +544,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         std::time::Duration::from_millis(500),
         ingest_reports,
         burner,
-        common::TestMobileConfig::all_valid(),
+        common::TestMobileConfig::valid_keys(vec![valid_gw], vec![valid_routing]),
     );
 
     // On BurnSuccess, manually commit the Automatic FileSink so the rolled file
@@ -531,6 +605,13 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         session_rows.len(),
         1,
         "expected 1 iceberg session from ingest"
+    );
+
+    let invalid_session_rows = iceberg::invalid_session::get_all(harness.trino()).await?;
+    assert_eq!(
+        invalid_session_rows.len(),
+        4,
+        "expected 4 iceberg invalid session from ingest"
     );
 
     let burned_rows = iceberg::burned_session::get_all(harness.trino()).await?;
