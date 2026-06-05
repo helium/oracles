@@ -42,7 +42,7 @@ fn make_ingest_report(
     event_id: &str,
 ) -> DataTransferSessionIngestReportV1 {
     let key = PublicKeyBinary::from(vec![1]);
-    make_ingest_report_with_keys(timestamp, event_id, key.clone(), key).into()
+    make_ingest_report_with_keys(timestamp, event_id, key.clone(), key)
 }
 
 fn make_ingest_report_with_keys(
