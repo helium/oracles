@@ -14,7 +14,9 @@ use sqlx::{Postgres, Transaction};
 use crate::{
     banning::BannedRadios,
     bytes_to_dc, event_ids,
-    iceberg::session::IcebergDataTransferSession,
+    iceberg::{
+        invalid_session::IcebergInvalidDataTransferSession, session::IcebergDataTransferSession,
+    },
     pending_burns::{self, DataTransferSession},
     MobileConfigResolverExt,
 };
@@ -22,6 +24,7 @@ use crate::{
 #[derive(Default)]
 pub struct AccumulatedSessions {
     pub iceberg_sessions: Vec<IcebergDataTransferSession>,
+    pub invalid_iceberg_sessions: Vec<IcebergInvalidDataTransferSession>,
     pub proto_sessions: Vec<VerifiedDataTransferIngestReportV1>,
     pub db_sessions: Vec<DataTransferSession>,
 }
@@ -51,9 +54,14 @@ pub async fn accumulate_sessions(
             .proto_sessions
             .push(report.to_verified_proto(report_validity));
 
-        // go to iceberg only if it's valid, even if it's zero rewardable bytes
+        // go to iceberg only if it's valid, even if it's zero rewardable bytes;
+        // rejected reports go to the sibling invalid table tagged with the status
         if report_validity == ReportStatus::Valid {
             result.iceberg_sessions.push(report.to_iceberg_session());
+        } else {
+            result
+                .invalid_iceberg_sessions
+                .push(report.to_invalid_iceberg_session(report_validity));
         }
 
         if report_validity != ReportStatus::Valid {
@@ -81,6 +89,9 @@ trait DataTransferIngestReportExt {
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
 
     fn to_iceberg_session(&self) -> IcebergDataTransferSession;
+
+    fn to_invalid_iceberg_session(&self, status: ReportStatus)
+        -> IcebergInvalidDataTransferSession;
 
     fn no_rewardable_bytes(&self) -> bool;
 
@@ -112,6 +123,16 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
 
     fn to_iceberg_session(&self) -> IcebergDataTransferSession {
         IcebergDataTransferSession::from(self.clone())
+    }
+
+    fn to_invalid_iceberg_session(
+        &self,
+        status: ReportStatus,
+    ) -> IcebergInvalidDataTransferSession {
+        IcebergInvalidDataTransferSession::new(
+            IcebergDataTransferSession::from(self.clone()),
+            status,
+        )
     }
 
     fn no_rewardable_bytes(&self) -> bool {

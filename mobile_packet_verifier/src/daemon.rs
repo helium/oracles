@@ -3,7 +3,7 @@ use crate::{
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
-    iceberg::{self, DataTransferWriter},
+    iceberg::{self, DataTransferWriter, InvalidDataTransferWriter},
     pending_burns,
     settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
@@ -132,6 +132,7 @@ where
 pub async fn handle_data_transfer_session_file(
     txn: &mut Transaction<'_, Postgres>,
     iceberg_writer: Option<&iceberg::DataTransferWriter>,
+    invalid_iceberg_writer: Option<&iceberg::InvalidDataTransferWriter>,
     write_id: &str,
     banned_radios: BannedRadios,
     mobile_config: &impl MobileConfigResolverExt,
@@ -145,6 +146,7 @@ pub async fn handle_data_transfer_session_file(
 
     let AccumulatedSessions {
         iceberg_sessions,
+        invalid_iceberg_sessions,
         proto_sessions,
         db_sessions,
     } = sessions;
@@ -162,6 +164,8 @@ pub async fn handle_data_transfer_session_file(
     }
 
     iceberg::maybe_write_idempotent(iceberg_writer, write_id, iceberg_sessions).await?;
+    iceberg::maybe_write_idempotent(invalid_iceberg_writer, write_id, invalid_iceberg_sessions)
+        .await?;
 
     Ok(())
 }
@@ -179,6 +183,7 @@ pub struct IngestReports {
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     iceberg_writer: Option<DataTransferWriter>,
+    invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
 }
 
 impl IngestReports {
@@ -187,12 +192,14 @@ impl IngestReports {
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
         iceberg_writer: Option<DataTransferWriter>,
+        invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
     ) -> Self {
         Self {
             pool,
             reports,
             verified_sink,
             iceberg_writer,
+            invalid_iceberg_writer,
         }
     }
 
@@ -226,11 +233,13 @@ impl IngestReports {
         let mut transaction = self.pool.begin().await?;
 
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
+        println!("banned: {banned_radios:?}");
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
             &mut transaction,
             self.iceberg_writer.as_ref(),
+            self.invalid_iceberg_writer.as_ref(),
             &write_id,
             banned_radios,
             mobile_config,
@@ -294,14 +303,15 @@ impl Cmd {
             )
             .await?;
 
-        let (session_writer, burned_session_writer) =
+        let (session_writer, invalid_session_writer, burned_session_writer) =
             if let Some(ref iceberg_settings) = settings.iceberg_settings {
                 tracing::info!("iceberg settings provided, connecting...");
-                let (session, burned) = iceberg::get_writers(iceberg_settings).await?;
-                (Some(session), Some(burned))
+                let (session, invalid_session, burned) =
+                    iceberg::get_writers(iceberg_settings).await?;
+                (Some(session), Some(invalid_session), Some(burned))
             } else {
                 tracing::info!("no iceberg settings provided");
-                (None, None)
+                (None, None, None)
             };
 
         let burner = Burner::new(
@@ -309,7 +319,7 @@ impl Cmd {
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
-            burned_session_writer.clone(),
+            burned_session_writer,
         );
 
         let (reports, reports_server) = file_source::continuous_source()
@@ -326,7 +336,8 @@ impl Cmd {
             pool.clone(),
             reports,
             verified_sessions,
-            session_writer.clone(),
+            session_writer,
+            invalid_session_writer,
         );
 
         let daemon = Daemon::new(

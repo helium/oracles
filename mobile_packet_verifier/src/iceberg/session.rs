@@ -10,20 +10,20 @@ pub const TABLE_NAME: &str = "sessions";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergDataTransferSession {
-    report_received_timestamp: DateTime<FixedOffset>,
+    pub report_received_timestamp: DateTime<FixedOffset>,
     // -- request
-    request_pub_key: String,
-    rewardable_bytes: u64,
-    carrier_id: String,
-    sampling: bool,
+    pub request_pub_key: String,
+    pub rewardable_bytes: u64,
+    pub carrier_id: String,
+    pub sampling: bool,
     // -- request -- data transfer usage
-    data_transfer_event_pub_key: String,
-    upload_bytes: u64,
-    download_bytes: u64,
-    radio_access_technology: String,
-    event_id: String,
-    payer: String,
-    timestamp: DateTime<FixedOffset>,
+    pub data_transfer_event_pub_key: String,
+    pub upload_bytes: u64,
+    pub download_bytes: u64,
+    pub radio_access_technology: String,
+    pub event_id: String,
+    pub payer: String,
+    pub timestamp: DateTime<FixedOffset>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
