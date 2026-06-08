@@ -74,13 +74,9 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                             ))?
                             .value
                             .parse()?,
-                        boosted_poc_bones_per_reward_share: reward_data
-                            .boosted_poc_bones_per_reward_share
-                            .ok_or(RewardManifestError::MissingField(
-                                "mobile_reward_data.boosted_poc_bones_per_reward_share",
-                            ))?
-                            .value
-                            .parse()?,
+                        boosted_poc_bones_per_reward_share: deprecated_decimal(
+                            reward_data.boosted_poc_bones_per_reward_share,
+                        ),
                         token: prost_enum(reward_data.token, RewardManifestError::MobileTokenType)?,
                     })
                 }
@@ -113,5 +109,42 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                 None => None,
             },
         })
+    }
+}
+
+// Hex boosting is not longer active. Output protos write None to boosted values
+// instead of helium_proto::Decimal { value: "0".to_string() }.
+// We want to keep backwards compatibility for reading protos, but we no longer
+// want to err on boosted fields not being provided a value.
+fn deprecated_decimal(input: Option<helium_proto::Decimal>) -> Decimal {
+    let Some(helium_proto::Decimal { value }) = input else {
+        return Decimal::ZERO;
+    };
+
+    value.parse().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use rust_decimal::dec;
+
+    use super::*;
+
+    #[test]
+    fn deprecated_decimal_parse() {
+        let empty = helium_proto::Decimal {
+            value: "".to_string(),
+        };
+        let value = helium_proto::Decimal {
+            value: "1.23".to_string(),
+        };
+        let bad = helium_proto::Decimal {
+            value: "bad".to_string(),
+        };
+
+        assert_eq!(deprecated_decimal(None), Decimal::ZERO);
+        assert_eq!(deprecated_decimal(Some(empty)), Decimal::ZERO);
+        assert_eq!(deprecated_decimal(Some(value)), dec!(1.23));
+        assert_eq!(deprecated_decimal(Some(bad)), Decimal::ZERO);
     }
 }
