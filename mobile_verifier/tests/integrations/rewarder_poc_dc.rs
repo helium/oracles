@@ -1,8 +1,6 @@
 use std::ops::Range;
 
-use crate::common::{
-    self, default_price_info, reward_info_24_hours, MockHexBoostingClient, RadioRewardV2Ext,
-};
+use crate::common::{self, default_price_info, reward_info_24_hours, RadioRewardV2Ext};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store_oracles::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -51,19 +49,11 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
     update_assignments(&pool).await?;
 
-    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info,
-        None,
-    )
-    .await?;
+    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
+        .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -79,13 +69,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     // assert the unallocated reward
     let unallocated_reward = unallocated_reward.unwrap();
     assert_eq!(unallocated_reward.amount, 1);
-
-    // assert the boosted hexes in the radio rewards
-    // boosted hexes will contain the used multiplier for each boosted hex
-    // in this test there are no boosted hexes
-    assert_eq!(0, poc_rewards[0].boosted_hexes_len());
-    assert_eq!(0, poc_rewards[1].boosted_hexes_len());
-    assert_eq!(0, poc_rewards[2].boosted_hexes_len());
 
     // assert the dc reward outputs
     assert_eq!(500_000, dc_rewards[0].dc_transfer_reward);
@@ -125,8 +108,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
-    // Setup boost client and price info
-    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
+    // Setup price info
     let price_info = default_price_info();
 
     // seed single unique connections report within epoch
@@ -135,15 +117,8 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info,
-        None,
-    )
-    .await?;
+    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
+        .await?;
 
     let msgs = mobile_rewards.finish().await?;
     let poc_rewards = msgs.radio_reward_v2s;
@@ -187,7 +162,6 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     update_assignments(&pool).await?;
 
     // Run rewards with no unique connections, no poc rewards, expect unallocated
-    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
     // ban radio
@@ -202,15 +176,8 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info,
-        None,
-    )
-    .await?;
+    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
+        .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -241,7 +208,6 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     update_assignments(&pool).await?;
 
     // Run rewards with no unique connections, no poc rewards, expect unallocated
-    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
     // ban radio for Data only
@@ -256,15 +222,8 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
-        &pool,
-        &hex_boosting_client,
-        mobile_rewards_client,
-        &reward_info,
-        price_info,
-        None,
-    )
-    .await?;
+    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
+        .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -609,15 +568,12 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
     txn.commit().await?;
     update_assignments(&pool).await?;
 
-    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
-
     // Create reward shares with zero POC allocation
     let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(dec!(1000000));
 
     // Test the reward_poc function directly with zero POC allocation
     let (unallocated_amount, _calculated_shares) = rewarder::reward_poc(
         &pool,
-        &hex_boosting_client,
         &mobile_rewards_client,
         &reward_info,
         reward_shares,

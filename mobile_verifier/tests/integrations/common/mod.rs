@@ -3,22 +3,17 @@ use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
 };
-use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
-    mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
+    mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare,
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
     RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
 use mobile_config::gateway::service::info::DeviceType;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
-    sub_dao_epoch_reward_info::EpochRewardInfo,
-};
+use mobile_config::{client::ClientError, sub_dao_epoch_reward_info::EpochRewardInfo};
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
@@ -38,63 +33,11 @@ pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok
 
 pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct MockHexBoostingClient {
-    boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-impl MockHexBoostingClient {
-    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
-    }
-}
-
-#[async_trait::async_trait]
-impl HexBoostingInfoResolver for MockHexBoostingClient {
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-
-    async fn stream_modified_boosted_hexes_info(
-        &mut self,
-        _timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
-
 pub trait RadioRewardV2Ext {
-    fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
-    fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
-    fn boosted_hexes_len(&self) -> usize;
     fn total_poc_reward(&self) -> u64;
 }
 
 impl RadioRewardV2Ext for RadioRewardV2 {
-    fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex> {
-        self.covered_hexes.to_vec()
-    }
-
-    fn boosted_hexes_len(&self) -> usize {
-        self.covered_hexes
-            .iter()
-            .filter(|hex| hex.boosted_multiplier > 0)
-            .collect::<Vec<_>>()
-            .len()
-    }
-
-    fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex {
-        self.covered_hexes
-            .iter()
-            .filter(|hex| hex.boosted_multiplier > 0)
-            .cloned()
-            .collect::<Vec<_>>()
-            .get(index)
-            .unwrap_or_else(|| panic!("expected {index} in boosted_hexes"))
-            .clone()
-    }
-
     fn total_poc_reward(&self) -> u64 {
         self.base_poc_reward + self.boosted_poc_reward
     }
@@ -288,20 +231,6 @@ impl MobileRewardShareMessages {
             MobileReward::PromotionReward(inner) => self.promotion_rewards.push(inner),
         }
     }
-
-    pub fn unallocated_amount_or_default(&self) -> u64 {
-        self.unallocated
-            .iter()
-            .map(|reward| reward.amount)
-            .sum::<u64>()
-    }
-
-    pub fn total_poc_rewards(&self) -> u64 {
-        self.radio_reward_v2s
-            .iter()
-            .map(|reward| reward.total_poc_reward())
-            .sum()
-    }
 }
 
 trait TestTimeoutExt<T>
@@ -381,57 +310,6 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
             msgs,
             channel_closed,
         }
-    }
-}
-
-// Allows converting from a Vec<T> to HashMap<String, T>
-//
-// This trait assumes there will not be multiple entries
-// in the Vec for a given String.
-pub trait AsStringKeyedMap<V> {
-    fn as_keyed_map(&self) -> HashMap<String, V>
-    where
-        Self: Sized;
-}
-
-pub trait AsStringKeyedMapKey {
-    fn key(&self) -> String;
-}
-
-impl AsStringKeyedMapKey for RadioRewardV2 {
-    fn key(&self) -> String {
-        PublicKeyBinary::from(self.hotspot_key.to_vec()).to_string()
-    }
-}
-
-impl AsStringKeyedMapKey for SubscriberReward {
-    fn key(&self) -> String {
-        use prost::Message;
-        let bytes = prost::bytes::Bytes::from_owner(self.subscriber_id.clone());
-        String::decode(bytes).expect("decode subscriber id")
-    }
-}
-
-impl AsStringKeyedMapKey for PromotionReward {
-    fn key(&self) -> String {
-        self.entity.to_owned()
-    }
-}
-
-impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
-    fn as_keyed_map(&self) -> HashMap<String, V>
-    where
-        Self: Sized,
-    {
-        let mut map = HashMap::new();
-        for item in self {
-            let key = item.key();
-            if map.contains_key(&key) {
-                panic!("Duplicate string key found: {key}");
-            }
-            map.insert(key, item.clone());
-        }
-        map
     }
 }
 

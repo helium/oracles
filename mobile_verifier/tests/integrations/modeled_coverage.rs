@@ -11,11 +11,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
-use hextree::Cell;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexes},
-    client::ClientError,
-};
+use mobile_config::client::ClientError;
 
 use mobile_verifier::{
     banning::BannedRadios,
@@ -31,9 +27,8 @@ use mobile_verifier::{
     IsAuthorized,
 };
 use rust_decimal_macros::dec;
-use solana::SolPubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
+use std::{collections::HashMap, ops::Range, pin::pin};
 use uuid::Uuid;
 
 use crate::common::{self, GatewayClientAllOwnersValid};
@@ -46,9 +41,6 @@ impl GeofenceValidator for MockGeofence {
         true
     }
 }
-
-const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
-const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 #[sqlx::test]
 async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
@@ -417,7 +409,6 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -440,9 +431,11 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let uuid_1 = Uuid::new_v4();
     let uuid_2 = Uuid::new_v4();
+    let uuid_3 = Uuid::new_v4();
 
     let hs_pubkey_1 = PublicKeyBinary::from(vec![1]);
     let hs_pubkey_2 = PublicKeyBinary::from(vec![2]);
+    let hs_pubkey_3 = PublicKeyBinary::from(vec![3]);
 
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
@@ -456,7 +449,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             signature: Vec::new(),
             coverage: vec![
                 signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 (shared, rank 1)
                 signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 0
             ],
             trust_score: 1000,
@@ -473,9 +466,27 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             signature: Vec::new(),
             coverage: vec![
                 signal_level("8c2681a3065adff", SignalLevel::High)?, // 120
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.5 = 30 (this hex is
-                // shared
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?, // 0
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.5 = 30 (shared, rank 2)
+                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,    // 0
+            ],
+            trust_score: 1000,
+        },
+    };
+    // co3 also covers the shared medium hex, but claims it last, so it ranks
+    // third on that hex (rank 3 -> 0.25 multiplier).
+    let coverage_object_3 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store_oracles::coverage::CoverageObject {
+            pub_key: PublicKeyBinary::from(vec![1]),
+            uuid: uuid_3,
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pubkey_3.clone()),
+            // newer than co1 and co2
+            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
+            indoor: false,
+            signature: Vec::new(),
+            coverage: vec![
+                signal_level("8c2681a3065d3ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.25 = 15 (shared, rank 3)
             ],
             trust_score: 1000,
         },
@@ -499,11 +510,20 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         uuid_2,
     );
 
+    let heartbeats_3 = wifi_heartbeats(
+        13,
+        start,
+        hs_pubkey_3.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_3,
+    );
+
     process_wifi_input(
         &pool,
         &(start..end),
-        vec![coverage_object_1, coverage_object_2].into_iter(),
-        heartbeats_1.chain(heartbeats_2),
+        vec![coverage_object_1, coverage_object_2, coverage_object_3].into_iter(),
+        heartbeats_1.chain(heartbeats_2).chain(heartbeats_3),
     )
     .await?;
 
@@ -517,9 +537,15 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         good_speedtest(hs_pubkey_2.clone(), last_timestamp),
         good_speedtest(hs_pubkey_2.clone(), end),
     ];
+
+    let speedtests_3 = vec![
+        good_speedtest(hs_pubkey_3.clone(), last_timestamp),
+        good_speedtest(hs_pubkey_3.clone(), end),
+    ];
     let mut averages = HashMap::new();
     averages.insert(hs_pubkey_1.clone(), SpeedtestAverage::from(speedtests_1));
     averages.insert(hs_pubkey_2.clone(), SpeedtestAverage::from(speedtests_2));
+    averages.insert(hs_pubkey_3.clone(), SpeedtestAverage::from(speedtests_3));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -528,7 +554,6 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -546,311 +571,19 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         (dec!(120) + dec!(60) * dec!(0.5) + dec!(0))
     );
 
-    Ok(())
-}
-
-#[sqlx::test]
-async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
-    // Scenario: Hex overlapping + hex boosting
-    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
-    let start: DateTime<Utc> = end - Duration::days(1);
-
-    let uuid_1 = Uuid::new_v4();
-    let uuid_2 = Uuid::new_v4();
-    let uuid_3 = Uuid::new_v4();
-    let uuid_4 = Uuid::new_v4();
-    let uuid_5 = Uuid::new_v4();
-
-    // All coverage objects share the same hexes
-    let hs_pub_key_1 = PublicKeyBinary::from(vec![1]);
-    let hs_pub_key_2 = PublicKeyBinary::from(vec![2]);
-    let hs_pub_key_3 = PublicKeyBinary::from(vec![3]);
-    let hs_pub_key_4 = PublicKeyBinary::from(vec![4]);
-    let hs_pub_key_5 = PublicKeyBinary::from(vec![5]);
-
-    let expected_base_cp_co1 = dec!(240);
-    let coverage_object_1 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store_oracles::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_1,
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_1.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 2 = 120
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 3 = 0
-                                                                     // = 240 (but rank-limited to top 3 hexes for outdoor)
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let expected_base_cp_co2 = dec!(120);
-    let coverage_object_2 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store_oracles::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_2,
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_2.clone()),
-            coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.5 = 60
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.5 * 2 = 60
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.5 * 3 = 0
-                                                                     // = 120
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let expected_base_cp_co3 = dec!(60);
-    let coverage_object_3 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store_oracles::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_3,
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_3.clone()),
-            coverage_claim_time: "2022-02-03 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.25  = 30
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.25 * 2 = 30
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.25 * 3 = 0
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_4 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store_oracles::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_4,
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_4.clone()),
-            coverage_claim_time: "2022-02-04 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 2 = 16
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 3 = 12
-                                                                     // = 48
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_5 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store_oracles::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_5,
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_5.clone()),
-            coverage_claim_time: "2022-02-05 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?,
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let heartbeats_1 = wifi_heartbeats(
-        13,
-        start,
-        hs_pub_key_1.clone(),
-        40.019427814,
-        -105.27158489,
-        uuid_1,
-    );
-    let heartbeats_2 = wifi_heartbeats(
-        13,
-        start,
-        hs_pub_key_2.clone(),
-        40.019427814,
-        -105.27158489,
-        uuid_2,
-    );
-    let heartbeats_3 = wifi_heartbeats(
-        13,
-        start,
-        hs_pub_key_3.clone(),
-        40.019427814,
-        -105.27158489,
-        uuid_3,
-    );
-    let heartbeats_4 = wifi_heartbeats(
-        13,
-        start,
-        hs_pub_key_4.clone(),
-        40.019427814,
-        -105.27158489,
-        uuid_4,
-    );
-    let heartbeats_5 = wifi_heartbeats(
-        13,
-        start,
-        hs_pub_key_5.clone(),
-        40.019427814,
-        -105.27158489,
-        uuid_5,
-    );
-
-    process_wifi_input(
-        &pool,
-        &(start..end),
-        vec![
-            coverage_object_1,
-            coverage_object_2,
-            coverage_object_3,
-            coverage_object_4,
-            coverage_object_5,
-        ]
-        .into_iter(),
-        heartbeats_1
-            .chain(heartbeats_2)
-            .chain(heartbeats_3)
-            .chain(heartbeats_4)
-            .chain(heartbeats_5),
-    )
-    .await
-    .unwrap();
-
-    let last_timestamp = end - Duration::hours(12);
-    let expected_speedtest_mult_co1 = dec!(0.25);
-    let speedtests_1 = vec![
-        poor_speedtest(hs_pub_key_1.clone(), last_timestamp),
-        poor_speedtest(hs_pub_key_1.clone(), end),
-    ];
-    let expected_speedtest_mult_co2 = dec!(0.25);
-    let speedtests_2 = vec![
-        poor_speedtest(hs_pub_key_2.clone(), last_timestamp),
-        poor_speedtest(hs_pub_key_2.clone(), end),
-    ];
-    let expected_speedtest_mult_co3 = dec!(1);
-    let speedtests_3 = vec![
-        good_speedtest(hs_pub_key_3.clone(), last_timestamp),
-        good_speedtest(hs_pub_key_3.clone(), end),
-    ];
-    let speedtests_4 = vec![
-        good_speedtest(hs_pub_key_4.clone(), last_timestamp),
-        good_speedtest(hs_pub_key_4.clone(), end),
-    ];
-    let speedtests_5 = vec![
-        good_speedtest(hs_pub_key_5.clone(), last_timestamp),
-        good_speedtest(hs_pub_key_5.clone(), end),
-    ];
-
-    let mut averages = HashMap::new();
-    averages.insert(hs_pub_key_1.clone(), SpeedtestAverage::from(speedtests_1));
-    averages.insert(hs_pub_key_2.clone(), SpeedtestAverage::from(speedtests_2));
-    averages.insert(hs_pub_key_3.clone(), SpeedtestAverage::from(speedtests_3));
-    averages.insert(hs_pub_key_4.clone(), SpeedtestAverage::from(speedtests_4));
-    averages.insert(hs_pub_key_5.clone(), SpeedtestAverage::from(speedtests_5));
-    let speedtest_avgs = SpeedtestAverages { averages };
-
-    let mut boosted_hexes = BoostedHexes::default();
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a3064d9ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a3064d9ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(1).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a3065d3ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a3065d3ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(2).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a306635ff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8c2681a306635ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(3).unwrap()],
-            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-
-    // Make all hotspots eligible to get boosted rewards
-    let mut unique_connections = UniqueConnectionCounts::default();
-    let hotspots = vec![
-        hs_pub_key_1.clone(),
-        hs_pub_key_2.clone(),
-        hs_pub_key_3.clone(),
-        hs_pub_key_4.clone(),
-        hs_pub_key_5.clone(),
-    ];
-
-    for hotspot in hotspots {
-        unique_connections.insert(hotspot, 30);
-    }
-
-    let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_shares = CoverageShares::new(
-        &pool,
-        heartbeats,
-        &speedtest_avgs,
-        &boosted_hexes,
-        &BoostedHexEligibility::new(unique_connections.clone()),
-        &BannedRadios::default(),
-        &unique_connections,
-        &reward_period,
-    )
-    .await?;
-
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_1),
-        expected_base_cp_co1 * expected_speedtest_mult_co1
-    );
-    assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_2),
-        expected_base_cp_co2 * expected_speedtest_mult_co2
-    );
-
-    assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_3),
-        expected_base_cp_co3 * expected_speedtest_mult_co3
-    );
-    assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_4),
-        dec!(0)
-    );
-    assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_5),
-        dec!(0)
+        coverage_shares.test_hotspot_reward_shares(&hs_pubkey_3),
+        dec!(120) + dec!(60) * dec!(0.25) // rank 3 on shared hex
     );
 
     Ok(())
 }
+
+// Here lies scenario_three.
+// It tested Hex overlapping + hex boosting.
+// It is survived by the other scenarios after hex boosting came to a close.
+//
+// async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {}
 
 #[sqlx::test]
 async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
@@ -940,7 +673,6 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -1144,14 +876,12 @@ async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result
 
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let boosted_hexes = BoostedHexes::default();
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),
@@ -1253,14 +983,12 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
 
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let boosted_hexes = BoostedHexes::default();
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
-        &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
         &UniqueConnectionCounts::default(),

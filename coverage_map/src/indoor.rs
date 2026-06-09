@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 
-use crate::{BoostedHexMap, CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
+use crate::{CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
 
 pub type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>;
 
@@ -81,13 +81,8 @@ pub fn clone_indoor_coverage_into_submap(
     }
 }
 
-pub fn into_indoor_coverage_map(
-    indoor: IndoorCellTree,
-    boosted_hexes: &impl BoostedHexMap,
-    epoch_start: DateTime<Utc>,
-) -> impl Iterator<Item = RankedCoverage> + '_ {
+pub fn into_indoor_coverage_map(indoor: IndoorCellTree) -> impl Iterator<Item = RankedCoverage> {
     indoor.into_iter().flat_map(move |(hex, radios)| {
-        let boosted = boosted_hexes.get_current_multiplier(hex, epoch_start);
         radios
             .into_values()
             .flat_map(move |radios| radios.into_sorted_vec().into_iter())
@@ -97,7 +92,6 @@ pub fn into_indoor_coverage_map(
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
                 assignments: cov.assignments,
-                boosted,
                 signal_level: cov.signal_level,
             })
     })
@@ -125,17 +119,16 @@ mod test {
         {
             insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
         }
-        let ranked: HashMap<_, _> =
-            into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| {
-                    (
-                        std::str::from_utf8(&x.hotspot_key.clone())
-                            .unwrap()
-                            .to_string(),
-                        x,
-                    )
-                })
-                .collect();
+        let ranked: HashMap<_, _> = into_indoor_coverage_map(indoor_coverage)
+            .map(|x| {
+                (
+                    std::str::from_utf8(&x.hotspot_key.clone())
+                        .unwrap()
+                        .to_string(),
+                    x,
+                )
+            })
+            .collect();
         assert_eq!(ranked.get("3").unwrap().rank, 1);
         assert!({
             let rank = ranked.get("2").unwrap().rank;
@@ -174,17 +167,16 @@ mod test {
         {
             insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
         }
-        let ranked: HashMap<_, _> =
-            into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| {
-                    (
-                        std::str::from_utf8(&x.hotspot_key.clone())
-                            .unwrap()
-                            .to_string(),
-                        x,
-                    )
-                })
-                .collect();
+        let ranked: HashMap<_, _> = into_indoor_coverage_map(indoor_coverage)
+            .map(|x| {
+                (
+                    std::str::from_utf8(&x.hotspot_key.clone())
+                        .unwrap()
+                        .to_string(),
+                    x,
+                )
+            })
+            .collect();
         assert_eq!(ranked.get("1").unwrap().rank, 9);
         assert_eq!(ranked.get("2").unwrap().rank, 5);
         assert_eq!(ranked.get("3").unwrap().rank, 10);
@@ -235,8 +227,7 @@ mod test {
             ),
         );
 
-        let coverage = into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
-            .collect::<Vec<_>>();
+        let coverage = into_indoor_coverage_map(indoor_coverage).collect::<Vec<_>>();
         // Both coverages should be ranked 1
         assert_eq!(coverage[0].rank, 1);
         assert_eq!(coverage[1].rank, 1);

@@ -18,7 +18,6 @@ use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::boosted_hex_info::BoostedHexes;
 use radio_reward_v2::RadioRewardV2Ext;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -173,11 +172,8 @@ pub fn coverage_point_to_mobile_reward_share(
         hotspot_key: radio_id.clone().into(),
         cbsd_id: String::default(),
         base_coverage_points_sum: Some(coverage_points.coverage_points.base.proto_decimal()),
-        boosted_coverage_points_sum: Some(coverage_points.coverage_points.boosted.proto_decimal()),
         base_reward_shares: Some(coverage_points.total_base_shares().proto_decimal()),
-        boosted_reward_shares: Some(coverage_points.total_boosted_shares().proto_decimal()),
         base_poc_reward: rewards_per_share.base_poc_reward(&coverage_points),
-        boosted_poc_reward: rewards_per_share.boosted_poc_reward(&coverage_points),
         seniority_timestamp: seniority_timestamp.encode_timestamp(),
         coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
         location_trust_scores: coverage_points.proto_location_trust_scores(),
@@ -190,6 +186,10 @@ pub fn coverage_point_to_mobile_reward_share(
         oracle_boosted_hex_status: coverage_points.proto_oracle_boosted_hex_status().into(),
         covered_hexes: coverage_points.proto_covered_hexes(),
         speedtest_average: Some(coverage_points.proto_speedtest_avg()),
+        // deprecated
+        boosted_coverage_points_sum: None,
+        boosted_reward_shares: None,
+        boosted_poc_reward: 0,
     }
 }
 
@@ -218,7 +218,6 @@ impl CoverageShares {
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
-        boosted_hexes: &BoostedHexes,
         boosted_hex_eligibility: &BoostedHexEligibility,
         banned_radios: &BannedRadios,
         unique_connections: &UniqueConnectionCounts,
@@ -325,7 +324,7 @@ impl CoverageShares {
             );
         }
 
-        let coverage_map = coverage_map_builder.build(boosted_hexes, reward_period.start);
+        let coverage_map = coverage_map_builder.build();
 
         Ok(Self {
             coverage_map,
@@ -466,7 +465,6 @@ impl DataTransferAndPocAllocatedRewardBuckets {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct CalculatedPocRewardShares {
     pub(crate) normal: Decimal,
-    pub(crate) boost: Decimal,
 }
 
 impl CalculatedPocRewardShares {
@@ -483,7 +481,6 @@ impl CalculatedPocRewardShares {
         let shares_per_point = allocated_rewards.total_poc() / total_points;
         Some(CalculatedPocRewardShares {
             normal: shares_per_point,
-            boost: shares_per_point,
         })
     }
 
@@ -493,14 +490,8 @@ impl CalculatedPocRewardShares {
             .unwrap_or_default()
     }
 
-    fn boosted_poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        (self.boost * points.total_boosted_shares())
-            .to_u64()
-            .unwrap_or_default()
-    }
-
     fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        self.base_poc_reward(points) + self.boosted_poc_reward(points)
+        self.base_poc_reward(points)
     }
 }
 
@@ -961,7 +952,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &UniqueConnectionCounts::default(),
@@ -1130,7 +1120,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &UniqueConnectionCounts::default(),
@@ -1277,7 +1266,6 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &unique_connection_counts,
@@ -1351,8 +1339,7 @@ mod test {
                 assignments: hex_assignments_mock(),
             }],
         });
-        let coverage_map =
-            coverage_map.build(&BoostedHexes::default(), rewards_info.epoch_period.start);
+        let coverage_map = coverage_map.build();
 
         let mut radio_infos = HashMap::new();
         radio_infos.insert(
@@ -1433,8 +1420,7 @@ mod test {
     async fn skip_empty_radio_rewards() {
         let rewards_info = rewards_info_1_hour();
         let coverage_shares = CoverageShares {
-            coverage_map: coverage_map::CoverageMapBuilder::default()
-                .build(&BoostedHexes::default(), rewards_info.epoch_period.start),
+            coverage_map: coverage_map::CoverageMapBuilder::default().build(),
             radio_infos: HashMap::new(),
         };
 

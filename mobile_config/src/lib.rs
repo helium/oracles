@@ -11,14 +11,12 @@ use tonic::{Response, Status};
 
 pub mod admin_service;
 pub mod authorization_service;
-pub mod boosted_hex_info;
 pub mod carrier_service;
 pub mod cli;
 pub mod client;
 pub mod entity_service;
 pub mod gateway;
 pub mod grpc_server;
-pub mod hex_boosting_service;
 pub mod key_cache;
 pub mod settings;
 pub mod sub_dao_epoch_reward_info;

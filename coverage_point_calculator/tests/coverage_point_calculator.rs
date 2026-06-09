@@ -1,7 +1,5 @@
-use std::num::NonZeroU32;
-
 use chrono::Utc;
-use coverage_map::{BoostedHexMap, RankedCoverage, SignalLevel, UnrankedCoverage};
+use coverage_map::{RankedCoverage, SignalLevel, UnrankedCoverage};
 use coverage_point_calculator::{
     BytesPs, CoveragePoints, LocationTrust, OracleBoostingStatus, RadioType, Result,
     SPBoostedRewardEligibility, Speedtest, SpeedtestTier,
@@ -42,7 +40,6 @@ fn base_radio_coverage_points() {
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: NonZeroU32::new(0),
     }];
 
     for (radio_type, expected_base_coverage_point) in [
@@ -82,7 +79,6 @@ fn radios_with_coverage() {
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: NonZeroU32::new(0),
     };
     let base_hex_iter = std::iter::repeat(base_hex);
 
@@ -208,7 +204,7 @@ fn outdoor_wifi_with_wholly_overlapping_coverage_and_differing_speedtests() -> R
     insert_coverage(vec![5], "2022-02-05 00:00:00.000000000 UTC");
     insert_coverage(vec![6], "2022-02-06 00:00:00.000000000 UTC");
 
-    let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
+    let map = coverage_map_builder.build();
 
     let radio_1 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[1]))?;
     let radio_2 = outdoor_wifi_radio(SpeedtestTier::Acceptable, map.get_wifi_coverage(&[2]))?;
@@ -291,7 +287,7 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
         ],
     });
 
-    let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
+    let map = coverage_map_builder.build();
 
     let radio_1 = outdoor_wifi_radio(SpeedtestTier::Degraded, map.get_wifi_coverage(&[1]))?;
     let radio_2 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[2]))?;
@@ -322,7 +318,7 @@ fn widi_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> R
     insert_coverage(vec![4], "2022-02-04 00:00:00.000000000 UTC");
     insert_coverage(vec![5], "2022-02-05 00:00:00.000000000 UTC");
     insert_coverage(vec![6], "2022-02-06 00:00:00.000000000 UTC");
-    let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
+    let map = coverage_map_builder.build();
 
     let radio_1 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[1]))?;
     let radio_2 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[2]))?;
@@ -375,17 +371,6 @@ fn outdoor_wifi_radio(
     )
 }
 
-struct NoBoostedHexes;
-impl BoostedHexMap for NoBoostedHexes {
-    fn get_current_multiplier(
-        &self,
-        _cell: hextree::Cell,
-        _ts: chrono::DateTime<Utc>,
-    ) -> Option<NonZeroU32> {
-        None
-    }
-}
-
 fn top_ranked_coverage(hex: u64, signal_level: SignalLevel) -> RankedCoverage {
     ranked_coverage(hex, 1, signal_level)
 }
@@ -405,7 +390,6 @@ fn ranked_coverage(hex: u64, rank: usize, signal_level: SignalLevel) -> RankedCo
             urbanized: Assignment::A,
             service_provider_override: Assignment::C,
         },
-        boosted: None,
         signal_level,
     }
 }

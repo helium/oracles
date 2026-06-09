@@ -1,14 +1,12 @@
 use crate::{
     admin_service::AdminService, authorization_service::AuthorizationService,
     carrier_service::CarrierService, entity_service::EntityService,
-    gateway::service::GatewayService, hex_boosting_service::HexBoostingService,
-    sub_dao_service::SubDaoService,
+    gateway::service::GatewayService, sub_dao_service::SubDaoService,
 };
 use futures_util::TryFutureExt;
 use helium_proto::services::{
     mobile_config::{
         AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
-        HexBoostingServer,
     },
     sub_dao::SubDaoServer,
 };
@@ -23,7 +21,6 @@ pub struct GrpcServer {
     auth_svc: AuthorizationService,
     entity_svc: EntityService,
     carrier_svc: CarrierService,
-    hex_boosting_svc: HexBoostingService,
     sub_dao_svc: SubDaoService,
 }
 
@@ -36,7 +33,6 @@ impl GrpcServer {
         auth_svc: AuthorizationService,
         entity_svc: EntityService,
         carrier_svc: CarrierService,
-        hex_boosting_svc: HexBoostingService,
         sub_dao_svc: SubDaoService,
     ) -> Self {
         Self {
@@ -46,7 +42,6 @@ impl GrpcServer {
             auth_svc,
             entity_svc,
             carrier_svc,
-            hex_boosting_svc,
             sub_dao_svc,
         }
     }
@@ -64,7 +59,6 @@ impl ManagedTask for GrpcServer {
                 .add_service(AuthorizationServer::new(self.auth_svc))
                 .add_service(EntityServer::new(self.entity_svc))
                 .add_service(CarrierServiceServer::new(self.carrier_svc))
-                .add_service(HexBoostingServer::new(self.hex_boosting_svc))
                 .add_service(SubDaoServer::new(self.sub_dao_svc))
                 .serve_with_shutdown(self.listen_addr, shutdown)
                 .map_err(anyhow::Error::from)

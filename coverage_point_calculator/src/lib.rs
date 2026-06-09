@@ -11,7 +11,6 @@
 //!
 //! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
-//!     - provider boosted hexes increase oracle boosting to 1x
 //!   - [HIP-134][carrier-offload]
 //!     - serving >25 unique connection increase oracle boosting to 1x
 //!   - [HRP-20250409][urban-area-adjustment]
@@ -19,9 +18,6 @@
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
-//!
-//! - [CoveredHex::boosted_multiplier]
-//!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 //!
 //! - [CoveragePoints::location_trust_multiplier]
 //!   - [HIP-98][qos-score]
@@ -43,17 +39,21 @@
 //!   - The latest 6 speedtests will be used.
 //!   - There must be more than 2 speedtests.
 //!
-//! - [CoveredHex]
-//!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
-//!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
-//!
 //! - [SPBoostedRewardEligibility]
 //!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
-//!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
+//!   - (deprecated) Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
 //!   - Qualified: Radio serves >25 unique connections, automatic oracle boosting multiplier of 1x
+//!
+//! ## Deprecated
+//! Service Provider hex boosting ([HIP-84][provider-boosting]) has been removed;
+//! the following no longer affects rewards and is kept for historical reference:
+//! - `CoveredHex::boosted_multiplier` (field removed)
+//!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
+//! - Provider boosted hexes raised the Oracle Assignment multiplier to 1x [HIP-103][oracle-boosting]
+//! - When a Radio was not eligible for boosted rewards, boost values were removed before calculations.
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -105,12 +105,6 @@ pub enum Error {
 ///
 /// - If more than the allowed speedtests were provided, only the speedtests
 ///   considered are included here.
-///
-/// - When a radio covers boosted hexes, [CoveragePoints::location_trust_scores] will contain a
-///   trust score _after_ the boosted hex restriction has been applied.
-///
-/// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
-///   have no boosted_multiplier values.
 ///
 /// #### Terminology
 ///
@@ -177,12 +171,8 @@ impl CoveragePoints {
             service_provider_boosted_reward_eligibility,
         )?;
 
-        let covered_hexes = hexes::clean_covered_hexes(
-            radio_type,
-            sp_boost_eligibility,
-            ranked_coverage,
-            oracle_boost_status,
-        )?;
+        let covered_hexes =
+            hexes::clean_covered_hexes(radio_type, ranked_coverage, oracle_boost_status)?;
 
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
@@ -218,34 +208,19 @@ impl CoveragePoints {
     /// <https://github.com/helium/proto/blob/master/src/service/poc_mobile.proto>
     /// `message radio_reward`
     pub fn coverage_points_v1(&self) -> Decimal {
-        let total_coverage_points = self.coverage_points.base + self.boosted_points();
-        total_coverage_points * self.location_trust_multiplier
+        self.coverage_points.base * self.location_trust_multiplier
     }
 
     /// Accumulated points related to entire radio.
     /// coverage points * speedtest
     /// Used in calculating rewards
     pub fn total_shares(&self) -> Decimal {
-        self.total_base_shares() + self.total_boosted_shares()
+        self.total_base_shares()
     }
 
     /// Useful for grabbing only base points when calculating reward shares
     pub fn total_base_shares(&self) -> Decimal {
         self.coverage_points.base * self.speedtest_multiplier * self.location_trust_multiplier
-    }
-
-    /// Useful for grabbing only boost points when calculating reward shares
-    pub fn total_boosted_shares(&self) -> Decimal {
-        self.boosted_points() * self.speedtest_multiplier * self.location_trust_multiplier
-    }
-
-    fn boosted_points(&self) -> Decimal {
-        match self.sp_boosted_hex_eligibility {
-            SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
-            SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
-            SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
-            SpBoostedHexStatus::NotEnoughConnections => dec!(0),
-        }
     }
 }
 
@@ -289,10 +264,6 @@ impl SpBoostedHexStatus {
                 Ok(Self::Eligible)
             }
         }
-    }
-
-    fn is_eligible(&self) -> bool {
-        matches!(self, Self::Eligible)
     }
 }
 
@@ -340,22 +311,14 @@ mod tests {
     use rstest::rstest;
     use speedtest::SpeedtestTier;
 
-    use std::num::NonZeroU32;
-
     use super::*;
     use chrono::Utc;
     use coverage_map::RankedCoverage;
     use hex_assignments::{assignment::HexAssignments, Assignment};
     use rust_decimal_macros::dec;
 
-    #[rstest]
-    #[case::unboosted(0, dec!(0))]
-    #[case::minimum_boosted(1, dec!(400))]
-    #[case::boosted(5, dec!(2000))]
-    fn hip_103_provider_boost_can_raise_oracle_boost(
-        #[case] boost_multiplier: u32,
-        #[case] expected_points: Decimal,
-    ) {
+    #[test]
+    fn service_provider_override_assignment_overrides_other_assignments() {
         let wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
             SPBoostedRewardEligibility::Eligible,
@@ -366,161 +329,15 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_from(Assignment::C, false),
-                boosted: NonZeroU32::new(boost_multiplier),
+                assignments: assignments_from(Assignment::C, true),
             }],
             OracleBoostingStatus::Eligible,
         )
         .unwrap();
 
-        // A Hex with the worst possible oracle boosting assignment.
-        // The boosting assignment multiplier will be 1x when the hex is provider boosted.
-        assert_eq!(expected_points, wifi.coverage_points_v1());
-    }
-
-    #[rstest]
-    #[case::unboosted_sp_override(0, dec!(400), true)]
-    #[case::minimum_boosted_sp_override(1, dec!(400), true)]
-    #[case::boosted_sp_override(5, dec!(2000), true)]
-    fn service_provider_override_assignment_overrides_other_assignments(
-        #[case] boost_multiplier: u32,
-        #[case] expected_points: Decimal,
-        #[case] service_provider_override: bool,
-    ) {
-        let wifi = CoveragePoints::new(
-            RadioType::IndoorWifi,
-            SPBoostedRewardEligibility::Eligible,
-            speedtest_maximum(),
-            location_trust_maximum(),
-            vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_from(Assignment::C, service_provider_override),
-                boosted: NonZeroU32::new(boost_multiplier),
-            }],
-            OracleBoostingStatus::Eligible,
-        )
-        .unwrap();
-
-        // A Hex with the worst possible oracle boosting assignment.
-        // The boosting assignment multiplier will be 1x when the hex is provider boosted.
-        assert_eq!(expected_points, wifi.coverage_points_v1());
-    }
-
-    #[test]
-    fn hip_84_radio_eligible_for_boosted_hexes() {
-        let calculate_wifi = |eligibility: SPBoostedRewardEligibility| {
-            CoveragePoints::new(
-                RadioType::IndoorWifi,
-                eligibility,
-                speedtest_maximum(),
-                location_trust_maximum(),
-                vec![RankedCoverage {
-                    hotspot_key: pubkey(),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_override(),
-                    boosted: NonZeroU32::new(5),
-                }],
-                OracleBoostingStatus::Eligible,
-            )
-            .expect("indoor wifi with location scores")
-        };
-
-        let base_points = RadioType::IndoorWifi
-            .base_coverage_points(&SignalLevel::High)
-            .unwrap();
-
-        // Radio that is eligible receives boosted hex rewards.
-        // Boosted hex provides radio with more than base_points.
-        let eligible_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
-        assert_eq!(base_points * dec!(5), eligible_wifi.coverage_points_v1());
-
-        // Radio without enough connections is not eligible for boosted hexes.
-        // Boost from hex is not applied, radio receives base points.
-        let insufficient_connections_wifi =
-            calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
-        assert_eq!(
-            base_points,
-            insufficient_connections_wifi.coverage_points_v1()
-        );
-    }
-
-    #[test]
-    fn hip_93_wifi_with_low_location_score_receives_no_boosted_hexes() {
-        let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
-            CoveragePoints::new(
-                RadioType::IndoorWifi,
-                SPBoostedRewardEligibility::Eligible,
-                speedtest_maximum(),
-                location_trust_scores,
-                vec![RankedCoverage {
-                    hotspot_key: pubkey(),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_override(),
-                    boosted: NonZeroU32::new(5),
-                }],
-                OracleBoostingStatus::Eligible,
-            )
-            .expect("indoor wifi with location scores")
-        };
-
-        let base_points = RadioType::IndoorWifi
-            .base_coverage_points(&SignalLevel::High)
-            .unwrap();
-
-        // Radio with good trust score is eligible for boosted hexes.
-        // Boosted hex provides radio with more than base_points.
-        let trusted_wifi = calculate_wifi(location_trust_with_scores(&[dec!(1), dec!(1)]));
-        assert!(trusted_wifi.location_trust_multiplier > dec!(0.75));
-        assert!(trusted_wifi.coverage_points_v1() > base_points);
-
-        // Radio with poor trust score is not eligible for boosted hexes.
-        // Boost from hex is not applied, and points are further lowered by poor trust score.
-        let untrusted_wifi = calculate_wifi(location_trust_with_scores(&[dec!(0.1), dec!(0.2)]));
-        assert!(untrusted_wifi.location_trust_multiplier < dec!(0.75));
-        assert!(untrusted_wifi.coverage_points_v1() < base_points);
-    }
-
-    #[test]
-    fn hip_119_radio_with_past_50m_from_asserted_receives_no_boosted_hexes() {
-        let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
-            CoveragePoints::new(
-                RadioType::IndoorWifi,
-                SPBoostedRewardEligibility::Eligible,
-                speedtest_maximum(),
-                location_trust_scores,
-                vec![RankedCoverage {
-                    hotspot_key: pubkey(),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_override(),
-                    boosted: NonZeroU32::new(5),
-                }],
-                OracleBoostingStatus::Eligible,
-            )
-            .expect("indoor wifi with location scores")
-        };
-
-        let base_points = RadioType::IndoorWifi
-            .base_coverage_points(&SignalLevel::High)
-            .unwrap();
-
-        // Radio with distance to asserted under the limit is eligible for boosted hexes.
-        // Boosted hex provides radio with more than base_points.
-        let trusted_wifi = calculate_wifi(location_trust_with_asserted_distance(&[0, 49]));
-        assert!(trusted_wifi.total_shares() > base_points);
-
-        // Radio with distance to asserted over the limit is not eligible for boosted hexes.
-        // Boost from hex is not applied.
-        let untrusted_wifi = calculate_wifi(location_trust_with_asserted_distance(&[50, 51]));
-        assert_eq!(untrusted_wifi.total_shares(), base_points);
+        // Despite the worst possible oracle assignment, the service provider
+        // override grants the maximum assignment multiplier.
+        assert_eq!(dec!(400), wifi.coverage_points_v1());
     }
 
     #[test]
@@ -537,7 +354,6 @@ mod tests {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum_no_sp_override(),
-                    boosted: None,
                 }],
                 OracleBoostingStatus::Eligible,
             )
@@ -610,7 +426,6 @@ mod tests {
                     urbanized,
                     service_provider_override,
                 },
-                boosted: None,
             }
         }
 
@@ -691,7 +506,6 @@ mod tests {
                 rank,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
             }],
             OracleBoostingStatus::Eligible,
         )
@@ -721,7 +535,6 @@ mod tests {
                     rank,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum_no_sp_override(),
-                    boosted: None,
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
@@ -729,7 +542,6 @@ mod tests {
                     rank: 2,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum_no_sp_override(),
-                    boosted: None,
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
@@ -737,7 +549,6 @@ mod tests {
                     rank: 42,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum_no_sp_override(),
-                    boosted: None,
                 },
             ],
             OracleBoostingStatus::Eligible,
@@ -761,7 +572,6 @@ mod tests {
                 rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
             }],
             OracleBoostingStatus::Eligible,
         )
@@ -770,41 +580,6 @@ mod tests {
         // Location trust scores is 1/4
         // (0.1 + 0.2 + 0.3 + 0.4) / 4
         assert_eq!(dec!(100), indoor_wifi.coverage_points_v1());
-    }
-
-    #[test]
-    fn boosted_hex() {
-        let covered_hexes = vec![
-            RankedCoverage {
-                hotspot_key: pubkey(),
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
-            },
-            RankedCoverage {
-                hotspot_key: pubkey(),
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::Low,
-                assignments: assignments_maximum_no_sp_override(),
-                boosted: NonZeroU32::new(4),
-            },
-        ];
-        let indoor_wifi = CoveragePoints::new(
-            RadioType::IndoorWifi,
-            SPBoostedRewardEligibility::Eligible,
-            speedtest_maximum(),
-            location_trust_maximum(),
-            covered_hexes.clone(),
-            OracleBoostingStatus::Eligible,
-        )
-        .expect("indoor wifi");
-
-        // The hex with a low signal_level is boosted to the same level as a
-        // signal_level of High.
-        assert_eq!(dec!(800), indoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -827,7 +602,6 @@ mod tests {
                 rank: 1,
                 signal_level,
                 assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
             }],
             OracleBoostingStatus::Eligible,
         )
@@ -854,7 +628,6 @@ mod tests {
                 rank: 1,
                 signal_level,
                 assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
             }],
             OracleBoostingStatus::Eligible,
         )
@@ -957,18 +730,6 @@ mod tests {
             .map(|trust_score| LocationTrust {
                 meters_to_asserted: 1,
                 trust_score,
-            })
-            .collect()
-    }
-
-    fn location_trust_with_asserted_distance(distances_to_asserted: &[u32]) -> Vec<LocationTrust> {
-        distances_to_asserted
-            .to_owned()
-            .iter()
-            .copied()
-            .map(|meters_to_asserted| LocationTrust {
-                meters_to_asserted,
-                trust_score: dec!(1.0),
             })
             .collect()
     }

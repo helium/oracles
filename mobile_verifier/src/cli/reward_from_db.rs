@@ -11,10 +11,7 @@ use crate::{
 };
 use anyhow::Result;
 use helium_crypto::PublicKey;
-use mobile_config::{
-    boosted_hex_info::BoostedHexes,
-    client::{sub_dao_client::SubDaoEpochRewardInfoResolver, SubDaoClient},
-};
+use mobile_config::client::{sub_dao_client::SubDaoEpochRewardInfoResolver, SubDaoClient};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -64,7 +61,6 @@ impl Cmd {
             &pool,
             heartbeats,
             &speedtest_averages,
-            &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &unique_connections,
