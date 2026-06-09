@@ -2,19 +2,15 @@ use anyhow::Context;
 use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
-pub mod burned_session;
-pub mod invalid_session;
-pub mod session;
-
-pub use burned_session::IcebergBurnedDataTransferSession;
-pub use invalid_session::IcebergInvalidDataTransferSession;
-pub use session::IcebergDataTransferSession;
-
-pub const NAMESPACE: &str = "data_transfer";
-
-/// Column appended to the `invalid_sessions` table, recording why a session was
-/// rejected (a `ReportStatus` string name).
-pub const REASON_COLUMN: &str = "reason";
+// Schemas for the `data_transfer` namespace live in the shared
+// `helium-iceberg-oracles` crate so the writer here and the reader in
+// `mobile-verifier` share one source of truth and cannot drift. Re-exported so
+// existing `iceberg::session` / `iceberg::burned_session` / `iceberg::Iceberg*`
+// paths keep resolving across this crate and its tests.
+pub use helium_iceberg_oracles::data_transfer::{
+    burned_session, invalid_session, session, IcebergBurnedDataTransferSession,
+    IcebergDataTransferSession, IcebergInvalidDataTransferSession, NAMESPACE, REASON_COLUMN,
+};
 
 // Valid sessions go to `data_transfer.sessions`; rejected sessions go to the
 // sibling `data_transfer.invalid_sessions` (same schema plus a `reason` column).

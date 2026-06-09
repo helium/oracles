@@ -1,24 +1,20 @@
 //! Trino reader for the `data_transfer.burned_sessions` table.
 //!
-//! `mobile_packet_verifier` writes this table from the same
-//! `ValidDataTransferSession` data that populates the Postgres
-//! `hotspot_data_transfer_sessions` table. This module is the Trino side of the
-//! strangler migration in [`crate::data_session`]: it returns the same
-//! [`HotspotMap`] the reward pipeline already consumes, with the per-hotspot
-//! aggregation pushed down into Trino.
+//! The table's schema (struct + `table_definition`) is owned by the shared
+//! [`helium_iceberg_oracles::data_transfer::burned_session`] crate and written
+//! by `mobile_packet_verifier`. This module holds only the read side: the
+//! per-hotspot aggregation the reward pipeline needs, returning the same
+//! [`HotspotMap`] as the Postgres path in [`crate::data_session`].
 
 use std::ops::Range;
 
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
+use helium_iceberg_oracles::data_transfer::burned_session::{NAMESPACE, TABLE_NAME};
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
 use crate::data_session::HotspotMap;
-
-pub const NAMESPACE: &str = "data_transfer";
-pub const TABLE_NAME: &str = "burned_sessions";
 
 /// One row per hotspot — the `num_dcs`/`rewardable_bytes` sums for the epoch.
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
@@ -90,30 +86,6 @@ pub async fn no_burned_sessions(
     Ok(count == 0)
 }
 
-/// Schema of `data_transfer.burned_sessions`, kept in sync with the writer in
-/// `mobile_packet_verifier::iceberg::burned_session`. Owned here so this crate
-/// can read (and tests can create) the table without depending on the packet
-/// verifier.
-pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(NAMESPACE, TABLE_NAME)
-        .with_fields([
-            FieldDefinition::required_string("pub_key"),
-            FieldDefinition::required_string("payer"),
-            FieldDefinition::required_long("upload_bytes"),
-            FieldDefinition::required_long("download_bytes"),
-            FieldDefinition::required_long("rewardable_bytes"),
-            FieldDefinition::required_long("num_dcs"),
-            FieldDefinition::required_timestamptz("first_timestamp"),
-            FieldDefinition::required_timestamptz("last_timestamp"),
-            FieldDefinition::required_timestamptz("burn_timestamp"),
-        ])
-        .with_partition(PartitionDefinition::day(
-            "burn_timestamp",
-            "burn_timestamp_day",
-        ))
-        .build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,12 +117,5 @@ mod tests {
             rendered.contains("TIMESTAMP '2024-01-16 00:00:00 UTC'"),
             "{rendered}"
         );
-    }
-
-    #[test]
-    fn table_definition_builds() {
-        let def = table_definition().expect("table definition should build");
-        assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), NAMESPACE);
     }
 }

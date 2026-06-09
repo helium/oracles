@@ -316,7 +316,7 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
         mobile_verifier::iceberg::ban::table_definition()?,
-        mobile_verifier::iceberg::burned_session::table_definition()?,
+        helium_iceberg_oracles::data_transfer::burned_session::table_definition()?,
         mobile_verifier::iceberg::heartbeat::table_definition()?,
         mobile_verifier::iceberg::speedtest::table_definition()?,
         mobile_verifier::iceberg::speedtest_avg::table_definition()?,

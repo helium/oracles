@@ -1,30 +1,24 @@
-use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
+// Canonical schema (struct + namespace/table) — shared with the mobile-packet-verifier writer.
+use helium_iceberg_oracles::data_transfer::burned_session::{
+    IcebergBurnedDataTransferSession, NAMESPACE, TABLE_NAME,
+};
+// Read side under test.
 use mobile_verifier::iceberg::burned_session;
-use serde::Serialize;
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const PAYER: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
-/// Mirror of `mobile_packet_verifier`'s `IcebergBurnedDataTransferSession` — the
-/// shape written into `data_transfer.burned_sessions`.
-#[derive(Clone, Debug, Serialize)]
-struct BurnedSessionRow {
-    pub_key: String,
-    payer: String,
-    upload_bytes: u64,
-    download_bytes: u64,
+fn row(
+    pub_key: &str,
     rewardable_bytes: u64,
     num_dcs: u64,
-    first_timestamp: DateTime<FixedOffset>,
-    last_timestamp: DateTime<FixedOffset>,
-    burn_timestamp: DateTime<FixedOffset>,
-}
-
-fn row(pub_key: &str, rewardable_bytes: u64, num_dcs: u64, burn: DateTime<Utc>) -> BurnedSessionRow {
-    BurnedSessionRow {
+    burn: DateTime<Utc>,
+) -> IcebergBurnedDataTransferSession {
+    IcebergBurnedDataTransferSession {
         pub_key: pub_key.to_string(),
         payer: PAYER.to_string(),
         upload_bytes: rewardable_bytes,
@@ -41,9 +35,9 @@ fn at(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(y, m, d, h, 0, 0).unwrap()
 }
 
-async fn write_rows(harness: &IcebergTestHarness, id: &str, rows: Vec<BurnedSessionRow>) {
+async fn write_rows(harness: &IcebergTestHarness, id: &str, rows: Vec<IcebergBurnedDataTransferSession>) {
     let writer = harness
-        .get_table_writer_in::<BurnedSessionRow>(burned_session::NAMESPACE, burned_session::TABLE_NAME)
+        .get_table_writer_in::<IcebergBurnedDataTransferSession>(NAMESPACE, TABLE_NAME)
         .await
         .expect("burned_sessions writer");
     writer
