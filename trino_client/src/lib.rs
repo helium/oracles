@@ -87,6 +87,22 @@ impl Client {
         })
     }
 
+    /// Wrap an already-constructed upstream client. No JWT watcher is started,
+    /// so the returned client never refreshes its auth. Useful for tests (e.g.
+    /// the iceberg test harness, which hands out a configured upstream client)
+    /// and for callers that build the inner client themselves.
+    pub fn from_inner(inner: trino_rust_client::Client) -> Self {
+        // Mirrors the non-`JwtFile` path of `from_settings`: the sender is
+        // dropped immediately and the receiver retains the initial value.
+        let (_updater, inner_rx) = watch::channel(Arc::new(inner));
+        Self {
+            inner: Arc::new(ClientInner {
+                _watcher: None,
+                inner_rx,
+            }),
+        }
+    }
+
     /// Returns the current inner client. JWT refreshes swap the value behind
     /// this `Arc`, so callers should call `inner()` per request rather than
     /// caching the returned `Arc` long-term.

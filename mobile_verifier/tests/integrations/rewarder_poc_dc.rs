@@ -16,7 +16,7 @@ use mobile_verifier::{
     data_session,
     heartbeats::{Heartbeat, ValidatedHeartbeat},
     reward_shares::{self, DataTransferAndPocAllocatedRewardBuckets},
-    rewarder, speedtests, unique_connections,
+    rewarder, speedtests, unique_connections, DataSessionSource,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -52,8 +52,16 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    rewarder::reward_poc_and_dc(
+        &pool,
+        DataSessionSource::Postgres,
+        None,
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -117,8 +125,16 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    rewarder::reward_poc_and_dc(
+        &pool,
+        DataSessionSource::Postgres,
+        None,
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let msgs = mobile_rewards.finish().await?;
     let poc_rewards = msgs.radio_reward_v2s;
@@ -176,8 +192,16 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    rewarder::reward_poc_and_dc(
+        &pool,
+        DataSessionSource::Postgres,
+        None,
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -222,8 +246,16 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    rewarder::reward_poc_and_dc(
+        &pool,
+        DataSessionSource::Postgres,
+        None,
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;

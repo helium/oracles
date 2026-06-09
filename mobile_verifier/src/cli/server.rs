@@ -87,6 +87,15 @@ impl Cmd {
                 (iceberg::PocWriters::noop(), None)
             };
 
+        // Trino query client for reading data-transfer sessions in the reward
+        // pipeline (see `Settings::data_session_source`). `from_settings` is
+        // synchronous and starts the JWT-file watcher if configured.
+        let trino_client = settings
+            .trino
+            .as_ref()
+            .map(trino_client::Client::from_settings)
+            .transpose()?;
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
@@ -173,6 +182,7 @@ impl Cmd {
                     file_upload,
                     sub_dao_rewards_client,
                     reward_writers,
+                    trino_client,
                 )
                 .await?,
             )

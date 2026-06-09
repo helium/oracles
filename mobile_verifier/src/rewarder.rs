@@ -10,9 +10,9 @@ use crate::{
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
-    telemetry, unique_connections, PriceInfo, Settings, ToProtoDecimal,
+    telemetry, unique_connections, DataSessionSource, PriceInfo, Settings, ToProtoDecimal,
 };
-use anyhow::bail;
+use anyhow::{bail, Context};
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
@@ -57,6 +57,8 @@ pub struct Rewarder<C> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     reward_writers: Option<iceberg::RewardWriters>,
+    data_session_source: DataSessionSource,
+    trino: Option<trino_client::Client>,
 }
 
 impl<C> Rewarder<C>
@@ -69,6 +71,7 @@ where
         file_upload: FileUpload,
         sub_dao_epoch_reward_info_resolver: C,
         reward_writers: Option<iceberg::RewardWriters>,
+        trino: Option<trino_client::Client>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
 
@@ -99,6 +102,8 @@ where
             reward_manifests,
             price_tracker,
             reward_writers,
+            settings.data_session_source,
+            trino,
         )?;
 
         Ok(TaskManager::builder()
@@ -119,10 +124,20 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         reward_writers: Option<iceberg::RewardWriters>,
+        data_session_source: DataSessionSource,
+        trino: Option<trino_client::Client>,
     ) -> anyhow::Result<Self> {
         // get the subdao address
         let sub_dao = resolve_subdao_pubkey();
         tracing::info!("Mobile SubDao pubkey: {}", sub_dao);
+
+        // Reading data sessions from Trino requires a configured client.
+        if data_session_source != DataSessionSource::Postgres && trino.is_none() {
+            bail!(
+                "data_session_source is {data_session_source:?} but no `trino` settings were provided"
+            );
+        }
+        tracing::info!(?data_session_source, "data session reward source");
 
         Ok(Self {
             sub_dao,
@@ -134,6 +149,8 @@ where
             reward_manifests,
             price_tracker,
             reward_writers,
+            data_session_source,
+            trino,
         })
     }
 
@@ -221,6 +238,19 @@ where
                 tracing::info!("Data sets still need to be processed");
                 return Ok(false);
             }
+
+            // When rewarding from Trino, ensure the burned-sessions pipeline is
+            // current before rewarding (mirrors the heartbeat/speedtest checks
+            // above). In `Compare` mode Postgres remains the source of truth, so
+            // the Trino table not being current must not block rewarding.
+            if self.data_session_source == DataSessionSource::Trino {
+                if let Some(trino) = self.trino.as_ref() {
+                    if iceberg::burned_session::no_burned_sessions(trino, reward_period).await? {
+                        tracing::info!("No burned data sessions found past reward period");
+                        return Ok(false);
+                    }
+                }
+            }
         } else {
             tracing::info!("Complete data checks are disabled for this reward period");
         }
@@ -269,6 +299,8 @@ where
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
+            self.data_session_source,
+            self.trino.as_ref(),
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
@@ -335,8 +367,103 @@ where
     }
 }
 
+/// Load the per-hotspot data-transfer session aggregate for `epoch` from the
+/// configured source.
+///
+/// In `Compare` mode the reward still comes from Postgres, but Trino is read
+/// alongside it and any divergence is logged and emitted as a metric — the
+/// validation step of the strangler migration.
+async fn load_data_sessions(
+    source: DataSessionSource,
+    pool: &Pool<Postgres>,
+    trino: Option<&trino_client::Client>,
+    epoch: &Range<DateTime<Utc>>,
+) -> anyhow::Result<data_session::HotspotMap> {
+    match source {
+        DataSessionSource::Postgres => {
+            Ok(data_session::aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?)
+        }
+        DataSessionSource::Trino => {
+            let trino = trino.context("data_session_source=trino requires a trino client")?;
+            iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(trino, epoch).await
+        }
+        DataSessionSource::Compare => {
+            let from_postgres =
+                data_session::aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?;
+            match trino {
+                Some(trino) => {
+                    match iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(
+                        trino, epoch,
+                    )
+                    .await
+                    {
+                        Ok(from_trino) => compare_data_sessions(&from_postgres, &from_trino),
+                        Err(err) => tracing::error!(
+                            ?err,
+                            "failed to read data sessions from trino for comparison"
+                        ),
+                    }
+                }
+                None => {
+                    tracing::warn!("data_session_source=compare but no trino client configured")
+                }
+            }
+            // Postgres remains the source of truth while comparing.
+            Ok(from_postgres)
+        }
+    }
+}
+
+/// Log and emit metrics on any divergence between the Postgres and Trino
+/// data-session aggregates.
+fn compare_data_sessions(postgres: &data_session::HotspotMap, trino: &data_session::HotspotMap) {
+    let pg_total_dc: u64 = postgres.values().map(|r| r.rewardable_dc).sum();
+    let trino_total_dc: u64 = trino.values().map(|r| r.rewardable_dc).sum();
+    let pg_total_bytes: u64 = postgres.values().map(|r| r.rewardable_bytes).sum();
+    let trino_total_bytes: u64 = trino.values().map(|r| r.rewardable_bytes).sum();
+
+    let mut divergent_hotspots = 0u64;
+    for (key, pg) in postgres {
+        match trino.get(key) {
+            Some(t)
+                if t.rewardable_dc == pg.rewardable_dc
+                    && t.rewardable_bytes == pg.rewardable_bytes => {}
+            _ => divergent_hotspots += 1, // mismatched total or missing in trino
+        }
+    }
+    // Hotspots present only in trino.
+    divergent_hotspots += trino.keys().filter(|k| !postgres.contains_key(*k)).count() as u64;
+
+    let dc_delta = trino_total_dc as i128 - pg_total_dc as i128;
+    let bytes_delta = trino_total_bytes as i128 - pg_total_bytes as i128;
+
+    telemetry::data_session_dc_divergence(dc_delta as i64);
+    telemetry::data_session_hotspot_divergence(divergent_hotspots);
+
+    if dc_delta != 0 || bytes_delta != 0 || divergent_hotspots != 0 {
+        tracing::warn!(
+            postgres_hotspots = postgres.len(),
+            trino_hotspots = trino.len(),
+            divergent_hotspots,
+            pg_total_dc,
+            trino_total_dc,
+            dc_delta = dc_delta as i64,
+            bytes_delta = bytes_delta as i64,
+            "data session source divergence (postgres vs trino)"
+        );
+    } else {
+        tracing::info!(
+            hotspots = postgres.len(),
+            total_dc = pg_total_dc,
+            "data session sources match (postgres == trino)"
+        );
+    }
+}
+
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
+    data_session_source: DataSessionSource,
+    trino: Option<&trino_client::Client>,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
@@ -345,13 +472,12 @@ pub async fn reward_poc_and_dc(
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
-    let transfer_rewards = TransferRewards::from_transfer_sessions(
-        price_info,
-        data_session::aggregate_hotspot_data_sessions_to_dc(pool, &reward_info.epoch_period)
-            .await?,
-        &reward_shares,
-    )
-    .await;
+    let hotspot_data_sessions =
+        load_data_sessions(data_session_source, pool, trino, &reward_info.epoch_period).await?;
+
+    let transfer_rewards =
+        TransferRewards::from_transfer_sessions(price_info, hotspot_data_sessions, &reward_shares)
+            .await;
 
     // It's important to gauge the scale metric. If this value is < 1.0, we are in
     // big trouble.

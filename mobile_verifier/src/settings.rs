@@ -50,11 +50,36 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
     pub data_sets_poll_duration: Duration,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Trino query client, used to read data-transfer sessions for rewards when
+    /// `data_session_source` is `compare` or `trino`. Required for those modes.
+    #[serde(default)]
+    pub trino: Option<trino_client::Settings>,
+    /// Where the reward pipeline sources hotspot data-transfer sessions from.
+    /// Defaults to `postgres` (current behavior). See [`DataSessionSource`].
+    #[serde(default)]
+    pub data_session_source: DataSessionSource,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
+}
+
+/// Source for hotspot data-transfer sessions in the reward pipeline.
+///
+/// Strangler migration from Postgres to Trino: the same `ValidDataTransferSession`
+/// data lives in Postgres (`hotspot_data_transfer_sessions`) and in the Trino
+/// `data_transfer.burned_sessions` table written by `mobile_packet_verifier`.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DataSessionSource {
+    /// Reward from Postgres (current behavior).
+    #[default]
+    Postgres,
+    /// Reward from Postgres, but also read Trino and log/metric any divergence.
+    Compare,
+    /// Reward from Trino (Postgres ingestion still runs as a backup).
+    Trino,
 }
 
 fn default_fencing_resolution() -> u8 {

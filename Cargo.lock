@@ -5643,6 +5643,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
  "uuid",
 ]

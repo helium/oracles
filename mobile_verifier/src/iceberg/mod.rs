@@ -3,6 +3,7 @@ use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
 pub mod ban;
+pub mod burned_session;
 pub mod gateway_reward;
 pub mod heartbeat;
 pub mod invalid_ban;

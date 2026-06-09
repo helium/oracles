@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Settings {
     pub host: String,
     pub port: u16,
@@ -23,15 +23,18 @@ pub struct Settings {
     pub auth: Option<AuthSettings>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuthSettings {
     Basic {
         username: String,
-        #[serde(default)]
+        // Secret: never serialize (settings are logged as JSON at startup).
+        #[serde(default, skip_serializing)]
         password: Option<String>,
     },
     Jwt {
+        // Secret: never serialize (settings are logged as JSON at startup).
+        #[serde(skip_serializing)]
         token: String,
     },
     JwtFile {
