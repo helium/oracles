@@ -233,7 +233,6 @@ impl IngestReports {
         let mut transaction = self.pool.begin().await?;
 
         let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
-        println!("banned: {banned_radios:?}");
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
