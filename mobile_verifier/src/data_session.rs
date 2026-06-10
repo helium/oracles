@@ -15,13 +15,15 @@ pub struct DataSessionIngestor {
     pub pool: PgPool,
 }
 
+/// Per-hotspot rewardable data-transfer totals — the aggregated *input* to data
+/// transfer rewards, not a reward itself.
 #[derive(Default)]
-pub struct HotspotReward {
+pub struct RewardableData {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
 }
 
-pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
+pub type RewardableDataByHotspot = HashMap<PublicKeyBinary, RewardableData>;
 
 impl DataSessionIngestor {
     pub async fn create_managed_task(
@@ -160,7 +162,7 @@ impl HotspotDataSession {
 pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &'a Range<DateTime<Utc>>,
-) -> Result<HotspotMap, sqlx::Error> {
+) -> Result<RewardableDataByHotspot, sqlx::Error> {
     let stream = sqlx::query_as::<_, HotspotDataSession>(
         r#"
         SELECT
@@ -184,13 +186,13 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
 
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
-) -> Result<HotspotMap, sqlx::Error> {
+) -> Result<RewardableDataByHotspot, sqlx::Error> {
     tokio::pin!(stream);
-    let mut map = HotspotMap::new();
+    let mut map = RewardableDataByHotspot::new();
     while let Some(session) = stream.try_next().await? {
-        let rewards = map.entry(session.pub_key).or_default();
-        rewards.rewardable_dc += session.num_dcs as u64;
-        rewards.rewardable_bytes += session.rewardable_bytes as u64;
+        let totals = map.entry(session.pub_key).or_default();
+        totals.rewardable_dc += session.num_dcs as u64;
+        totals.rewardable_bytes += session.rewardable_bytes as u64;
     }
     Ok(map)
 }
@@ -259,7 +261,7 @@ impl DataSessionSource {
     pub(crate) async fn load_data_sessions(
         &self,
         epoch: &Range<DateTime<Utc>>,
-    ) -> anyhow::Result<HotspotMap> {
+    ) -> anyhow::Result<RewardableDataByHotspot> {
         match self {
             DataSessionSource::Postgres { pool } => {
                 Ok(aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?)
@@ -288,7 +290,7 @@ impl DataSessionSource {
 
 /// Emit metrics describing whether the Trino data-session aggregate matches
 /// Postgres, and by how much it diverges when it doesn't.
-fn compare_data_sessions(postgres: &HotspotMap, trino: &HotspotMap) {
+fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableDataByHotspot) {
     let pg_total_dc: u64 = postgres.values().map(|r| r.rewardable_dc).sum();
     let trino_total_dc: u64 = trino.values().map(|r| r.rewardable_dc).sum();
     let pg_total_bytes: u64 = postgres.values().map(|r| r.rewardable_bytes).sum();

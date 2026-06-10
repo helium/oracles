@@ -4,7 +4,7 @@
 //! [`helium_iceberg_oracles::data_transfer::burned_session`] crate and written
 //! by `mobile_packet_verifier`. This module holds only the read side: the
 //! per-hotspot aggregation the reward pipeline needs, returning the same
-//! [`HotspotMap`] as the Postgres path in [`crate::data_session`].
+//! [`RewardableDataByHotspot`] as the Postgres path in [`crate::data_session`].
 
 use std::ops::Range;
 
@@ -14,7 +14,7 @@ use helium_iceberg_oracles::data_transfer::burned_session::{NAMESPACE, TABLE_NAM
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use crate::data_session::HotspotMap;
+use crate::data_session::RewardableDataByHotspot;
 
 /// One row per hotspot — the `num_dcs`/`rewardable_bytes` sums for the epoch.
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
@@ -44,7 +44,7 @@ fn agg_statement(epoch: &Range<DateTime<Utc>>) -> trino_client::Statement {
     .bind("end", epoch.end)
 }
 
-/// Aggregate the burned data-transfer sessions for `epoch` into a [`HotspotMap`].
+/// Aggregate the burned data-transfer sessions for `epoch` into a [`RewardableDataByHotspot`].
 ///
 /// Mirrors [`crate::data_session::aggregate_hotspot_data_sessions_to_dc`] but
 /// reads from Trino. No `COALESCE` is needed: `rewardable_bytes` is non-nullable
@@ -52,17 +52,17 @@ fn agg_statement(epoch: &Range<DateTime<Utc>>) -> trino_client::Statement {
 pub async fn aggregate_hotspot_data_sessions_to_dc(
     trino: &trino_client::Client,
     epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<HotspotMap> {
+) -> anyhow::Result<RewardableDataByHotspot> {
     let rows: Vec<BurnedSessionAggRow> = trino
         .get_all(agg_statement(epoch).typed::<BurnedSessionAggRow>())
         .await?;
 
-    let mut map = HotspotMap::new();
+    let mut map = RewardableDataByHotspot::new();
     for row in rows {
         let pub_key: PublicKeyBinary = row.pub_key.parse()?;
-        let reward = map.entry(pub_key).or_default();
-        reward.rewardable_dc += row.rewardable_dc;
-        reward.rewardable_bytes += row.rewardable_bytes;
+        let totals = map.entry(pub_key).or_default();
+        totals.rewardable_dc += row.rewardable_dc;
+        totals.rewardable_bytes += row.rewardable_bytes;
     }
     Ok(map)
 }
