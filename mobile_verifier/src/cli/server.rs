@@ -87,8 +87,9 @@ impl Cmd {
                 (iceberg::PocWriters::noop(), None)
             };
 
-        // Trino query client for reading data-transfer sessions in the reward
-        // pipeline (see `Settings::data_session_source`). `from_settings` is
+        // Optional Trino query client for the reward pipeline. When configured,
+        // data-transfer sessions are read from Trino and compared against
+        // Postgres (see `data_session::DataSessionSource`). `from_settings` is
         // synchronous and starts the JWT-file watcher if configured.
         let trino_client = settings
             .trino

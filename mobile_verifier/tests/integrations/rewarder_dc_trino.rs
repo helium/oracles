@@ -12,7 +12,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const PAYER: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
-fn row(
+fn make_burned_session(
     pub_key: &str,
     rewardable_bytes: u64,
     num_dcs: u64,
@@ -35,13 +35,17 @@ fn at(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(y, m, d, h, 0, 0).unwrap()
 }
 
-async fn write_rows(harness: &IcebergTestHarness, id: &str, rows: Vec<IcebergBurnedDataTransferSession>) {
+async fn write_sessions(
+    harness: &IcebergTestHarness,
+    id: &str,
+    sessions: Vec<IcebergBurnedDataTransferSession>,
+) {
     let writer = harness
         .get_table_writer_in::<IcebergBurnedDataTransferSession>(NAMESPACE, TABLE_NAME)
         .await
         .expect("burned_sessions writer");
     writer
-        .write_idempotent(id, rows)
+        .write_idempotent(id, sessions)
         .await
         .expect("write burned sessions");
 }
@@ -53,21 +57,21 @@ fn key(s: &str) -> PublicKeyBinary {
 #[tokio::test]
 async fn aggregate_sums_per_hotspot_and_respects_epoch_bounds() -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let client = trino_client::Client::from_inner(harness.owned_trino().await?);
+    let client = trino_client::Client::from_client(harness.owned_trino().await?);
 
     let epoch = at(2024, 6, 1, 0)..at(2024, 6, 2, 0);
 
-    write_rows(
+    write_sessions(
         &harness,
         "epoch",
         vec![
             // Two in-range sessions for HOTSPOT_1 — should sum.
-            row(HOTSPOT_1, 1_000, 100, at(2024, 6, 1, 6)),
-            row(HOTSPOT_1, 500, 50, at(2024, 6, 1, 18)),
+            make_burned_session(HOTSPOT_1, 1_000, 100, at(2024, 6, 1, 6)),
+            make_burned_session(HOTSPOT_1, 500, 50, at(2024, 6, 1, 18)),
             // One in-range session for HOTSPOT_2.
-            row(HOTSPOT_2, 2_000, 200, at(2024, 6, 1, 12)),
+            make_burned_session(HOTSPOT_2, 2_000, 200, at(2024, 6, 1, 12)),
             // After the epoch end — must be excluded from the aggregate.
-            row(HOTSPOT_1, 9_999, 999, at(2024, 6, 2, 12)),
+            make_burned_session(HOTSPOT_1, 9_999, 999, at(2024, 6, 2, 12)),
         ],
     )
     .await;
@@ -90,7 +94,7 @@ async fn aggregate_sums_per_hotspot_and_respects_epoch_bounds() -> anyhow::Resul
 #[tokio::test]
 async fn empty_table_yields_empty_map_and_flags_missing_data() -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let client = trino_client::Client::from_inner(harness.owned_trino().await?);
+    let client = trino_client::Client::from_client(harness.owned_trino().await?);
 
     let epoch = at(2024, 6, 1, 0)..at(2024, 6, 2, 0);
 
@@ -108,15 +112,20 @@ async fn empty_table_yields_empty_map_and_flags_missing_data() -> anyhow::Result
 #[tokio::test]
 async fn no_burned_sessions_detects_data_past_period_end() -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
-    let client = trino_client::Client::from_inner(harness.owned_trino().await?);
+    let client = trino_client::Client::from_client(harness.owned_trino().await?);
 
     let epoch = at(2024, 6, 1, 0)..at(2024, 6, 2, 0);
 
     // Only data within the period: nothing past the end yet.
-    write_rows(
+    write_sessions(
         &harness,
         "within",
-        vec![row(HOTSPOT_1, 1_000, 100, at(2024, 6, 1, 12))],
+        vec![make_burned_session(
+            HOTSPOT_1,
+            1_000,
+            100,
+            at(2024, 6, 1, 12),
+        )],
     )
     .await;
     assert!(
@@ -125,10 +134,15 @@ async fn no_burned_sessions_detects_data_past_period_end() -> anyhow::Result<()>
     );
 
     // A session burned at/after the period end signals the pipeline is current.
-    write_rows(
+    write_sessions(
         &harness,
         "past_end",
-        vec![row(HOTSPOT_2, 2_000, 200, at(2024, 6, 2, 1))],
+        vec![make_burned_session(
+            HOTSPOT_2,
+            2_000,
+            200,
+            at(2024, 6, 2, 1),
+        )],
     )
     .await;
     assert!(

@@ -17,7 +17,7 @@ pub struct DataSessionIngestor {
 
 /// Per-hotspot rewardable data-transfer totals — the aggregated *input* to data
 /// transfer rewards, not a reward itself.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct RewardableData {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
@@ -232,7 +232,7 @@ pub enum DataSessionSource {
 
 impl DataSessionSource {
     /// `Compare` when a Trino client is configured, otherwise `Postgres`.
-    pub(crate) fn new(pool: PgPool, trino: Option<trino_client::Client>) -> Self {
+    pub fn new(pool: PgPool, trino: Option<trino_client::Client>) -> Self {
         match trino {
             Some(trino) => DataSessionSource::Compare { pool, trino },
             None => DataSessionSource::Postgres { pool },
@@ -243,7 +243,7 @@ impl DataSessionSource {
     /// reward period — data exists past the period end, the same freshness signal
     /// the heartbeat/speedtest checks use. No-op without Trino, and it never
     /// blocks: a query failure is reported as "not ready" rather than propagated.
-    pub(crate) async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
+    pub async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
         let DataSessionSource::Compare { trino, .. } = self else {
             return;
         };
@@ -255,10 +255,10 @@ impl DataSessionSource {
                     false
                 }
             };
-        crate::telemetry::data_session_trino_ready(ready);
+        crate::telemetry::data_session::trino_ready(ready);
     }
 
-    pub(crate) async fn load_data_sessions(
+    pub async fn load_data_sessions(
         &self,
         epoch: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<RewardableDataByHotspot> {
@@ -288,9 +288,29 @@ impl DataSessionSource {
     }
 }
 
-/// Emit metrics describing whether the Trino data-session aggregate matches
-/// Postgres, and by how much it diverges when it doesn't.
-fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableDataByHotspot) {
+/// Outcome of comparing the Postgres and Trino aggregates for an epoch.
+#[derive(Debug, PartialEq, Eq)]
+struct SessionComparison {
+    /// Hotspots whose totals differ, or that appear in only one source.
+    divergent_hotspots: u64,
+    /// Signed total-DC delta (trino - postgres).
+    dc_delta: i128,
+    /// Signed total-rewardable-bytes delta (trino - postgres).
+    bytes_delta: i128,
+}
+
+impl SessionComparison {
+    /// The sources agree exactly.
+    fn matches(&self) -> bool {
+        self.divergent_hotspots == 0
+    }
+}
+
+/// Pure comparison of the two aggregates — no side effects, so it's unit tested.
+fn compare(
+    postgres: &RewardableDataByHotspot,
+    trino: &RewardableDataByHotspot,
+) -> SessionComparison {
     let pg_total_dc: u64 = postgres.values().map(|r| r.rewardable_dc).sum();
     let trino_total_dc: u64 = trino.values().map(|r| r.rewardable_dc).sum();
     let pg_total_bytes: u64 = postgres.values().map(|r| r.rewardable_bytes).sum();
@@ -298,25 +318,137 @@ fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableD
 
     let mut divergent_hotspots = 0u64;
     for (key, pg) in postgres {
-        match trino.get(key) {
-            Some(t)
-                if t.rewardable_dc == pg.rewardable_dc
-                    && t.rewardable_bytes == pg.rewardable_bytes => {}
-            _ => divergent_hotspots += 1, // mismatched total or missing in trino
+        // Differs if the hotspot is missing from trino, or its totals don't match.
+        if trino.get(key) != Some(pg) {
+            divergent_hotspots += 1;
         }
     }
     // Hotspots present only in trino.
     divergent_hotspots += trino.keys().filter(|k| !postgres.contains_key(*k)).count() as u64;
 
-    let dc_delta = trino_total_dc as i128 - pg_total_dc as i128;
-    let bytes_delta = trino_total_bytes as i128 - pg_total_bytes as i128;
+    SessionComparison {
+        divergent_hotspots,
+        dc_delta: trino_total_dc as i128 - pg_total_dc as i128,
+        bytes_delta: trino_total_bytes as i128 - pg_total_bytes as i128,
+    }
+}
 
-    // `matches` is the headline signal; the deltas let Grafana chart *how far*
-    // off Trino is when it doesn't. Emitted as metrics, not logs, so they can be
-    // charted over the migration.
-    let matches = divergent_hotspots == 0;
-    crate::telemetry::data_session_matches(matches);
-    crate::telemetry::data_session_dc_divergence(dc_delta as i64);
-    crate::telemetry::data_session_bytes_divergence(bytes_delta as i64);
-    crate::telemetry::data_session_hotspot_divergence(divergent_hotspots);
+/// Compare the Postgres and Trino aggregates and emit the divergence metrics.
+/// `matches` is the headline signal; the deltas let Grafana chart *how far* off
+/// Trino is when it doesn't. Emitted as metrics, not logs, so they can be
+/// charted over the migration.
+fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableDataByHotspot) {
+    let comparison = compare(postgres, trino);
+    crate::telemetry::data_session::matches(comparison.matches());
+    crate::telemetry::data_session::dc_divergence(comparison.dc_delta as i64);
+    crate::telemetry::data_session::bytes_divergence(comparison.bytes_delta as i64);
+    crate::telemetry::data_session::hotspot_divergence(comparison.divergent_hotspots);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use helium_crypto::PublicKeyBinary;
+
+    fn pubkey(b: u8) -> PublicKeyBinary {
+        PublicKeyBinary::from(vec![b])
+    }
+
+    fn totals(dc: u64, bytes: u64) -> RewardableData {
+        RewardableData {
+            rewardable_dc: dc,
+            rewardable_bytes: bytes,
+        }
+    }
+
+    fn map<const N: usize>(
+        entries: [(PublicKeyBinary, RewardableData); N],
+    ) -> RewardableDataByHotspot {
+        entries.into_iter().collect()
+    }
+
+    #[test]
+    fn empty_sources_match() {
+        let comparison = compare(
+            &RewardableDataByHotspot::new(),
+            &RewardableDataByHotspot::new(),
+        );
+        assert!(comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 0,
+                dc_delta: 0,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn identical_sources_match() {
+        let pg = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
+        let trino = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
+
+        let comparison = compare(&pg, &trino);
+        assert!(comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 0,
+                dc_delta: 0,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn mismatched_totals_diverge_with_signed_delta() {
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = map([(pubkey(1), totals(150, 1000))]); // 50 more DC in trino
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: 50,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn hotspot_only_in_postgres_diverges() {
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = RewardableDataByHotspot::new();
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: -100, // trino is missing the hotspot entirely
+                bytes_delta: -1000,
+            }
+        );
+    }
+
+    #[test]
+    fn hotspot_only_in_trino_diverges() {
+        let pg = RewardableDataByHotspot::new();
+        let trino = map([(pubkey(1), totals(100, 1000))]);
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: 100,
+                bytes_delta: 1000,
+            }
+        );
+    }
 }

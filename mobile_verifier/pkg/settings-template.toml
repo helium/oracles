@@ -85,3 +85,36 @@ bucket = "mainnet-mobile-verified"
 # Endpoint for metrics. Default below
 #
 # endpoint = "127.0.0.1:19000"
+
+# Trino query client. When present, the reward pipeline reads data-transfer
+# sessions from Trino alongside Postgres and emits divergence metrics (the
+# Postgres -> Trino migration "compare" phase). Omit the whole section to read
+# data sessions from Postgres only.
+#
+# [trino]
+# host = "trino.example.com"
+# port = 443
+# user = "mobile-verifier"
+#
+# # Catalog/schema that holds data_transfer.burned_sessions. Optional; a
+# # two-part `namespace.table` name resolves against `catalog`.
+# # catalog = "iceberg"
+# # schema = "data_transfer"
+#
+# # Use HTTPS (default false); skip TLS verification for local dev (default false).
+# # secure = true
+# # insecure_skip_tls_verify = false
+#
+# # Authentication (omit for anonymous). Pick one variant:
+# #
+# # [trino.auth]
+# # type = "jwt_file"                    # token read from a file, refreshed periodically
+# # path = "/var/run/secrets/trino.jwt"
+# # refresh_interval = "60s"
+# #
+# # type = "jwt"                         # static token
+# # token = "ey..."
+# #
+# # type = "basic"
+# # username = "mobile-verifier"
+# # password = "..."

@@ -2,11 +2,8 @@ use anyhow::Context;
 use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
 use serde::Serialize;
 
-// Schemas for the `data_transfer` namespace live in the shared
-// `helium-iceberg-oracles` crate so the writer here and the reader in
-// `mobile-verifier` share one source of truth and cannot drift. Re-exported so
-// existing `iceberg::session` / `iceberg::burned_session` / `iceberg::Iceberg*`
-// paths keep resolving across this crate and its tests.
+// `data_transfer` schemas live in `helium-iceberg-oracles`; re-exported here so
+// existing `iceberg::*` paths keep resolving.
 pub use helium_iceberg_oracles::data_transfer::{
     burned_session, invalid_session, session, IcebergBurnedDataTransferSession,
     IcebergDataTransferSession, IcebergInvalidDataTransferSession, NAMESPACE, REASON_COLUMN,

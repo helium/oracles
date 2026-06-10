@@ -236,7 +236,9 @@ where
         // Postgres data is current, so rewards will run. Record (as a metric)
         // whether Trino's burned-session data was ready too. Non-blocking: Trino
         // is being validated, not yet trusted to gate rewards.
-        self.data_session_source.record_trino_readiness(reward_period).await;
+        self.data_session_source
+            .record_trino_readiness(reward_period)
+            .await;
 
         Ok(true)
     }

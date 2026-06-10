@@ -16,35 +16,8 @@ use trino_rust_client::Trino;
 
 use crate::data_session::RewardableDataByHotspot;
 
-/// One row per hotspot — the `num_dcs`/`rewardable_bytes` sums for the epoch.
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
-struct BurnedSessionAggRow {
-    pub_key: String,
-    rewardable_dc: u64,
-    rewardable_bytes: u64,
-}
-
-#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
-struct CountRow {
-    n: i64,
-}
-
-/// Statement that sums DC and rewardable bytes per hotspot over the half-open
-/// `[start, end)` epoch (matching the Postgres query in [`crate::data_session`]).
-fn agg_statement(epoch: &Range<DateTime<Utc>>) -> trino_client::Statement {
-    trino_client::Statement::new(format!(
-        "SELECT pub_key, \
-                SUM(num_dcs) AS rewardable_dc, \
-                SUM(rewardable_bytes) AS rewardable_bytes \
-         FROM {NAMESPACE}.{TABLE_NAME} \
-         WHERE burn_timestamp >= :start AND burn_timestamp < :end \
-         GROUP BY pub_key"
-    ))
-    .bind("start", epoch.start)
-    .bind("end", epoch.end)
-}
-
-/// Aggregate the burned data-transfer sessions for `epoch` into a [`RewardableDataByHotspot`].
+/// Aggregate the burned data-transfer sessions for `epoch` into a
+/// [`RewardableDataByHotspot`].
 ///
 /// Mirrors [`crate::data_session::aggregate_hotspot_data_sessions_to_dc`] but
 /// reads from Trino. No `COALESCE` is needed: `rewardable_bytes` is non-nullable
@@ -53,8 +26,16 @@ pub async fn aggregate_hotspot_data_sessions_to_dc(
     trino: &trino_client::Client,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<RewardableDataByHotspot> {
-    let rows: Vec<BurnedSessionAggRow> = trino
-        .get_all(agg_statement(epoch).typed::<BurnedSessionAggRow>())
+    // Column names must match the `SELECT ... AS` aliases in `aggregate_statement`.
+    #[derive(Trino, Serialize, Deserialize)]
+    struct Row {
+        pub_key: String,
+        rewardable_dc: u64,
+        rewardable_bytes: u64,
+    }
+
+    let rows = trino
+        .get_all(aggregate_statement(epoch).typed::<Row>())
         .await?;
 
     let mut map = RewardableDataByHotspot::new();
@@ -76,14 +57,34 @@ pub async fn no_burned_sessions(
     trino: &trino_client::Client,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<bool> {
+    #[derive(Trino, Serialize, Deserialize)]
+    struct Count {
+        n: i64,
+    }
+
     let stmt = trino_client::Statement::new(format!(
         "SELECT COUNT(*) AS n FROM {NAMESPACE}.{TABLE_NAME} WHERE burn_timestamp >= :end"
     ))
     .bind("end", reward_period.end)
-    .typed::<CountRow>();
+    .typed::<Count>();
 
     let count = trino.get_all(stmt).await?.first().map_or(0, |row| row.n);
     Ok(count == 0)
+}
+
+/// Statement that sums DC and rewardable bytes per hotspot over the half-open
+/// `[start, end)` epoch (matching the Postgres query in [`crate::data_session`]).
+fn aggregate_statement(epoch: &Range<DateTime<Utc>>) -> trino_client::Statement {
+    trino_client::Statement::new(format!(
+        "SELECT pub_key,
+                SUM(num_dcs) AS rewardable_dc,
+                SUM(rewardable_bytes) AS rewardable_bytes
+         FROM {NAMESPACE}.{TABLE_NAME}
+         WHERE burn_timestamp >= :start AND burn_timestamp < :end
+         GROUP BY pub_key"
+    ))
+    .bind("start", epoch.start)
+    .bind("end", epoch.end)
 }
 
 #[cfg(test)]
@@ -99,9 +100,9 @@ mod tests {
     }
 
     #[test]
-    fn agg_statement_filters_half_open_epoch_and_groups_by_hotspot() {
+    fn aggregate_statement_filters_half_open_epoch_and_groups_by_hotspot() {
         let epoch = utc(2024, 1, 15)..utc(2024, 1, 16);
-        let rendered = agg_statement(&epoch).render().unwrap();
+        let rendered = aggregate_statement(&epoch).render().unwrap();
 
         // Aggregation pushed into Trino.
         assert!(rendered.contains("GROUP BY pub_key"), "{rendered}");
