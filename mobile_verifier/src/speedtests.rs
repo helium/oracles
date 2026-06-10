@@ -30,7 +30,7 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+pub const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 // The limit must be 300 megabits per second.
 // Values in proto are in bytes/sec format.
 // Convert 300 megabits per second to bytes per second.

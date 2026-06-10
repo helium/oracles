@@ -1,6 +1,7 @@
 use super::plan::{Bucket, Plan};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use mobile_verifier::heartbeats::MINIMUM_HEARTBEAT_COUNT;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use trino_client::Client as TrinoClient;
@@ -14,14 +15,14 @@ const TRINO_DEVICE_TYPE: &str = "wifi_indoor";
 
 /// Number of hours each bucket writes on each side.
 ///
-/// `valid_radios.sql` requires `count(*) >= 12` to keep a (hotspot, cell_type)
-/// group, so the match/pg_only/trino_only buckets all write 12. The mismatch
-/// bucket writes 14 on PG and 12 on Iceberg so both sides keep the row but
-/// the aggregate counts differ.
-const PG_HOURS_MATCH: usize = 12;
-const TRINO_HOURS_MATCH: usize = 12;
-const PG_HOURS_MISMATCH: usize = 14;
-const TRINO_HOURS_MISMATCH: usize = 12;
+/// `valid_radios.sql` requires `count(*) >= MINIMUM_HEARTBEAT_COUNT` to keep a
+/// (hotspot, cell_type) group, so the match/pg_only/trino_only buckets all
+/// write exactly that. The mismatch bucket writes two extra on PG so both
+/// sides keep the row but the aggregate counts differ.
+const PG_HOURS_MATCH: usize = MINIMUM_HEARTBEAT_COUNT as usize;
+const TRINO_HOURS_MATCH: usize = MINIMUM_HEARTBEAT_COUNT as usize;
+const PG_HOURS_MISMATCH: usize = MINIMUM_HEARTBEAT_COUNT as usize + 2;
+const TRINO_HOURS_MISMATCH: usize = MINIMUM_HEARTBEAT_COUNT as usize;
 
 pub async fn seed(pg: &PgPool, trino: &TrinoClient, plan: &Plan) -> Result<()> {
     println!("[heartbeats] clearing window in PG + Iceberg");

@@ -2,7 +2,7 @@ use crate::diff::{DiffTable, FloatEq, DEFAULT_F64_EPSILON};
 use crate::CommonArgs;
 use anyhow::{Context, Result};
 use futures::TryStreamExt;
-use mobile_verifier::heartbeats::HeartbeatReward;
+use mobile_verifier::heartbeats::{HeartbeatReward, MINIMUM_HEARTBEAT_COUNT};
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
@@ -16,7 +16,8 @@ use trino_rust_client::Trino;
 /// types collapse to a single Trino `device_type='cbrs'`).
 #[derive(Debug, Clone, Default, PartialEq)]
 struct HeartbeatSummary {
-    /// Number of (cell_type / device_type) groups that passed the 12-heartbeat threshold.
+    /// Number of (cell_type / device_type) groups that passed the
+    /// `MINIMUM_HEARTBEAT_COUNT` threshold.
     valid_groups: u64,
     /// Total heartbeats counted across those groups.
     heartbeat_count: u64,
@@ -60,7 +61,7 @@ const TRINO_SQL: &str = r#"
             sum(trust) AS trust_sum
         FROM hourly
         GROUP BY hotspot_pubkey, device_type
-        HAVING count(*) >= 12
+        HAVING count(*) >= :min_count
     )
     SELECT
         hotspot_pubkey,
@@ -95,6 +96,7 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
     let stmt = Statement::new(TRINO_SQL)
         .bind("start", epoch.start)
         .bind("end", epoch.end)
+        .bind("min_count", MINIMUM_HEARTBEAT_COUNT)
         .typed::<TrinoHeartbeatRow>();
     let trino_rows: Vec<TrinoHeartbeatRow> = trino
         .get_all(stmt)

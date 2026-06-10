@@ -3,19 +3,15 @@ use crate::CommonArgs;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use mobile_verifier::speedtests::{aggregate_epoch_speedtests, get_latest_speedtests_for_pubkey};
+use mobile_verifier::speedtests::{
+    aggregate_epoch_speedtests, get_latest_speedtests_for_pubkey, SPEEDTEST_AVG_MAX_DATA_POINTS,
+};
+use mobile_verifier::speedtests_average::SPEEDTEST_LAPSE;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::collections::BTreeMap;
 use trino_client::{Client as TrinoClient, Statement};
 use trino_rust_client::Trino;
-
-// Mirrors `crate::speedtests::SPEEDTEST_LAPSE` and `SPEEDTEST_AVG_MAX_DATA_POINTS`.
-// Those constants are not pub today; matching them by value keeps the Trino
-// query in lockstep with production. If they ever diverge, update both here
-// and in `speedtests.rs`.
-const SPEEDTEST_LAPSE_HOURS: i64 = 24;
-const SPEEDTEST_AVG_MAX_DATA_POINTS: i64 = 6;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 struct SpeedtestSummary {
@@ -61,24 +57,25 @@ const TRINO_AGGREGATE_SQL: &str = r#"
     GROUP BY hotspot_pubkey
 "#;
 
-const TRINO_LATEST_SQL: &str = r#"
-    SELECT
-        hotspot_pubkey,
-        upload_speed,
-        download_speed,
-        latency,
-        timestamp
-    FROM poc.speedtests
-    WHERE hotspot_pubkey = :pubkey
-    AND timestamp >= :start
-    AND timestamp <= :anchor
-    ORDER BY timestamp DESC
-    LIMIT 6
-"#;
+/// Trino doesn't allow `LIMIT ?` placeholders, so the limit is interpolated
+/// at compile time from `SPEEDTEST_AVG_MAX_DATA_POINTS` rather than bound.
+fn trino_latest_sql() -> String {
+    format!(
+        "SELECT \
+            hotspot_pubkey, upload_speed, download_speed, latency, timestamp \
+         FROM poc.speedtests \
+         WHERE hotspot_pubkey = :pubkey \
+         AND timestamp >= :start \
+         AND timestamp <= :anchor \
+         ORDER BY timestamp DESC \
+         LIMIT {}",
+        SPEEDTEST_AVG_MAX_DATA_POINTS
+    )
+}
 
 pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) -> Result<()> {
     let epoch_end = args.end;
-    let start = epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE_HOURS);
+    let start = epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
 
     let pg_raw = aggregate_epoch_speedtests(epoch_end, pg)
         .await
@@ -98,7 +95,7 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
     let stmt = Statement::new(TRINO_AGGREGATE_SQL)
         .bind("start", start)
         .bind("end", epoch_end)
-        .bind("max_points", SPEEDTEST_AVG_MAX_DATA_POINTS)
+        .bind("max_points", SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
         .typed::<TrinoSpeedtestRow>();
     let trino_raw: Vec<TrinoSpeedtestRow> = trino
         .get_all(stmt)
@@ -128,7 +125,7 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
         "n/up_sum/dn_sum/lat_sum",
     )
     .with_note(
-        "Window is end-24h..end regardless of --start (matches production aggregate_epoch_speedtests).",
+        "Window is end-SPEEDTEST_LAPSE..end regardless of --start (matches production aggregate_epoch_speedtests).",
     )
     .with_options(args.show_all, args.limit);
     table.fill(
@@ -174,8 +171,8 @@ pub async fn run_latest(
         .context("running get_latest_speedtests_for_pubkey")?;
     tx.rollback().await.ok();
 
-    let start = anchor - chrono::Duration::hours(SPEEDTEST_LAPSE_HOURS);
-    let stmt = Statement::new(TRINO_LATEST_SQL)
+    let start = anchor - chrono::Duration::hours(SPEEDTEST_LAPSE);
+    let stmt = Statement::new(trino_latest_sql())
         .bind("pubkey", pubkey)
         .bind("start", start)
         .bind("anchor", anchor)

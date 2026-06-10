@@ -1,13 +1,14 @@
 use super::plan::{Bucket, Plan};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use mobile_verifier::speedtests::SPEEDTEST_AVG_MAX_DATA_POINTS;
 use sqlx::PgPool;
 use trino_client::Client as TrinoClient;
 
-/// `aggregate_epoch_speedtests` keeps the latest 6 rows per pubkey within a
-/// 24h window. Seed exactly that many on the match buckets so the per-pubkey
-/// sums on both sides are equal.
-const SPEEDTESTS_PER_HOTSPOT: usize = 6;
+/// `aggregate_epoch_speedtests` keeps the latest `SPEEDTEST_AVG_MAX_DATA_POINTS`
+/// rows per pubkey within the SPEEDTEST_LAPSE window. Seed exactly that many
+/// on the match buckets so the per-pubkey sums on both sides are equal.
+const SPEEDTESTS_PER_HOTSPOT: usize = SPEEDTEST_AVG_MAX_DATA_POINTS;
 /// Constants for the matching-bucket rows. Picked to be obviously synthetic.
 const MATCH_UPLOAD: u64 = 10_000_000;
 const MATCH_DOWNLOAD: u64 = 100_000_000;
