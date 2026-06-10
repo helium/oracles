@@ -18,7 +18,7 @@ pub mod speedtests_average;
 pub mod telemetry;
 pub mod unique_connections;
 
-pub use settings::{DataSessionSource, Settings};
+pub use settings::Settings;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

@@ -3,7 +3,7 @@ use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -182,31 +182,6 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
-pub async fn sum_data_sessions_to_dc_by_payer<'a>(
-    exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
-    epoch: &'a Range<DateTime<Utc>>,
-) -> Result<HashMap<String, u64>, sqlx::Error> {
-    Ok(sqlx::query(
-        r#"
-        SELECT payer as sp, sum(num_dcs)::bigint as total_dcs
-        FROM hotspot_data_transfer_sessions
-        WHERE received_timestamp >= $1 and received_timestamp < $2
-        GROUP BY payer
-        "#,
-    )
-    .bind(epoch.start)
-    .bind(epoch.end)
-    .fetch_all(exec)
-    .await?
-    .iter()
-    .map(|row| {
-        let sp = row.get::<String, &str>("sp");
-        let dcs: u64 = row.get::<i64, &str>("total_dcs") as u64;
-        (sp, dcs)
-    })
-    .collect::<HashMap<String, u64>>())
-}
-
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<HotspotMap, sqlx::Error> {
@@ -229,4 +204,117 @@ pub async fn clear_hotspot_data_sessions(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Where the reward pipeline reads hotspot data-transfer sessions from.
+///
+/// Migrates data-session reads from Postgres to Trino incrementally, driven
+/// purely by whether a Trino client is configured:
+/// - no client  → [`DataSessionSource::Postgres`]: read from Postgres only.
+/// - has client → [`DataSessionSource::Compare`]: reward from Postgres (source of truth)
+///   but also read Trino and emit divergence metrics.
+///
+/// Final cutover (once the metrics show Trino consistently matches Postgres):
+/// drop the `pool`, leaving a Trino-only variant, and stop the Postgres ingest.
+/// Keeping this here next to the Postgres aggregation means that cutover is a
+/// single-file change.
+pub enum DataSessionSource {
+    Postgres {
+        pool: PgPool,
+    },
+    Compare {
+        pool: PgPool,
+        trino: trino_client::Client,
+    },
+}
+
+impl DataSessionSource {
+    /// `Compare` when a Trino client is configured, otherwise `Postgres`.
+    pub(crate) fn new(pool: PgPool, trino: Option<trino_client::Client>) -> Self {
+        match trino {
+            Some(trino) => DataSessionSource::Compare { pool, trino },
+            None => DataSessionSource::Postgres { pool },
+        }
+    }
+
+    /// Record, as a metric, whether Trino's burned-session data is ready for this
+    /// reward period — data exists past the period end, the same freshness signal
+    /// the heartbeat/speedtest checks use. No-op without Trino, and it never
+    /// blocks: a query failure is reported as "not ready" rather than propagated.
+    pub(crate) async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
+        let DataSessionSource::Compare { trino, .. } = self else {
+            return;
+        };
+        let ready =
+            match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await {
+                Ok(empty) => !empty,
+                Err(err) => {
+                    tracing::error!(?err, "failed to check trino burned-session readiness");
+                    false
+                }
+            };
+        crate::telemetry::data_session_trino_ready(ready);
+    }
+
+    pub(crate) async fn load_data_sessions(
+        &self,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<HotspotMap> {
+        match self {
+            DataSessionSource::Postgres { pool } => {
+                Ok(aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?)
+            }
+            // Reward from Postgres (the source of truth during the migration),
+            // but also read Trino and emit divergence metrics. A Trino read
+            // failure must not break rewarding, so it's logged, not propagated.
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres = aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?;
+                match crate::iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(
+                    trino, epoch,
+                )
+                .await
+                {
+                    Ok(iceberg) => compare_data_sessions(&postgres, &iceberg),
+                    Err(err) => tracing::error!(
+                        ?err,
+                        "failed to read data sessions from trino for comparison"
+                    ),
+                }
+                Ok(postgres)
+            }
+        }
+    }
+}
+
+/// Emit metrics describing whether the Trino data-session aggregate matches
+/// Postgres, and by how much it diverges when it doesn't.
+fn compare_data_sessions(postgres: &HotspotMap, trino: &HotspotMap) {
+    let pg_total_dc: u64 = postgres.values().map(|r| r.rewardable_dc).sum();
+    let trino_total_dc: u64 = trino.values().map(|r| r.rewardable_dc).sum();
+    let pg_total_bytes: u64 = postgres.values().map(|r| r.rewardable_bytes).sum();
+    let trino_total_bytes: u64 = trino.values().map(|r| r.rewardable_bytes).sum();
+
+    let mut divergent_hotspots = 0u64;
+    for (key, pg) in postgres {
+        match trino.get(key) {
+            Some(t)
+                if t.rewardable_dc == pg.rewardable_dc
+                    && t.rewardable_bytes == pg.rewardable_bytes => {}
+            _ => divergent_hotspots += 1, // mismatched total or missing in trino
+        }
+    }
+    // Hotspots present only in trino.
+    divergent_hotspots += trino.keys().filter(|k| !postgres.contains_key(*k)).count() as u64;
+
+    let dc_delta = trino_total_dc as i128 - pg_total_dc as i128;
+    let bytes_delta = trino_total_bytes as i128 - pg_total_bytes as i128;
+
+    // `matches` is the headline signal; the deltas let Grafana chart *how far*
+    // off Trino is when it doesn't. Emitted as metrics, not logs, so they can be
+    // charted over the migration.
+    let matches = divergent_hotspots == 0;
+    crate::telemetry::data_session_matches(matches);
+    crate::telemetry::data_session_dc_divergence(dc_delta as i64);
+    crate::telemetry::data_session_bytes_divergence(bytes_delta as i64);
+    crate::telemetry::data_session_hotspot_divergence(divergent_hotspots);
 }
