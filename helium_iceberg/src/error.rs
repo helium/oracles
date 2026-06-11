@@ -29,10 +29,7 @@ pub enum Error {
     Channel(String),
 
     #[error("non-append snapshot {snapshot_id} ({operation}) encountered while skip_non_append is disabled")]
-    NonAppendSnapshot {
-        snapshot_id: i64,
-        operation: String,
-    },
+    NonAppendSnapshot { snapshot_id: i64, operation: String },
 }
 
 pub trait IntoHeliumIcebergError<T> {
