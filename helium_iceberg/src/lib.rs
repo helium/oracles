@@ -5,6 +5,7 @@ mod catalog;
 mod error;
 mod iceberg_table;
 mod settings;
+pub mod stream;
 mod table_creator;
 mod writer;
 
@@ -22,8 +23,13 @@ pub use table_creator::{
 };
 pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
+pub use stream::{
+    continuous, IcebergStream, IcebergStreamParser, IcebergStreamPollerServer, IcebergStreamState,
+    IcebergStreamStateRecorder, JsonIcebergStreamParser, LookbackBehavior, SnapshotMeta,
+};
+
 // Re-export iceberg types for ergonomic API usage
-pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
+pub use iceberg::spec::{NullOrder, Operation, PrimitiveType, SortDirection, Transform, Type};
 pub use iceberg::{NamespaceIdent, TableIdent};
 
 /// Converts a list of key-value pairs into a `HashMap`, only inserting the key

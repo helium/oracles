@@ -18,6 +18,21 @@ pub enum Error {
 
     #[error("writer error: {0}")]
     Writer(String),
+
+    #[error("reader error: {0}")]
+    Reader(String),
+
+    #[error("state error: {0}")]
+    State(String),
+
+    #[error("channel error: {0}")]
+    Channel(String),
+
+    #[error("non-append snapshot {snapshot_id} ({operation}) encountered while skip_non_append is disabled")]
+    NonAppendSnapshot {
+        snapshot_id: i64,
+        operation: String,
+    },
 }
 
 pub trait IntoHeliumIcebergError<T> {

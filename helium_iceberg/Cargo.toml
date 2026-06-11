@@ -8,17 +8,25 @@ license.workspace = true
 
 [features]
 default = ["test-harness"]
-test-harness = ["dep:trino-rust-client", "dep:derive_builder"]
+test-harness = ["dep:trino-rust-client"]
+# Postgres-backed `IcebergStreamState`/`IcebergStreamStateRecorder` impls for
+# the snapshot stream poller. Write-only users don't need sqlx.
+sqlx-postgres = ["dep:sqlx"]
 
 [dependencies]
 async-trait = { workspace = true }
 backon = "1"
 chrono = { workspace = true }
+derive_builder = { workspace = true }
 futures = { workspace = true }
+metrics = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+# Optional: Postgres state persistence for the stream poller (see `sqlx-postgres` feature)
+sqlx = { workspace = true, optional = true }
 
 # Iceberg dependencies
 iceberg = "0.9"
@@ -43,7 +51,6 @@ triggered = { workspace = true }
 
 # Test harness dependencies (optional)
 trino-rust-client = { version = "0.9", optional = true }
-derive_builder = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
