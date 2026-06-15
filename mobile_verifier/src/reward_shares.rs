@@ -1,13 +1,12 @@
 use crate::{
     banning::BannedRadios,
     coverage::CoveredHexStream,
-    data_session::RewardableDataByHotspot,
     heartbeats::HeartbeatReward,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     unique_connections::{self, UniqueConnectionCounts},
-    PriceInfo, ToProtoDecimal,
+    ToProtoDecimal,
 };
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::{
@@ -25,6 +24,7 @@ use std::{collections::HashMap, ops::Range};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
+pub mod data_transfer;
 mod radio_reward_v2;
 
 /// Maximum amount of the total emissions pool allocated for data transfer
@@ -45,114 +45,6 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 
 // Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
 pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;
-
-#[derive(Debug)]
-pub struct TransferRewards {
-    reward_scale: Decimal,
-    rewards: HashMap<PublicKeyBinary, TransferReward>,
-    reward_sum: Decimal,
-    price_info: PriceInfo,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct TransferReward {
-    bones: Decimal,
-    bytes_rewarded: u64,
-}
-
-impl TransferRewards {
-    pub fn reward_scale(&self) -> Decimal {
-        self.reward_scale
-    }
-
-    pub fn reward_sum(&self) -> Decimal {
-        self.reward_sum
-    }
-
-    #[cfg(test)]
-    fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
-        self.rewards
-            .get(hotspot)
-            .copied()
-            .map(|x| x.bones)
-            .unwrap_or(Decimal::ZERO)
-            * self.reward_scale
-    }
-
-    pub fn total(&self) -> Decimal {
-        self.rewards
-            .values()
-            .map(|v| v.bones * self.reward_scale)
-            .sum()
-    }
-
-    pub async fn from_transfer_sessions(
-        price_info: PriceInfo,
-        rewardable_data: RewardableDataByHotspot,
-        reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
-    ) -> Self {
-        let mut reward_sum = Decimal::ZERO;
-        let rewards = rewardable_data
-            .into_iter()
-            // Calculate rewards per hotspot
-            .map(|(pub_key, rewardable)| {
-                let bones = dc_to_hnt_bones(
-                    Decimal::from(rewardable.rewardable_dc),
-                    price_info.price_per_bone,
-                );
-                reward_sum += bones;
-                (
-                    pub_key,
-                    TransferReward {
-                        bones,
-                        bytes_rewarded: rewardable.rewardable_bytes,
-                    },
-                )
-            })
-            .collect();
-
-        // If we find that total data_transfer reward sum is greater than the
-        // allocated reward shares for data transfer, we recalculate the rewards
-        // per share to make them fit.
-        let reward_scale = if reward_sum > reward_shares.data_transfer {
-            reward_shares.data_transfer / reward_sum
-        } else {
-            Decimal::ONE
-        };
-
-        Self {
-            reward_scale,
-            rewards,
-            reward_sum: reward_sum * reward_scale,
-            price_info,
-        }
-    }
-
-    pub fn into_rewards(self) -> impl Iterator<Item = (u64, proto::GatewayReward)> {
-        let price = self.price_info.price_in_bones;
-        let reward_scale = self.reward_scale;
-
-        self.rewards
-            .into_iter()
-            .map(move |(hotspot_key, reward)| {
-                let dc_transfer_reward = (reward.bones * reward_scale)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0);
-
-                (
-                    dc_transfer_reward,
-                    proto::GatewayReward {
-                        hotspot_key: hotspot_key.into(),
-                        dc_transfer_reward,
-                        rewardable_bytes: reward.bytes_rewarded,
-                        price,
-                    },
-                )
-            })
-            .filter(|(dc_transfer_reward, _mobile_reward)| *dc_transfer_reward > 0)
-    }
-}
 
 /// Returns the equivalent amount of Hnt bones for a specified amount of Data Credits
 pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {
@@ -446,13 +338,6 @@ impl DataTransferAndPocAllocatedRewardBuckets {
     pub fn total_poc(&self) -> Decimal {
         self.poc
     }
-
-    /// Rewards left over from Data Transfer rewards go into the POC pool. They
-    /// do not get considered for boosted POC rewards if the boost shares
-    /// surpasses the 10% allocation.
-    pub fn handle_unallocated_data_transfer(&mut self, unallocated_data_transfer: Decimal) {
-        self.poc += unallocated_data_transfer;
-    }
 }
 
 /// Given the rewards allocated for Proof of Coverage and all the radios
@@ -541,10 +426,10 @@ mod test {
 
     use crate::{
         coverage::{CoveredHexStream, HexCoverage},
-        data_session::{self, HotspotDataSession, RewardableData},
         heartbeats::HeartbeatReward,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
+        PriceInfo,
     };
     use chrono::{Duration, Utc};
     use file_store_oracles::speedtest::CellSpeedtest;
@@ -620,10 +505,6 @@ mod test {
         }
     }
 
-    fn default_price_info() -> PriceInfo {
-        PriceInfo::new(10000000000000000, Token::Hnt.decimals())
-    }
-
     #[test]
     fn test_poc_scheduled_tokens() {
         let v = get_scheduled_tokens_for_poc(dec!(100));
@@ -648,134 +529,6 @@ mod test {
         assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
         assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
         assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
-    }
-
-    /// Test to ensure that the correct data transfer amount is rewarded.
-    #[tokio::test]
-    async fn ensure_data_correct_transfer_reward_amount() {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
-        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
-            .parse()
-            .expect("failed payer parse");
-
-        let data_transfer_session = HotspotDataSession {
-            pub_key: owner.clone(),
-            payer,
-            upload_bytes: 0,   // Unused
-            download_bytes: 0, // Unused
-            rewardable_bytes: 0,
-            num_dcs: 2,
-            received_timestamp: DateTime::default(),
-            burn_timestamp: Utc::now(),
-        };
-
-        let mut data_transfer_map = RewardableDataByHotspot::new();
-        data_transfer_map.insert(
-            data_transfer_session.pub_key,
-            RewardableData {
-                rewardable_bytes: 0, // Not used
-                rewardable_dc: data_transfer_session.num_dcs as u64,
-            },
-        );
-
-        let rewards_info = rewards_info_1_hour();
-
-        let total_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions);
-
-        // confirm our hourly rewards add up to expected 24hr amount
-        // total_rewards will be in bones
-        // 70% of 82_191_780_821_917 = 57,534,246,575,342 bones
-        // divided by 1_000_000 = 57,534,246.575342
-        assert_eq!(
-            (total_rewards / dec!(1_000_000) * dec!(24)).trunc(),
-            dec!(57_534_246)
-        );
-
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
-
-        let price_info = default_price_info();
-        assert_eq!(price_info.price_per_token, dec!(100000000));
-        assert_eq!(price_info.price_per_bone, dec!(1));
-
-        let data_transfer_rewards =
-            TransferRewards::from_transfer_sessions(price_info, data_transfer_map, &reward_shares)
-                .await;
-
-        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
-        assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
-
-        let available_poc_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions)
-            - data_transfer_rewards.reward_sum;
-
-        assert_eq!(
-            available_poc_rewards,
-            (total_rewards
-                - (data_transfer_rewards.reward(&owner) * data_transfer_rewards.reward_scale()))
-        );
-    }
-
-    /// Test to ensure that excess transfer rewards are properly scaled down.
-    #[tokio::test]
-    async fn ensure_excess_transfer_rewards_scale() {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
-        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
-            .parse()
-            .expect("failed payer parse");
-
-        let mut transfer_sessions = Vec::new();
-        // Just an absurdly large amount of DC
-        for _ in 0..3_003 {
-            transfer_sessions.push(Ok(HotspotDataSession {
-                pub_key: owner.clone(),
-                payer: payer.clone(),
-                upload_bytes: 0,
-                download_bytes: 0,
-                rewardable_bytes: 0,
-                num_dcs: 2222222222222222,
-                received_timestamp: DateTime::default(),
-                burn_timestamp: Utc::now(),
-            }));
-        }
-        let data_transfer_sessions = stream::iter(transfer_sessions);
-        let aggregated_data_transfer_sessions =
-            data_session::data_sessions_to_dc(data_transfer_sessions)
-                .await
-                .unwrap();
-
-        // set our rewards info
-        let rewards_info = rewards_info_24_hours();
-
-        let price_info = default_price_info();
-        assert_eq!(price_info.price_per_token, dec!(100000000));
-        assert_eq!(price_info.price_per_bone, dec!(1));
-
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
-
-        let data_transfer_rewards = TransferRewards::from_transfer_sessions(
-            price_info,
-            aggregated_data_transfer_sessions,
-            &reward_shares,
-        )
-        .await;
-
-        // We have constructed the data transfer in such a way that they easily exceed the maximum
-        // allotted reward amount for data transfer, which is 70% of the daily total emissions.
-        // We check to ensure that the data transfer rewards consume the full allocation.
-        let available_poc_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions)
-            - data_transfer_rewards.reward_sum;
-        assert_eq!(available_poc_rewards.trunc(), Decimal::ZERO);
-        assert_eq!(
-            // Rewards are automatically scaled
-            data_transfer_rewards.reward(&owner).trunc(),
-            get_scheduled_tokens_for_poc(rewards_info.epoch_emissions).trunc(),
-        );
-        assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.9));
     }
 
     fn bytes_per_s(mbps: u64) -> u64 {
