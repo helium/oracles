@@ -47,7 +47,14 @@ const TRINO_SQL: &str = r#"
             hotspot_pubkey,
             device_type,
             date_trunc('hour', heartbeat_timestamp) AS hour,
-            avg(location_trust_score_multiplier) AS trust
+            -- Mirror PG: the per-hour multiplier is whatever the *first*
+            -- heartbeat in that hour set. `wifi_heartbeats` is PK'd on
+            -- (hotspot_key, truncated_timestamp) and the ON CONFLICT clause
+            -- only refreshes first_timestamp + coverage_object — the trust
+            -- multiplier sticks at its initial value. Averaging across all
+            -- heartbeats in the hour would drift whenever the multiplier
+            -- changes mid-hour.
+            min_by(location_trust_score_multiplier, heartbeat_timestamp) AS trust
         FROM poc.heartbeats
         WHERE heartbeat_timestamp >= :start
         AND heartbeat_timestamp < :end

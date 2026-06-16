@@ -11,7 +11,6 @@ use trino_rust_client::Trino;
 #[derive(Debug, Clone, Default, PartialEq)]
 struct DcSummary {
     rewardable_bytes: u64,
-    rewardable_dc: u64,
 }
 
 impl FloatEq for DcSummary {
@@ -24,19 +23,28 @@ impl FloatEq for DcSummary {
 struct TrinoDcRow {
     hotspot_key: String,
     rewardable_bytes: i64,
-    dc_transfer_reward: i64,
 }
 
-/// Trino-side: aggregate `rewards.data_transfer` rows whose `[start_period, end_period)`
-/// overlaps the requested window. This is the *output* of the production reward
-/// pipeline, not raw sessions, so this comparison is an input-vs-output sanity
-/// check: PG numbers should be >= Trino numbers in a normal epoch (PG includes
-/// all sessions, Trino only includes those that got rewards written).
+/// Compares `rewardable_bytes` aggregated per hotspot.
+///
+/// PG side reads `hotspot_data_transfer_sessions` rows whose `burn_timestamp`
+/// falls in the window — that's the reward pipeline's *input*. Trino side
+/// reads `rewards.data_transfer` rows whose `[start_period, end_period)`
+/// overlaps the window — that's the pipeline's *output*.
+///
+/// `rewardable_bytes` is the only column that is apples-to-apples between the
+/// two tables — both sides report it in raw bytes. PG's `num_dcs` (DC count,
+/// an input to the burn step) and Trino's `dc_transfer_reward` (the paid
+/// reward in bones, an output of burn × price) live in different units, so
+/// they are deliberately not diffed here.
+///
+/// Mismatches are expected on sessions that exist in PG but didn't produce a
+/// reward (e.g. sub-DC dust, or sessions whose hotspot was banned at reward
+/// time). PG totals should be ≥ Trino totals in a normal epoch.
 const TRINO_SQL: &str = r#"
     SELECT
         hotspot_key,
-        cast(sum(rewardable_bytes) AS bigint) AS rewardable_bytes,
-        cast(sum(dc_transfer_reward) AS bigint) AS dc_transfer_reward
+        cast(sum(rewardable_bytes) AS bigint) AS rewardable_bytes
     FROM rewards.data_transfer
     WHERE start_period < :end AND end_period > :start
     GROUP BY hotspot_key
@@ -55,7 +63,6 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
                 k.to_string(),
                 DcSummary {
                     rewardable_bytes: v.rewardable_bytes,
-                    rewardable_dc: v.rewardable_dc,
                 },
             )
         })
@@ -76,20 +83,20 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
                 r.hotspot_key,
                 DcSummary {
                     rewardable_bytes: r.rewardable_bytes.max(0) as u64,
-                    rewardable_dc: r.dc_transfer_reward.max(0) as u64,
                 },
             )
         })
         .collect();
 
     let mut table = DiffTable::new(
-        "data-sessions — PG input aggregate vs Trino rewards.data_transfer output",
+        "data-sessions — rewardable_bytes parity (PG input vs Trino reward output)",
         "hotspot_key",
-        "bytes/dc",
+        "rewardable_bytes",
     )
     .with_note(
-        "PG side sums raw hotspot_data_transfer_sessions; Trino side sums rewards.data_transfer (already-paid rewards). \
-         Mismatches are expected on sessions that didn't make it to a reward (e.g. sub-DC dust).",
+        "PG sums hotspot_data_transfer_sessions (pipeline input); Trino sums rewards.data_transfer (pipeline output). \
+         Only `rewardable_bytes` is comparable across these two tables — DC count and dc_transfer_reward are different units. \
+         Mismatches are expected on sessions that didn't produce a reward (sub-DC dust, banned hotspots, etc.).",
     )
     .with_options(args.show_all, args.limit);
     table.fill(
@@ -97,12 +104,11 @@ pub async fn run(pg: &Pool<Postgres>, trino: &TrinoClient, args: &CommonArgs) ->
         trino_rows,
         DEFAULT_F64_EPSILON,
         |k| k.clone(),
-        |v| format!("{}/{}", v.rewardable_bytes, v.rewardable_dc),
+        |v| v.rewardable_bytes.to_string(),
         |p, t| {
             format!(
-                "bytes={:+} dc={:+}",
+                "{:+}",
                 p.rewardable_bytes as i128 - t.rewardable_bytes as i128,
-                p.rewardable_dc as i128 - t.rewardable_dc as i128,
             )
         },
     );
