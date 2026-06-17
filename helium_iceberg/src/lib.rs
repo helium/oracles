@@ -5,9 +5,10 @@ mod catalog;
 mod error;
 mod iceberg_table;
 mod settings;
-pub mod stream;
 mod table_creator;
 mod writer;
+
+pub mod stream;
 
 #[cfg(feature = "test-harness")]
 pub mod test_harness;
