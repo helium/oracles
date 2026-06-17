@@ -70,7 +70,7 @@ impl LookbackBehavior {
 }
 
 #[derive(Clone, Builder)]
-#[builder(pattern = "owned")]
+#[builder(pattern = "owned", build_fn(error = "crate::Error"))]
 pub struct IcebergStreamPollerConfig<Message, State, Parser> {
     catalog: Catalog,
     #[builder(setter(into))]
@@ -218,7 +218,7 @@ where
         Receiver<IcebergStream<Message>>,
         IcebergStreamPollerServer<Message, State, Parser>,
     )> {
-        let config = self.build().map_err(|e| Error::State(e.to_string()))?;
+        let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_sequence_number = config
             .state
@@ -368,7 +368,7 @@ where
                     }
                     return Err(Error::NonAppendSnapshot {
                         snapshot_id: meta.snapshot_id,
-                        operation: format!("{:?}", meta.operation),
+                        operation: meta.operation.clone(),
                     });
                 }
 
@@ -406,9 +406,10 @@ where
                     break;
                 }
                 result = futures::future::try_join(
-                    sender.reserve().map_err(|_| Error::Channel(format!(
-                        "iceberg stream consumer for {table_name} ({process_name}) dropped"
-                    ))),
+                    sender.reserve().map_err(|_| Error::ConsumerDropped {
+                        table: table_name.clone(),
+                        process_name: process_name.clone(),
+                    }),
                     self.get_next_snapshot(),
                 ) => {
                     match result? {

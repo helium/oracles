@@ -19,17 +19,29 @@ pub enum Error {
     #[error("writer error: {0}")]
     Writer(String),
 
-    #[error("reader error: {0}")]
-    Reader(String),
+    #[error("json (de)serialization error: {0}")]
+    Json(#[from] serde_json::Error),
 
-    #[error("state error: {0}")]
-    State(String),
+    #[error("snapshot {snapshot_id} not found in table metadata")]
+    SnapshotNotFound { snapshot_id: i64 },
 
-    #[error("channel error: {0}")]
-    Channel(String),
+    #[error("missing required field building iceberg stream poller: {0}")]
+    UninitializedField(#[from] derive_builder::UninitializedFieldError),
 
-    #[error("non-append snapshot {snapshot_id} ({operation}) encountered while skip_non_append is disabled")]
-    NonAppendSnapshot { snapshot_id: i64, operation: String },
+    #[cfg(feature = "sqlx-postgres")]
+    #[error("stream state persistence error: {0}")]
+    State(#[from] sqlx::Error),
+
+    #[error("iceberg stream consumer for {table} ({process_name}) was dropped")]
+    ConsumerDropped { table: String, process_name: String },
+
+    #[error(
+        "non-append snapshot {snapshot_id} ({operation:?}) encountered while skip_non_append is disabled"
+    )]
+    NonAppendSnapshot {
+        snapshot_id: i64,
+        operation: iceberg::spec::Operation,
+    },
 }
 
 pub trait IntoHeliumIcebergError<T> {

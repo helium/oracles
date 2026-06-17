@@ -27,7 +27,7 @@ pub async fn added_data_files_to_batches(
     let metadata = table.metadata();
     let snapshot = metadata
         .snapshot_by_id(snapshot_id)
-        .ok_or_else(|| Error::Reader(format!("snapshot {snapshot_id} not found in metadata")))?;
+        .ok_or(Error::SnapshotNotFound { snapshot_id })?;
 
     // Read each added data file as the schema in effect at that snapshot, so
     // schema evolution between snapshots is handled per-snapshot rather than

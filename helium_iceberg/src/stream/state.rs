@@ -74,12 +74,6 @@ mod sqlx_postgres {
     use async_trait::async_trait;
     use chrono::Utc;
 
-    impl From<sqlx::Error> for Error {
-        fn from(err: sqlx::Error) -> Self {
-            Error::State(err.to_string())
-        }
-    }
-
     #[async_trait]
     impl IcebergStreamState for sqlx::Pool<sqlx::Postgres> {
         async fn latest_sequence_number(

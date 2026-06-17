@@ -8,7 +8,7 @@
 //! dependencies, so this adds nothing new. Any `T` that round-trips through the
 //! writer round-trips back here.
 
-use crate::{Error, Result};
+use crate::Result;
 use arrow_array::RecordBatch;
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
@@ -39,15 +39,10 @@ pub fn batch_to_records<T: DeserializeOwned>(batch: &RecordBatch) -> Result<Vec<
 
     let mut buf = Vec::new();
     let mut writer = arrow_json::ArrayWriter::new(&mut buf);
-    writer
-        .write(batch)
-        .map_err(|e| Error::Reader(format!("arrow-json write error: {e}")))?;
-    writer
-        .finish()
-        .map_err(|e| Error::Reader(format!("arrow-json finish error: {e}")))?;
+    writer.write(batch)?;
+    writer.finish()?;
 
-    serde_json::from_slice::<Vec<T>>(&buf)
-        .map_err(|e| Error::Reader(format!("deserialize error: {e}")))
+    Ok(serde_json::from_slice::<Vec<T>>(&buf)?)
 }
 
 #[async_trait]
