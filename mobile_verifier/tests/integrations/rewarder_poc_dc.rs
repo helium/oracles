@@ -9,11 +9,15 @@ use file_store_oracles::{
     unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
+use helium_iceberg_oracles::data_transfer::burned_session::{
+    self, IcebergBurnedDataTransferSession,
+};
 use mobile_verifier::{
     banning,
     cell_type::CellType,
     coverage::CoverageObject,
-    data_session,
+    data_session::{self, DataSessionSource},
     heartbeats::{Heartbeat, ValidatedHeartbeat},
     reward_shares::{self, DataTransferAndPocAllocatedRewardBuckets},
     rewarder, speedtests, unique_connections,
@@ -41,19 +45,29 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_info = reward_info_24_hours();
 
-    // seed all the things
+    let harness = common::setup_iceberg().await?;
+
+    // seed all the things (data sessions land in both Postgres and Trino)
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     let price_info = default_price_info();
 
-    // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    // run rewards for poc and dc (Compare: rewards from Postgres, validates Trino)
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -100,11 +114,14 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
+    let harness = common::setup_iceberg().await?;
+
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
-    let rewardable_total = seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    let rewardable_total =
+        seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
@@ -116,9 +133,18 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
     txn.commit().await?;
 
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let msgs = mobile_rewards.finish().await?;
     let poc_rewards = msgs.radio_reward_v2s;
@@ -153,11 +179,13 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
+    let harness = common::setup_iceberg().await?;
+
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -175,9 +203,17 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     .await?;
     txn.commit().await?;
 
-    // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    // run rewards for poc and dc (Compare: rewards from Postgres, validates Trino)
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -200,6 +236,8 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
+    let harness = common::setup_iceberg().await?;
+
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
@@ -221,9 +259,18 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     .await?;
     txn.commit().await?;
 
-    // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool, mobile_rewards_client, &reward_info, price_info, None)
-        .await?;
+    // run rewards for poc and dc. No data sessions are seeded, so both backends
+    // are empty; Compare keeps this consistent with the other reward tests.
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        price_info,
+        None,
+    )
+    .await?;
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
@@ -397,53 +444,116 @@ async fn seed_speedtests(
     Ok(())
 }
 
+/// A logical data-transfer session, materializable into either backend so the
+/// same input can drive the Postgres and Trino reward paths.
+struct DataSession {
+    pub_key: PublicKeyBinary,
+    payer: PublicKeyBinary,
+    upload_bytes: u64,
+    download_bytes: u64,
+    rewardable_bytes: u64,
+    num_dcs: u64,
+    timestamp: DateTime<Utc>,
+}
+
+impl DataSession {
+    async fn save_postgres(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        data_session::HotspotDataSession {
+            pub_key: self.pub_key.clone(),
+            payer: self.payer.clone(),
+            upload_bytes: self.upload_bytes as i64,
+            download_bytes: self.download_bytes as i64,
+            rewardable_bytes: self.rewardable_bytes as i64,
+            num_dcs: self.num_dcs as i64,
+            received_timestamp: self.timestamp,
+            burn_timestamp: self.timestamp,
+        }
+        .save(txn)
+        .await?;
+        Ok(())
+    }
+
+    fn to_iceberg(&self) -> IcebergBurnedDataTransferSession {
+        IcebergBurnedDataTransferSession {
+            pub_key: self.pub_key.to_string(),
+            payer: self.payer.to_string(),
+            upload_bytes: self.upload_bytes,
+            download_bytes: self.download_bytes,
+            rewardable_bytes: self.rewardable_bytes,
+            num_dcs: self.num_dcs,
+            first_timestamp: self.timestamp.into(),
+            last_timestamp: self.timestamp.into(),
+            burn_timestamp: self.timestamp.into(),
+        }
+    }
+}
+
+/// The data sessions seeded by the reward tests. rewardable_bytes for the first
+/// hotspot is intentionally lower than upload+download to prove rewardable_bytes
+/// (not the byte sum) drives rewards.
+fn data_sessions(ts: DateTime<Utc>) -> Vec<DataSession> {
+    let timestamp = ts + ChronoDuration::hours(1);
+    let upload_bytes = 1_024 * 1_000;
+    let download_bytes = 1_024 * 50_000;
+    vec![
+        DataSession {
+            pub_key: HOTSPOT_1.parse().unwrap(),
+            payer: PAYER_1.parse().unwrap(),
+            upload_bytes,
+            download_bytes,
+            rewardable_bytes: 1_024 * 1_000,
+            num_dcs: 5_000_000,
+            timestamp,
+        },
+        DataSession {
+            pub_key: HOTSPOT_2.parse().unwrap(),
+            payer: PAYER_1.parse().unwrap(),
+            upload_bytes,
+            download_bytes,
+            rewardable_bytes: 1_024 * 1_000 + 1_024 * 50_000,
+            num_dcs: 5_000_000,
+            timestamp,
+        },
+        DataSession {
+            pub_key: HOTSPOT_3.parse().unwrap(),
+            payer: PAYER_1.parse().unwrap(),
+            upload_bytes,
+            download_bytes,
+            rewardable_bytes: 1_024 * 1_000 + 1_024 * 50_000,
+            num_dcs: 5_000_000,
+            timestamp,
+        },
+    ]
+}
+
+/// Seed the data sessions into BOTH backends — Postgres and the Trino-backed
+/// `data_transfer.burned_sessions` iceberg table — and return total rewardable
+/// bytes. Tests then read from whichever backend they pass via the `DataSessionSource`.
 async fn seed_data_sessions(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
+    harness: &IcebergTestHarness,
 ) -> anyhow::Result<u64> {
-    let rewardable_bytes_1 = 1_024 * 1_000;
-    let data_session_1 = data_session::HotspotDataSession {
-        pub_key: HOTSPOT_1.parse().unwrap(),
-        payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1_024 * 1_000,
-        download_bytes: 1_024 * 50_000,
-        // Here to test that rewardable_bytes is the one taken into account we lower it
-        rewardable_bytes: rewardable_bytes_1,
-        num_dcs: 5_000_000,
-        received_timestamp: ts + ChronoDuration::hours(1),
-        burn_timestamp: ts + ChronoDuration::hours(1),
-    };
+    let sessions = data_sessions(ts);
 
-    let rewardable_bytes_2 = 1_024 * 1_000 + 1_024 * 50_000;
-    let data_session_2 = data_session::HotspotDataSession {
-        pub_key: HOTSPOT_2.parse().unwrap(),
-        payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1_024 * 1_000,
-        download_bytes: 1_024 * 50_000,
-        rewardable_bytes: rewardable_bytes_2,
-        num_dcs: 5_000_000,
-        received_timestamp: ts + ChronoDuration::hours(1),
-        burn_timestamp: ts + ChronoDuration::hours(1),
-    };
+    for session in &sessions {
+        session.save_postgres(txn).await?;
+    }
 
-    let rewardable_bytes_3 = 1_024 * 1_000 + 1_024 * 50_000;
-    let data_session_3 = data_session::HotspotDataSession {
-        pub_key: HOTSPOT_3.parse().unwrap(),
-        payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1_024 * 1_000,
-        download_bytes: 1_024 * 50_000,
-        rewardable_bytes: rewardable_bytes_3,
-        num_dcs: 5_000_000,
-        received_timestamp: ts + ChronoDuration::hours(1),
-        burn_timestamp: ts + ChronoDuration::hours(1),
-    };
-    data_session_1.save(txn).await?;
-    data_session_2.save(txn).await?;
-    data_session_3.save(txn).await?;
+    let rows = sessions
+        .iter()
+        .map(DataSession::to_iceberg)
+        .collect::<Vec<_>>();
+    harness
+        .get_table_writer_in::<IcebergBurnedDataTransferSession>(
+            burned_session::NAMESPACE,
+            burned_session::TABLE_NAME,
+        )
+        .await?
+        .write_idempotent("seed_data_sessions", rows)
+        .await?;
 
-    let rewardable = rewardable_bytes_1 + rewardable_bytes_2 + rewardable_bytes_3;
-
-    Ok(rewardable as u64)
+    Ok(sessions.iter().map(|s| s.rewardable_bytes).sum())
 }
 
 async fn seed_unique_connections(

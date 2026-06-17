@@ -1,0 +1,17 @@
+[package]
+name = "helium-iceberg-oracles"
+version = "0.1.0"
+description = "Shared Helium Iceberg table schemas for Oracles"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+helium-proto = { workspace = true }
+trino-rust-client = { version = "0.9" }
+
+helium-iceberg = { path = "../helium_iceberg", default-features = false }
+file-store-oracles = { path = "../file_store_oracles" }

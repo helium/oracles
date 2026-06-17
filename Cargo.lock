@@ -4017,6 +4017,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "helium-iceberg-oracles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "file-store-oracles",
+ "helium-iceberg",
+ "helium-proto",
+ "serde",
+ "trino-rust-client",
+]
+
+[[package]]
 name = "helium-lib"
 version = "0.2.0"
 source = "git+https://github.com/helium/helium-wallet-rs?branch=master#c4270aaef05487dc238435394e816d779453ac27"
@@ -5555,6 +5568,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-iceberg",
+ "helium-iceberg-oracles",
  "helium-proto",
  "http 1.3.1",
  "http-serde",
@@ -5605,6 +5619,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-iceberg",
+ "helium-iceberg-oracles",
  "helium-proto",
  "hex-assignments",
  "hextree",
@@ -5643,6 +5658,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
  "uuid",
 ]

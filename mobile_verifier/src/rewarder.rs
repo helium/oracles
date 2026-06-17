@@ -1,7 +1,8 @@
 use crate::{
     banning,
     boosting_oracles::db::check_for_unprocessed_data_sets,
-    coverage, data_session,
+    coverage,
+    data_session::{self, DataSessionSource},
     heartbeats::{self, HeartbeatReward},
     iceberg, resolve_subdao_pubkey,
     reward_shares::{
@@ -57,6 +58,7 @@ pub struct Rewarder<C> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     reward_writers: Option<iceberg::RewardWriters>,
+    data_session_source: DataSessionSource,
 }
 
 impl<C> Rewarder<C>
@@ -69,6 +71,7 @@ where
         file_upload: FileUpload,
         sub_dao_epoch_reward_info_resolver: C,
         reward_writers: Option<iceberg::RewardWriters>,
+        trino: Option<trino_client::Client>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
 
@@ -90,6 +93,8 @@ where
         )
         .await?;
 
+        let data_session_source = DataSessionSource::new(pool.clone(), trino);
+
         let rewarder = Rewarder::new(
             pool.clone(),
             sub_dao_epoch_reward_info_resolver,
@@ -99,6 +104,7 @@ where
             reward_manifests,
             price_tracker,
             reward_writers,
+            data_session_source,
         )?;
 
         Ok(TaskManager::builder()
@@ -119,6 +125,7 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         reward_writers: Option<iceberg::RewardWriters>,
+        data_session_source: DataSessionSource,
     ) -> anyhow::Result<Self> {
         // get the subdao address
         let sub_dao = resolve_subdao_pubkey();
@@ -134,6 +141,7 @@ where
             reward_manifests,
             price_tracker,
             reward_writers,
+            data_session_source,
         })
     }
 
@@ -225,6 +233,13 @@ where
             tracing::info!("Complete data checks are disabled for this reward period");
         }
 
+        // Postgres data is current, so rewards will run. Record (as a metric)
+        // whether Trino's burned-session data was ready too. Non-blocking: Trino
+        // is being validated, not yet trusted to gate rewards.
+        self.data_session_source
+            .record_trino_readiness(reward_period)
+            .await;
+
         Ok(true)
     }
 
@@ -269,6 +284,7 @@ where
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
+            &self.data_session_source,
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
@@ -337,6 +353,7 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
+    data_session_source: &DataSessionSource,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
@@ -345,13 +362,13 @@ pub async fn reward_poc_and_dc(
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
-    let transfer_rewards = TransferRewards::from_transfer_sessions(
-        price_info,
-        data_session::aggregate_hotspot_data_sessions_to_dc(pool, &reward_info.epoch_period)
-            .await?,
-        &reward_shares,
-    )
-    .await;
+    let hotspot_data_sessions = data_session_source
+        .load_data_sessions(&reward_info.epoch_period)
+        .await?;
+
+    let transfer_rewards =
+        TransferRewards::from_transfer_sessions(price_info, hotspot_data_sessions, &reward_shares)
+            .await;
 
     // It's important to gauge the scale metric. If this value is < 1.0, we are in
     // big trouble.

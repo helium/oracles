@@ -10,6 +10,7 @@ members = [
   "file_store",
   "file_store_oracles",
   "helium_iceberg",
+  "helium_iceberg_oracles",
   "ingest",
   "metrics",
   "mobile_config",

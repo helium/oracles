@@ -9,19 +9,19 @@ pub const TABLE_NAME: &str = "burned_sessions";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergBurnedDataTransferSession {
-    pub_key: String,
-    payer: String,
-    upload_bytes: u64,
-    download_bytes: u64,
-    rewardable_bytes: u64,
-    num_dcs: u64,
+    pub pub_key: String,
+    pub payer: String,
+    pub upload_bytes: u64,
+    pub download_bytes: u64,
+    pub rewardable_bytes: u64,
+    pub num_dcs: u64,
 
     /// Timestamp of the first ingest file we found a data transfer session in
-    first_timestamp: DateTime<FixedOffset>,
+    pub first_timestamp: DateTime<FixedOffset>,
     /// Timestamp of the last ingest file we found a data transfer session in
-    last_timestamp: DateTime<FixedOffset>,
+    pub last_timestamp: DateTime<FixedOffset>,
     /// Timestamp of when the burn transaction was confirmed
-    burn_timestamp: DateTime<FixedOffset>,
+    pub burn_timestamp: DateTime<FixedOffset>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {

@@ -3,7 +3,7 @@ use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -15,13 +15,15 @@ pub struct DataSessionIngestor {
     pub pool: PgPool,
 }
 
-#[derive(Default)]
-pub struct HotspotReward {
+/// Per-hotspot rewardable data-transfer totals — the aggregated *input* to data
+/// transfer rewards, not a reward itself.
+#[derive(Default, PartialEq, Eq)]
+pub struct RewardableData {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
 }
 
-pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
+pub type RewardableDataByHotspot = HashMap<PublicKeyBinary, RewardableData>;
 
 impl DataSessionIngestor {
     pub async fn create_managed_task(
@@ -160,7 +162,7 @@ impl HotspotDataSession {
 pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &'a Range<DateTime<Utc>>,
-) -> Result<HotspotMap, sqlx::Error> {
+) -> Result<RewardableDataByHotspot, sqlx::Error> {
     let stream = sqlx::query_as::<_, HotspotDataSession>(
         r#"
         SELECT
@@ -182,40 +184,15 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
-pub async fn sum_data_sessions_to_dc_by_payer<'a>(
-    exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
-    epoch: &'a Range<DateTime<Utc>>,
-) -> Result<HashMap<String, u64>, sqlx::Error> {
-    Ok(sqlx::query(
-        r#"
-        SELECT payer as sp, sum(num_dcs)::bigint as total_dcs
-        FROM hotspot_data_transfer_sessions
-        WHERE received_timestamp >= $1 and received_timestamp < $2
-        GROUP BY payer
-        "#,
-    )
-    .bind(epoch.start)
-    .bind(epoch.end)
-    .fetch_all(exec)
-    .await?
-    .iter()
-    .map(|row| {
-        let sp = row.get::<String, &str>("sp");
-        let dcs: u64 = row.get::<i64, &str>("total_dcs") as u64;
-        (sp, dcs)
-    })
-    .collect::<HashMap<String, u64>>())
-}
-
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
-) -> Result<HotspotMap, sqlx::Error> {
+) -> Result<RewardableDataByHotspot, sqlx::Error> {
     tokio::pin!(stream);
-    let mut map = HotspotMap::new();
+    let mut map = RewardableDataByHotspot::new();
     while let Some(session) = stream.try_next().await? {
-        let rewards = map.entry(session.pub_key).or_default();
-        rewards.rewardable_dc += session.num_dcs as u64;
-        rewards.rewardable_bytes += session.rewardable_bytes as u64;
+        let totals = map.entry(session.pub_key).or_default();
+        totals.rewardable_dc += session.num_dcs as u64;
+        totals.rewardable_bytes += session.rewardable_bytes as u64;
     }
     Ok(map)
 }
@@ -229,4 +206,249 @@ pub async fn clear_hotspot_data_sessions(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Where the reward pipeline reads hotspot data-transfer sessions from.
+///
+/// Migrates data-session reads from Postgres to Trino incrementally, driven
+/// purely by whether a Trino client is configured:
+/// - no client  → [`DataSessionSource::Postgres`]: read from Postgres only.
+/// - has client → [`DataSessionSource::Compare`]: reward from Postgres (source of truth)
+///   but also read Trino and emit divergence metrics.
+///
+/// Final cutover (once the metrics show Trino consistently matches Postgres):
+/// drop the `pool`, leaving a Trino-only variant, and stop the Postgres ingest.
+/// Keeping this here next to the Postgres aggregation means that cutover is a
+/// single-file change.
+pub enum DataSessionSource {
+    Postgres {
+        pool: PgPool,
+    },
+    Compare {
+        pool: PgPool,
+        trino: trino_client::Client,
+    },
+}
+
+impl DataSessionSource {
+    /// `Compare` when a Trino client is configured, otherwise `Postgres`.
+    pub fn new(pool: PgPool, trino: Option<trino_client::Client>) -> Self {
+        match trino {
+            Some(trino) => DataSessionSource::Compare { pool, trino },
+            None => DataSessionSource::Postgres { pool },
+        }
+    }
+
+    /// Record, as a metric, whether Trino's burned-session data is ready for this
+    /// reward period — data exists past the period end, the same freshness signal
+    /// the heartbeat/speedtest checks use. No-op without Trino, and it never
+    /// blocks: a query failure is reported as "not ready" rather than propagated.
+    pub async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
+        let DataSessionSource::Compare { trino, .. } = self else {
+            return;
+        };
+        let ready =
+            match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await {
+                Ok(empty) => !empty,
+                Err(err) => {
+                    tracing::error!(?err, "failed to check trino burned-session readiness");
+                    false
+                }
+            };
+        crate::telemetry::data_session::trino_ready(ready);
+    }
+
+    pub async fn load_data_sessions(
+        &self,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<RewardableDataByHotspot> {
+        match self {
+            DataSessionSource::Postgres { pool } => {
+                Ok(aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?)
+            }
+            // Reward from Postgres (the source of truth during the migration),
+            // but also read Trino and emit divergence metrics. A Trino read
+            // failure must not break rewarding, so it's logged, not propagated.
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres = aggregate_hotspot_data_sessions_to_dc(pool, epoch).await?;
+                match crate::iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(
+                    trino, epoch,
+                )
+                .await
+                {
+                    Ok(iceberg) => compare_data_sessions(&postgres, &iceberg),
+                    Err(err) => tracing::error!(
+                        ?err,
+                        "failed to read data sessions from trino for comparison"
+                    ),
+                }
+                Ok(postgres)
+            }
+        }
+    }
+}
+
+/// Outcome of comparing the Postgres and Trino aggregates for an epoch.
+#[derive(Debug, PartialEq, Eq)]
+struct SessionComparison {
+    /// Hotspots whose totals differ, or that appear in only one source.
+    divergent_hotspots: u64,
+    /// Signed total-DC delta (trino - postgres).
+    dc_delta: i128,
+    /// Signed total-rewardable-bytes delta (trino - postgres).
+    bytes_delta: i128,
+}
+
+impl SessionComparison {
+    /// The sources agree exactly.
+    fn matches(&self) -> bool {
+        self.divergent_hotspots == 0
+    }
+}
+
+/// Pure comparison of the two aggregates — no side effects, so it's unit tested.
+fn compare(
+    postgres: &RewardableDataByHotspot,
+    trino: &RewardableDataByHotspot,
+) -> SessionComparison {
+    let pg_total_dc: u64 = postgres.values().map(|r| r.rewardable_dc).sum();
+    let trino_total_dc: u64 = trino.values().map(|r| r.rewardable_dc).sum();
+    let pg_total_bytes: u64 = postgres.values().map(|r| r.rewardable_bytes).sum();
+    let trino_total_bytes: u64 = trino.values().map(|r| r.rewardable_bytes).sum();
+
+    let mut divergent_hotspots = 0u64;
+    for (key, pg) in postgres {
+        // Differs if the hotspot is missing from trino, or its totals don't match.
+        if trino.get(key) != Some(pg) {
+            divergent_hotspots += 1;
+        }
+    }
+    // Hotspots present only in trino.
+    divergent_hotspots += trino.keys().filter(|k| !postgres.contains_key(*k)).count() as u64;
+
+    SessionComparison {
+        divergent_hotspots,
+        dc_delta: trino_total_dc as i128 - pg_total_dc as i128,
+        bytes_delta: trino_total_bytes as i128 - pg_total_bytes as i128,
+    }
+}
+
+/// Compare the Postgres and Trino aggregates and emit the divergence metrics.
+/// `matches` is the headline signal; the deltas let Grafana chart *how far* off
+/// Trino is when it doesn't. Emitted as metrics, not logs, so they can be
+/// charted over the migration.
+fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableDataByHotspot) {
+    let comparison = compare(postgres, trino);
+    crate::telemetry::data_session::matches(comparison.matches());
+    crate::telemetry::data_session::dc_divergence(comparison.dc_delta as i64);
+    crate::telemetry::data_session::bytes_divergence(comparison.bytes_delta as i64);
+    crate::telemetry::data_session::hotspot_divergence(comparison.divergent_hotspots);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use helium_crypto::PublicKeyBinary;
+
+    fn pubkey(b: u8) -> PublicKeyBinary {
+        PublicKeyBinary::from(vec![b])
+    }
+
+    fn totals(dc: u64, bytes: u64) -> RewardableData {
+        RewardableData {
+            rewardable_dc: dc,
+            rewardable_bytes: bytes,
+        }
+    }
+
+    fn map<const N: usize>(
+        entries: [(PublicKeyBinary, RewardableData); N],
+    ) -> RewardableDataByHotspot {
+        entries.into_iter().collect()
+    }
+
+    #[test]
+    fn empty_sources_match() {
+        let comparison = compare(
+            &RewardableDataByHotspot::new(),
+            &RewardableDataByHotspot::new(),
+        );
+        assert!(comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 0,
+                dc_delta: 0,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn identical_sources_match() {
+        let pg = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
+        let trino = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
+
+        let comparison = compare(&pg, &trino);
+        assert!(comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 0,
+                dc_delta: 0,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn mismatched_totals_diverge_with_signed_delta() {
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = map([(pubkey(1), totals(150, 1000))]); // 50 more DC in trino
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: 50,
+                bytes_delta: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn hotspot_only_in_postgres_diverges() {
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = RewardableDataByHotspot::new();
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: -100, // trino is missing the hotspot entirely
+                bytes_delta: -1000,
+            }
+        );
+    }
+
+    #[test]
+    fn hotspot_only_in_trino_diverges() {
+        let pg = RewardableDataByHotspot::new();
+        let trino = map([(pubkey(1), totals(100, 1000))]);
+
+        let comparison = compare(&pg, &trino);
+        assert!(!comparison.matches());
+        assert_eq!(
+            comparison,
+            SessionComparison {
+                divergent_hotspots: 1,
+                dc_delta: 100,
+                bytes_delta: 1000,
+            }
+        );
+    }
 }

@@ -1,7 +1,7 @@
 use crate::{
     banning::BannedRadios,
     coverage::CoveredHexStream,
-    data_session::HotspotMap,
+    data_session::RewardableDataByHotspot,
     heartbeats::HeartbeatReward,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
@@ -88,11 +88,11 @@ impl TransferRewards {
 
     pub async fn from_transfer_sessions(
         price_info: PriceInfo,
-        transfer_sessions: HotspotMap,
+        rewardable_data: RewardableDataByHotspot,
         reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
     ) -> Self {
         let mut reward_sum = Decimal::ZERO;
-        let rewards = transfer_sessions
+        let rewards = rewardable_data
             .into_iter()
             // Calculate rewards per hotspot
             .map(|(pub_key, rewardable)| {
@@ -541,7 +541,7 @@ mod test {
 
     use crate::{
         coverage::{CoveredHexStream, HexCoverage},
-        data_session::{self, HotspotDataSession, HotspotReward},
+        data_session::{self, HotspotDataSession, RewardableData},
         heartbeats::HeartbeatReward,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
@@ -671,10 +671,10 @@ mod test {
             burn_timestamp: Utc::now(),
         };
 
-        let mut data_transfer_map = HotspotMap::new();
+        let mut data_transfer_map = RewardableDataByHotspot::new();
         data_transfer_map.insert(
             data_transfer_session.pub_key,
-            HotspotReward {
+            RewardableData {
                 rewardable_bytes: 0, // Not used
                 rewardable_dc: data_transfer_session.num_dcs as u64,
             },

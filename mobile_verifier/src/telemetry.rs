@@ -35,3 +35,43 @@ pub fn data_transfer_rewarded_gateways(count: u64) {
 pub fn mappers_rewarded(count: u64) {
     metrics::gauge!(MAPPERS_REWARDED).set(count as f64);
 }
+
+/// Metrics for the Postgres → Trino data-session migration. Self-contained so
+/// the whole module can be deleted once the migration is finished.
+pub mod data_session {
+    const TRINO_READY: &str = "data_session_trino_ready";
+    const MATCHES: &str = "data_session_matches_postgres";
+    const DC_DIVERGENCE: &str = "data_session_dc_divergence";
+    const BYTES_DIVERGENCE: &str = "data_session_bytes_divergence";
+    const HOTSPOT_DIVERGENCE: &str = "data_session_hotspot_divergence";
+
+    /// "When rewards need to run, was the Trino data ready?" — 1.0 when burned
+    /// sessions exist past the reward period end, else 0.0. Emitted once per
+    /// reward run while a Trino client is configured.
+    pub fn trino_ready(ready: bool) {
+        metrics::gauge!(TRINO_READY).set(if ready { 1.0 } else { 0.0 });
+    }
+
+    /// "When rewards run with Trino data, does it match Postgres exactly?" — 1.0
+    /// when the per-hotspot Trino aggregate equals Postgres, else 0.0. The
+    /// divergence gauges below quantify how far off it is when this is 0.
+    pub fn matches(matches: bool) {
+        metrics::gauge!(MATCHES).set(if matches { 1.0 } else { 0.0 });
+    }
+
+    /// Signed delta (trino - postgres) in total rewardable DC for the epoch.
+    pub fn dc_divergence(delta: i64) {
+        metrics::gauge!(DC_DIVERGENCE).set(delta as f64);
+    }
+
+    /// Signed delta (trino - postgres) in total rewardable bytes for the epoch.
+    pub fn bytes_divergence(delta: i64) {
+        metrics::gauge!(BYTES_DIVERGENCE).set(delta as f64);
+    }
+
+    /// Number of hotspots that differ between the Postgres and Trino aggregates
+    /// (mismatched totals or present in only one source).
+    pub fn hotspot_divergence(count: u64) {
+        metrics::gauge!(HOTSPOT_DIVERGENCE).set(count as f64);
+    }
+}

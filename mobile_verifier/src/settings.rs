@@ -50,6 +50,12 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
     pub data_sets_poll_duration: Duration,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Optional Trino query client. When configured, the reward pipeline reads
+    /// data-transfer sessions from both Postgres and Trino each epoch and emits
+    /// divergence metrics (the "compare" phase of the Postgres→Trino migration).
+    /// When absent, rewards read from Postgres only.
+    #[serde(default)]
+    pub trino: Option<trino_client::Settings>,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,
