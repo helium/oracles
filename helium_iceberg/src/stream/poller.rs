@@ -41,7 +41,7 @@ pub enum LookbackBehavior {
 
 impl Default for LookbackBehavior {
     fn default() -> Self {
-        // From the beginning of the table's history.
+        // Can only go back to oldest snapshot still available on table
         LookbackBehavior::StartAfter(DateTime::<Utc>::UNIX_EPOCH)
     }
 }
