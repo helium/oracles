@@ -10,7 +10,7 @@
 use std::marker::PhantomData;
 use std::time::Instant;
 
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use futures::TryFutureExt;
 use iceberg::spec::Operation;
@@ -27,6 +27,10 @@ use crate::{Error, Result};
 
 const DEFAULT_POLL_DURATION: std::time::Duration = std::time::Duration::from_secs(30);
 const DEFAULT_QUEUE_SIZE: usize = 5;
+
+/// Counter incremented by the number of snapshots that were expired before the
+/// poller could process them (i.e. permanently-missed appended rows).
+const EXPIRED_SNAPSHOTS_SKIPPED_METRIC: &str = "iceberg-stream-expired-snapshots-skipped";
 
 /// Where to begin reading when there is no persisted watermark yet.
 ///
@@ -62,9 +66,7 @@ impl LookbackBehavior {
     fn cutoff(&self, now: DateTime<Utc>) -> DateTime<Utc> {
         match self {
             LookbackBehavior::StartAfter(start_after) => *start_after,
-            LookbackBehavior::Max(max_lookback) => {
-                now - ChronoDuration::from_std(*max_lookback).unwrap_or(ChronoDuration::MAX)
-            }
+            LookbackBehavior::Max(max_lookback) => now - *max_lookback,
         }
     }
 }
@@ -309,6 +311,15 @@ where
                 skipped_snapshots = gap.skipped,
                 "snapshots expired before processing; their appended rows will not be streamed"
             );
+            // A monotonic counter so the gap is alertable long after the log
+            // line has scrolled out of retention — any nonzero increment means
+            // appended rows were permanently missed for this table.
+            metrics::counter!(
+                EXPIRED_SNAPSHOTS_SKIPPED_METRIC,
+                "table" => self.config.table_name.clone(),
+                "process-name" => self.config.process_name.clone(),
+            )
+            .increment(gap.skipped as u64);
             self.warned_gap_at = self.latest_sequence_number;
         }
     }

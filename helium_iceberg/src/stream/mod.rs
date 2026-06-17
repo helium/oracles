@@ -131,8 +131,8 @@ mod tests {
     use super::*;
     use crate::test_harness::IcebergTestHarness;
     use crate::{FieldDefinition, PartitionDefinition, TableDefinition};
-    use iceberg::spec::Operation;
     use async_trait::async_trait;
+    use iceberg::spec::Operation;
     use iceberg::table::Table;
     use parser::batch_to_records;
     use serde::{Deserialize, Serialize};
