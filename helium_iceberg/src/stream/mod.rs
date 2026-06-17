@@ -130,7 +130,8 @@ pub fn continuous<Message, State>(
 mod tests {
     use super::*;
     use crate::test_harness::IcebergTestHarness;
-    use crate::{FieldDefinition, Operation, PartitionDefinition, TableDefinition};
+    use crate::{FieldDefinition, PartitionDefinition, TableDefinition};
+    use iceberg::spec::Operation;
     use async_trait::async_trait;
     use iceberg::table::Table;
     use parser::batch_to_records;

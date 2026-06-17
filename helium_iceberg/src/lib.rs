@@ -29,9 +29,10 @@ pub use stream::{
     IcebergStreamStateRecorder, JsonIcebergStreamParser, LookbackBehavior, SnapshotMeta,
 };
 
-// Re-export iceberg types for ergonomic API usage
-pub use iceberg::spec::{NullOrder, Operation, PrimitiveType, SortDirection, Transform, Type};
-pub use iceberg::{NamespaceIdent, TableIdent};
+// Re-export the `iceberg` crate so consumers can name its types (e.g.
+// `helium_iceberg::iceberg::spec::Operation`) without depending on a matching
+// iceberg-rust version directly.
+pub use iceberg;
 
 /// Converts a list of key-value pairs into a `HashMap`, only inserting the key
 /// when the value is `Some`.
