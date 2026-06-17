@@ -28,6 +28,8 @@ pub use stream::{
     batch_to_records, continuous, IcebergStream, IcebergStreamPollerServer, IcebergStreamState,
     IcebergStreamStateRecorder, LookbackBehavior, SnapshotMeta,
 };
+#[cfg(feature = "sqlite")]
+pub use stream::open_watermark_db;
 
 // Re-export the `iceberg` crate so consumers can name its types (e.g.
 // `helium_iceberg::iceberg::spec::Operation`) without depending on a matching

@@ -39,6 +39,8 @@ pub use poller::{
 };
 pub use reader::{added_data_files_to_batches, added_record_batches};
 pub use state::{IcebergStreamState, IcebergStreamStateRecorder, SnapshotMeta};
+#[cfg(feature = "sqlite")]
+pub use state::open_watermark_db;
 
 use crate::Result;
 use chrono::Utc;

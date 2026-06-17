@@ -28,9 +28,13 @@ pub enum Error {
     #[error("missing required field building iceberg stream poller: {0}")]
     UninitializedField(#[from] derive_builder::UninitializedFieldError),
 
-    #[cfg(feature = "sqlx-postgres")]
+    #[cfg(any(feature = "sqlx-postgres", feature = "sqlite"))]
     #[error("stream state persistence error: {0}")]
     State(#[from] sqlx::Error),
+
+    #[cfg(feature = "sqlite")]
+    #[error("stream state migration error: {0}")]
+    Migrate(#[from] sqlx::migrate::MigrateError),
 
     #[error("iceberg stream consumer for {table} ({process_name}) was dropped")]
     ConsumerDropped { table: String, process_name: String },
