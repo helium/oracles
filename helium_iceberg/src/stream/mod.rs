@@ -32,7 +32,7 @@ mod poller;
 mod reader;
 mod state;
 
-pub use parser::{batch_to_records, IcebergStreamParser, JsonIcebergStreamParser};
+pub use parser::batch_to_records;
 pub use poller::{
     IcebergStreamPollerConfig, IcebergStreamPollerConfigBuilder, IcebergStreamPollerServer,
     LookbackBehavior,
@@ -117,13 +117,11 @@ where
     }
 }
 
-/// Start building a continuous snapshot poller that decodes rows with the
-/// default serde-based [`JsonIcebergStreamParser`]. `Message` is the row type
-/// (`T: serde::de::DeserializeOwned`); `State` is the watermark store
-/// (e.g. `sqlx::PgPool`).
-pub fn continuous<Message, State>(
-) -> IcebergStreamPollerConfigBuilder<Message, State, JsonIcebergStreamParser> {
-    IcebergStreamPollerConfigBuilder::default().parser(JsonIcebergStreamParser)
+/// Start building a continuous snapshot poller. `Message` is the row type
+/// (`T: serde::de::DeserializeOwned`, decoded from each Arrow batch via
+/// [`batch_to_records`]); `State` is the watermark store (e.g. `sqlx::PgPool`).
+pub fn continuous<Message, State>() -> IcebergStreamPollerConfigBuilder<Message, State> {
+    IcebergStreamPollerConfigBuilder::default()
 }
 
 #[cfg(all(test, feature = "test-harness"))]

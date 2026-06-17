@@ -15,11 +15,12 @@ use derive_builder::Builder;
 use futures::TryFutureExt;
 use iceberg::spec::Operation;
 use iceberg::table::Table;
+use serde::de::DeserializeOwned;
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::catalog::Catalog;
-use crate::stream::parser::IcebergStreamParser;
+use crate::stream::parser::batch_to_records;
 use crate::stream::reader::added_record_batches;
 use crate::stream::state::{IcebergStreamState, SnapshotMeta};
 use crate::stream::IcebergStream;
@@ -73,14 +74,13 @@ impl LookbackBehavior {
 
 #[derive(Clone, Builder)]
 #[builder(pattern = "owned", build_fn(error = "crate::Error"))]
-pub struct IcebergStreamPollerConfig<Message, State, Parser> {
+pub struct IcebergStreamPollerConfig<Message, State> {
     catalog: Catalog,
     #[builder(setter(into))]
     namespace: String,
     #[builder(setter(into, name = "table"))]
     table_name: String,
     state: State,
-    parser: Parser,
     #[builder(default = "DEFAULT_POLL_DURATION")]
     poll_duration: std::time::Duration,
     #[builder(default = "DEFAULT_QUEUE_SIZE")]
@@ -102,7 +102,7 @@ pub struct IcebergStreamPollerConfig<Message, State, Parser> {
     p: PhantomData<Message>,
 }
 
-impl<Message, State, Parser> IcebergStreamPollerConfigBuilder<Message, State, Parser> {
+impl<Message, State> IcebergStreamPollerConfigBuilder<Message, State> {
     /// Begin reading after the given commit time (only used until a watermark exists).
     pub fn lookback_start_after(self, start_after: DateTime<Utc>) -> Self {
         self.lookback(LookbackBehavior::StartAfter(start_after))
@@ -157,8 +157,8 @@ impl<Message, State, Parser> IcebergStreamPollerConfigBuilder<Message, State, Pa
     }
 }
 
-pub struct IcebergStreamPollerServer<Message, State, Parser> {
-    config: IcebergStreamPollerConfig<Message, State, Parser>,
+pub struct IcebergStreamPollerServer<Message, State> {
+    config: IcebergStreamPollerConfig<Message, State>,
     sender: Sender<IcebergStream<Message>>,
     latest_sequence_number: Option<i64>,
     idle_since: Option<Instant>,
@@ -209,16 +209,15 @@ struct NextSnapshot {
     meta: SnapshotMeta,
 }
 
-impl<Message, State, Parser> IcebergStreamPollerConfigBuilder<Message, State, Parser>
+impl<Message, State> IcebergStreamPollerConfigBuilder<Message, State>
 where
     State: IcebergStreamState,
-    Parser: IcebergStreamParser<Message>,
 {
     pub async fn create(
         self,
     ) -> Result<(
         Receiver<IcebergStream<Message>>,
-        IcebergStreamPollerServer<Message, State, Parser>,
+        IcebergStreamPollerServer<Message, State>,
     )> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
@@ -240,22 +239,20 @@ where
     }
 }
 
-impl<Message, State, Parser> ManagedTask for IcebergStreamPollerServer<Message, State, Parser>
+impl<Message, State> ManagedTask for IcebergStreamPollerServer<Message, State>
 where
-    Message: Send + Sync + 'static,
+    Message: DeserializeOwned + Send + Sync + 'static,
     State: IcebergStreamState,
-    Parser: IcebergStreamParser<Message>,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
 
-impl<Message, State, Parser> IcebergStreamPollerServer<Message, State, Parser>
+impl<Message, State> IcebergStreamPollerServer<Message, State>
 where
-    Message: Send + Sync + 'static,
+    Message: DeserializeOwned + Send + Sync + 'static,
     State: IcebergStreamState,
-    Parser: IcebergStreamParser<Message>,
 {
     /// Pick the lowest-`sequence_number` snapshot that is past both the
     /// watermark and the lookback cutoff. Returns the chosen snapshot's
@@ -428,7 +425,7 @@ where
                             let batches = added_record_batches(&next.table, next.meta.snapshot_id).await?;
                             let mut data = Vec::new();
                             for batch in batches {
-                                data.extend(self.config.parser.parse(batch).await?);
+                                data.extend(batch_to_records::<Message>(&batch)?);
                             }
 
                             let sequence_number = next.meta.sequence_number;

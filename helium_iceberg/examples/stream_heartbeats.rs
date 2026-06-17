@@ -36,8 +36,8 @@ use helium_iceberg::{
 use serde::{Deserialize, Serialize};
 
 /// A row of `iceberg.poc.heartbeats`. Field names and types match the table's
-/// columns; `JsonIcebergStreamParser` (the default) deserializes each Arrow row
-/// into this via serde.
+/// columns; the poller decodes each Arrow row into this via serde
+/// (`batch_to_records`).
 ///
 /// Timestamp columns arrive as RFC3339 strings, which chrono deserializes
 /// directly. Nullable columns use `Option<_>` with `#[serde(default)]` because

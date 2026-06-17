@@ -25,8 +25,8 @@ pub use table_creator::{
 pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
 pub use stream::{
-    continuous, IcebergStream, IcebergStreamParser, IcebergStreamPollerServer, IcebergStreamState,
-    IcebergStreamStateRecorder, JsonIcebergStreamParser, LookbackBehavior, SnapshotMeta,
+    batch_to_records, continuous, IcebergStream, IcebergStreamPollerServer, IcebergStreamState,
+    IcebergStreamStateRecorder, LookbackBehavior, SnapshotMeta,
 };
 
 // Re-export the `iceberg` crate so consumers can name its types (e.g.

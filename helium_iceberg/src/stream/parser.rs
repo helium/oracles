@@ -10,28 +10,14 @@
 
 use crate::Result;
 use arrow_array::RecordBatch;
-use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 
-/// Converts a `RecordBatch` of rows added by a snapshot into typed messages.
-#[async_trait]
-pub trait IcebergStreamParser<T>: Send + Sync + 'static {
-    async fn parse(&self, batch: RecordBatch) -> Result<Vec<T>>;
-}
-
-/// Default parser: deserialize each row via serde, using arrow-json as the
-/// Arrow→JSON bridge.
+/// Render an Arrow `RecordBatch` to `Vec<T>` via arrow-json + serde_json — the
+/// inverse of `iceberg_table::records_to_batch`.
 ///
 /// Caveat: `ArrayWriter` omits keys whose value is null, so `T`'s optional
 /// columns must tolerate missing keys (serde's default `Option` handling and
 /// `#[serde(default)]` both do).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct JsonIcebergStreamParser;
-
-/// Render an Arrow `RecordBatch` to `Vec<T>` via arrow-json + serde_json.
-///
-/// Returned as a free function so it can be unit-tested directly against
-/// `records_to_batch` without spinning up a poller.
 pub fn batch_to_records<T: DeserializeOwned>(batch: &RecordBatch) -> Result<Vec<T>> {
     if batch.num_rows() == 0 {
         return Ok(Vec::new());
@@ -43,16 +29,6 @@ pub fn batch_to_records<T: DeserializeOwned>(batch: &RecordBatch) -> Result<Vec<
     writer.finish()?;
 
     Ok(serde_json::from_slice::<Vec<T>>(&buf)?)
-}
-
-#[async_trait]
-impl<T> IcebergStreamParser<T> for JsonIcebergStreamParser
-where
-    T: DeserializeOwned + Send + 'static,
-{
-    async fn parse(&self, batch: RecordBatch) -> Result<Vec<T>> {
-        batch_to_records(&batch)
-    }
 }
 
 #[cfg(test)]
