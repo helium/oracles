@@ -402,55 +402,87 @@ where
         result
     }
 
+    /// Whether `meta` is past the configured `stop_after` boundary. Logs when
+    /// it is; the boundary snapshot itself is not emitted.
+    fn reached_stop_after(&self, meta: &SnapshotMeta) -> bool {
+        match self.config.stop_after {
+            Some(stop_after) if meta.timestamp > stop_after => {
+                tracing::info!(
+                    snapshot_id = meta.snapshot_id,
+                    %stop_after,
+                    "snapshot reached stop_after, closing iceberg stream"
+                );
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Handle a non-append snapshot: skip it — advancing past it so it isn't
+    /// reconsidered this run — when `skip_non_append` is set, or error
+    /// otherwise. A non-append snapshot's rows are never streamed.
+    fn skip_non_append(&mut self, meta: &SnapshotMeta) -> Result<()> {
+        if !self.config.skip_non_append {
+            return Err(Error::NonAppendSnapshot {
+                snapshot_id: meta.snapshot_id,
+                operation: meta.operation.clone(),
+            });
+        }
+        tracing::info!(
+            snapshot_id = meta.snapshot_id,
+            operation = ?meta.operation,
+            "skipping non-append snapshot"
+        );
+        self.latest_sequence_number = Some(meta.sequence_number);
+        self.idle_since = None;
+        Ok(())
+    }
+
+    /// Called when a poll found nothing new: sleep one poll interval. Returns
+    /// `true` if the idle timeout has elapsed and the stream should close.
+    async fn idle_wait(&mut self) -> bool {
+        let idle_start = *self.idle_since.get_or_insert_with(Instant::now);
+        if self.idle_timeout_elapsed(idle_start) {
+            return true;
+        }
+        tokio::time::sleep(self.config.poll_duration).await;
+        false
+    }
+
     /// Resolve the next snapshot to emit, handling skipped non-append
     /// snapshots, `stop_after`, and idle/poll waiting internally. Returns
     /// `None` to close the stream (stop boundary reached or idle timeout).
     async fn get_next_snapshot(&mut self) -> Result<Option<NextSnapshot>> {
         loop {
             let table = self.load_table().await?;
-
             self.warn_on_expired_gap(&table);
 
             if let Some(meta) = self.select_next(&table)? {
-                if let Some(stop_after) = self.config.stop_after {
-                    if meta.timestamp > stop_after {
-                        tracing::info!(
-                            snapshot_id = meta.snapshot_id,
-                            %stop_after,
-                            "snapshot reached stop_after, closing iceberg stream"
-                        );
-                        return Ok(None);
-                    }
+                if self.reached_stop_after(&meta) {
+                    return Ok(None);
                 }
-
                 if meta.operation != Operation::Append {
-                    if self.config.skip_non_append {
-                        tracing::info!(
-                            snapshot_id = meta.snapshot_id,
-                            operation = ?meta.operation,
-                            "skipping non-append snapshot"
-                        );
-                        // Advance past it so we don't reconsider it this run.
-                        self.latest_sequence_number = Some(meta.sequence_number);
-                        self.idle_since = None;
-                        continue;
-                    }
-                    return Err(Error::NonAppendSnapshot {
-                        snapshot_id: meta.snapshot_id,
-                        operation: meta.operation.clone(),
-                    });
+                    self.skip_non_append(&meta)?;
+                    continue;
                 }
-
                 self.idle_since = None;
                 return Ok(Some(NextSnapshot { table, meta }));
             }
 
-            let idle_start = *self.idle_since.get_or_insert_with(Instant::now);
-            if self.idle_timeout_elapsed(idle_start) {
+            if self.idle_wait().await {
                 return Ok(None);
             }
-            tokio::time::sleep(self.config.poll_duration).await;
         }
+    }
+
+    /// Read the rows a selected snapshot appended and decode them into an event.
+    async fn read_event(&self, next: NextSnapshot) -> Result<IcebergEvent<Message>> {
+        let batches = added_record_batches(&next.table, next.meta.snapshot_id).await?;
+        let mut data = Vec::new();
+        for batch in batches {
+            data.extend(batch_to_records::<Message>(&batch)?);
+        }
+        Ok(IcebergEvent::new(self.store.clone(), next.meta, data))
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
@@ -483,15 +515,8 @@ where
                 ) => {
                     match result? {
                         (permit, Some(next)) => {
-                            let batches = added_record_batches(&next.table, next.meta.snapshot_id).await?;
-                            let mut data = Vec::new();
-                            for batch in batches {
-                                data.extend(batch_to_records::<Message>(&batch)?);
-                            }
-
                             let sequence_number = next.meta.sequence_number;
-                            let stream = IcebergEvent::new(self.store.clone(), next.meta, data);
-                            permit.send(stream);
+                            permit.send(self.read_event(next).await?);
                             self.latest_sequence_number = Some(sequence_number);
                         }
                         (_, None) => {
