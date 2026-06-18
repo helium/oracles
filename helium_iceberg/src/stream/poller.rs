@@ -29,8 +29,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use crate::catalog::Catalog;
 use crate::stream::parser::batch_to_records;
 use crate::stream::reader::added_record_batches;
-use crate::stream::watermark::{SnapshotMeta, WatermarkStore};
-use crate::stream::IcebergStream;
+use crate::stream::state::{SnapshotMeta, StreamState};
+use crate::stream::IcebergEvent;
 use crate::{Error, Result};
 
 const DEFAULT_POLL_DURATION: std::time::Duration = std::time::Duration::from_secs(30);
@@ -50,6 +50,11 @@ fn default_db_dir() -> PathBuf {
 /// Counter incremented by the number of snapshots that were expired before the
 /// poller could process them (i.e. permanently-missed appended rows).
 const EXPIRED_SNAPSHOTS_SKIPPED_METRIC: &str = "iceberg-stream-expired-snapshots-skipped";
+
+/// Histogram of catalog `load_table` latency, in seconds. Its exported
+/// `_count` doubles as "how often the poller hits the catalog" (every poll
+/// tick, including idle ticks and retries), so no separate counter is needed.
+const LOAD_TABLE_DURATION_METRIC: &str = "iceberg-stream-load-table-duration-seconds";
 
 /// Where to begin reading when there is no persisted watermark yet.
 ///
@@ -190,23 +195,23 @@ impl<Message> IcebergStreamPollerConfigBuilder<Message> {
     pub async fn create(
         self,
     ) -> Result<(
-        Receiver<IcebergStream<Message>>,
+        Receiver<IcebergEvent<Message>>,
         IcebergStreamPollerServer<Message>,
     )> {
         let mut config = self.build()?;
         let store = match config.pool.take() {
-            Some(pool) => WatermarkStore::from_pool(pool).await?,
+            Some(pool) => {
+                StreamState::from_pool(pool, &config.process_name, &config.table_name).await?
+            }
             None => {
                 let path = config.db_dir.join(format!(
                     "{}-{}-{}.db",
                     config.namespace, config.table_name, config.process_name
                 ));
-                WatermarkStore::open(path).await?
+                StreamState::open(path, &config.process_name, &config.table_name).await?
             }
         };
-        let latest_sequence_number = store
-            .latest_sequence_number(&config.process_name, &config.table_name)
-            .await?;
+        let latest_sequence_number = store.latest_sequence_number().await?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
 
         Ok((
@@ -225,8 +230,8 @@ impl<Message> IcebergStreamPollerConfigBuilder<Message> {
 
 pub struct IcebergStreamPollerServer<Message> {
     config: IcebergStreamPollerConfig<Message>,
-    store: WatermarkStore,
-    sender: Sender<IcebergStream<Message>>,
+    store: StreamState,
+    sender: Sender<IcebergEvent<Message>>,
     latest_sequence_number: Option<i64>,
     idle_since: Option<Instant>,
     /// Watermark value we last emitted an expired-gap warning for, so we don't
@@ -375,16 +380,34 @@ where
         }
     }
 
+    /// Reload the table from the catalog, recording the latency of the
+    /// (network) `load_table` call — the histogram's `_count` also tells how
+    /// often it's called. Latency is recorded for failures too, so a
+    /// slow-then-erroring catalog still shows up.
+    async fn load_table(&self) -> Result<Table> {
+        let started = Instant::now();
+        let result = self
+            .config
+            .catalog
+            .load_table(&self.config.namespace, &self.config.table_name)
+            .await;
+
+        metrics::histogram!(
+            LOAD_TABLE_DURATION_METRIC,
+            "table" => self.config.table_name.clone(),
+            "process-name" => self.config.process_name.clone(),
+        )
+        .record(started.elapsed().as_secs_f64());
+
+        result
+    }
+
     /// Resolve the next snapshot to emit, handling skipped non-append
     /// snapshots, `stop_after`, and idle/poll waiting internally. Returns
     /// `None` to close the stream (stop boundary reached or idle timeout).
     async fn get_next_snapshot(&mut self) -> Result<Option<NextSnapshot>> {
         loop {
-            let table = self
-                .config
-                .catalog
-                .load_table(&self.config.namespace, &self.config.table_name)
-                .await?;
+            let table = self.load_table().await?;
 
             self.warn_on_expired_gap(&table);
 
@@ -467,13 +490,7 @@ where
                             }
 
                             let sequence_number = next.meta.sequence_number;
-                            let stream = IcebergStream::new(
-                                self.store.clone(),
-                                process_name.clone(),
-                                table_name.clone(),
-                                next.meta,
-                                data,
-                            );
+                            let stream = IcebergEvent::new(self.store.clone(), next.meta, data);
                             permit.send(stream);
                             self.latest_sequence_number = Some(sequence_number);
                         }

@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use helium_iceberg::{continuous, AuthConfig, Catalog, IcebergStream, S3Config, Settings};
+use helium_iceberg::{continuous, AuthConfig, Catalog, IcebergEvent, S3Config, Settings};
 use serde::{Deserialize, Serialize};
 
 /// A row of `iceberg.poc.heartbeats`. Field names and types match the table's
@@ -104,7 +104,7 @@ struct Totals {
 /// A real consumer would write the rows to its sink *before* `commit`; here
 /// there's no sink, so we just print. A crash before `commit` re-runs the
 /// snapshot on restart (at-least-once).
-async fn print_event(mut event: IcebergStream<Heartbeat>, totals: &mut Totals) -> Result<()> {
+async fn print_event(mut event: IcebergEvent<Heartbeat>, totals: &mut Totals) -> Result<()> {
     let snapshot = event.snapshot.clone();
 
     let rows = event.take_rows();

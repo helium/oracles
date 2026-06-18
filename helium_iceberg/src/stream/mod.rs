@@ -33,7 +33,7 @@
 mod parser;
 mod poller;
 mod reader;
-mod watermark;
+mod state;
 
 pub use parser::batch_to_records;
 pub use poller::{
@@ -41,9 +41,9 @@ pub use poller::{
     LookbackBehavior,
 };
 pub use reader::{added_data_files_to_batches, added_record_batches};
-pub use watermark::SnapshotMeta;
+pub use state::SnapshotMeta;
 
-use watermark::WatermarkStore;
+use state::StreamState;
 
 use crate::Result;
 use chrono::Utc;
@@ -52,28 +52,18 @@ use chrono::Utc;
 /// metadata and a handle to record progress. The Iceberg analogue of
 /// `file_store`'s `FileInfoStream`.
 #[derive(Debug)]
-pub struct IcebergStream<T> {
+pub struct IcebergEvent<T> {
     pub snapshot: SnapshotMeta,
-    process_name: String,
-    table_name: String,
     data: Vec<T>,
-    store: WatermarkStore,
+    state: StreamState,
 }
 
-impl<T> IcebergStream<T> {
-    pub(crate) fn new(
-        store: WatermarkStore,
-        process_name: String,
-        table_name: String,
-        snapshot: SnapshotMeta,
-        data: Vec<T>,
-    ) -> Self {
+impl<T> IcebergEvent<T> {
+    pub(crate) fn new(state: StreamState, snapshot: SnapshotMeta, data: Vec<T>) -> Self {
         Self {
             snapshot,
-            process_name,
-            table_name,
             data,
-            store,
+            state,
         }
     }
 
@@ -99,16 +89,16 @@ impl<T> IcebergStream<T> {
     fn record_metrics(&self) {
         let latency = Utc::now() - self.snapshot.timestamp;
         metrics::gauge!(
-            "iceberg-stream-latency",
-            "table" => self.table_name.clone(),
-            "process-name" => self.process_name.clone(),
+            "iceberg-event-latency",
+            "table" => self.state.table_name().to_string(),
+            "process-name" => self.state.process_name().to_string(),
         )
         .set(latency.num_seconds() as f64);
 
         metrics::gauge!(
-            "iceberg-stream-sequence-number",
-            "table" => self.table_name.clone(),
-            "process-name" => self.process_name.clone(),
+            "iceberg-event-sequence-number",
+            "table" => self.state.table_name().to_string(),
+            "process-name" => self.state.process_name().to_string(),
         )
         .set(self.snapshot.sequence_number as f64);
     }
@@ -120,9 +110,7 @@ impl<T> IcebergStream<T> {
     /// (e.g. `write_idempotent` keyed by `snapshot.sequence_number`) absorbs.
     pub async fn commit(self) -> Result<()> {
         self.record_metrics();
-        self.store
-            .record(&self.process_name, &self.table_name, &self.snapshot)
-            .await
+        self.state.record(&self.snapshot).await
     }
 }
 
@@ -264,11 +252,13 @@ mod tests {
 
         // Watermark advanced to the latest snapshot's sequence number; reopen
         // the poller's db (`default-numbers-default.db`) to read it back.
-        let store = WatermarkStore::open(dir.path().join("default-numbers-default.db")).await?;
-        assert_eq!(
-            store.latest_sequence_number("default", "numbers").await?,
-            Some(last_seq)
-        );
+        let store = StreamState::open(
+            dir.path().join("default-numbers-default.db"),
+            "default",
+            "numbers",
+        )
+        .await?;
+        assert_eq!(store.latest_sequence_number().await?, Some(last_seq));
         Ok(())
     }
 
@@ -295,8 +285,13 @@ mod tests {
 
         // Seed the watermark in the db the poller will open, then close it.
         let dir = tempfile::tempdir()?;
-        let store = WatermarkStore::open(dir.path().join("default-numbers-default.db")).await?;
-        store.record("default", "numbers", &second_meta).await?;
+        let store = StreamState::open(
+            dir.path().join("default-numbers-default.db"),
+            "default",
+            "numbers",
+        )
+        .await?;
+        store.record(&second_meta).await?;
         drop(store);
 
         // A third snapshot committed after the seeded watermark.

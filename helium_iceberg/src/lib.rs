@@ -27,7 +27,7 @@ pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
 #[cfg(feature = "stream")]
 pub use stream::{
-    added_data_files_to_batches, added_record_batches, batch_to_records, continuous, IcebergStream,
+    added_data_files_to_batches, added_record_batches, batch_to_records, continuous, IcebergEvent,
     IcebergStreamPollerServer, LookbackBehavior, SnapshotMeta,
 };
 
