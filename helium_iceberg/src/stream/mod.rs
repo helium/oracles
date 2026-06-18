@@ -6,31 +6,34 @@
 //! an event — conceptually how Spark Structured Streaming reads an Iceberg
 //! table snapshot-by-snapshot.
 //!
+//! Progress is tracked in a per-poller SQLite db (one file per poller, mount it
+//! on a PVC). The poller either opens it for you under a directory you provide
+//! (`{namespace}-{table}-{process_name}.db`) or uses a pre-created store.
+//!
 //! # Usage
 //!
 //! ```ignore
-//! let (mut rx, server) = helium_iceberg::stream::continuous::<MyRow, _>()
+//! let (mut rx, server) = helium_iceberg::stream::continuous::<MyRow>()
 //!     .catalog(catalog)
 //!     .namespace("poc")
 //!     .table("heartbeats")
-//!     .state(pool.clone())            // sqlx::PgPool (with the `sqlx-postgres` feature)
+//!     .db_dir("/data")                 // opens /data/poc-heartbeats-default.db
 //!     .lookback_start_after(start)
 //!     .create()
 //!     .await?;
 //!
 //! // Drive `server` with task_manager (ManagedTask), consume `rx` elsewhere:
-//! while let Some(event) = rx.recv().await {
-//!     let mut txn = pool.begin().await?;
-//!     let mut rows = event.into_stream(&mut txn).await?;   // records the watermark in-txn
-//!     while let Some(row) = rows.next().await { /* ... */ }
-//!     txn.commit().await?;                                 // at-least-once
+//! while let Some(mut event) = rx.recv().await {
+//!     let write_id = format!("heartbeats-{}", event.snapshot.sequence_number);
+//!     sink.write_idempotent(&write_id, transform(event.take_rows())).await?; // sink first
+//!     event.commit().await?;                                                 // then watermark
 //! }
 //! ```
 
 mod parser;
 mod poller;
 mod reader;
-mod state;
+mod watermark;
 
 pub use parser::batch_to_records;
 pub use poller::{
@@ -38,29 +41,28 @@ pub use poller::{
     LookbackBehavior,
 };
 pub use reader::{added_data_files_to_batches, added_record_batches};
-pub use state::{IcebergStreamState, IcebergStreamStateRecorder, SnapshotMeta};
-#[cfg(feature = "sqlite")]
-pub use state::open_watermark_db;
+pub use watermark::SnapshotMeta;
+
+use watermark::WatermarkStore;
 
 use crate::Result;
 use chrono::Utc;
-use futures::stream::{BoxStream, StreamExt};
 
 /// One snapshot's worth of newly-appended, decoded rows, plus the snapshot
-/// metadata. The Iceberg analogue of `file_store`'s `FileInfoStream`.
+/// metadata and a handle to record progress. The Iceberg analogue of
+/// `file_store`'s `FileInfoStream`.
 #[derive(Debug)]
 pub struct IcebergStream<T> {
     pub snapshot: SnapshotMeta,
     process_name: String,
     table_name: String,
     data: Vec<T>,
+    store: WatermarkStore,
 }
 
-impl<T> IcebergStream<T>
-where
-    T: Send,
-{
+impl<T> IcebergStream<T> {
     pub(crate) fn new(
+        store: WatermarkStore,
         process_name: String,
         table_name: String,
         snapshot: SnapshotMeta,
@@ -71,6 +73,7 @@ where
             process_name,
             table_name,
             data,
+            store,
         }
     }
 
@@ -81,6 +84,16 @@ where
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    /// Borrow the decoded rows.
+    pub fn rows(&self) -> &[T] {
+        &self.data
+    }
+
+    /// Take ownership of the decoded rows, leaving the event able to `commit`.
+    pub fn take_rows(&mut self) -> Vec<T> {
+        std::mem::take(&mut self.data)
     }
 
     fn record_metrics(&self) {
@@ -100,29 +113,25 @@ where
         .set(self.snapshot.sequence_number as f64);
     }
 
-    /// Record this snapshot as processed via `recorder` (advancing the
-    /// watermark), then yield its rows. Pass a `sqlx::Transaction` so the
-    /// watermark advance co-commits with the consumer's own work, giving
-    /// at-least-once delivery.
-    pub async fn into_stream(
-        self,
-        recorder: &mut impl IcebergStreamStateRecorder,
-    ) -> Result<BoxStream<'static, T>>
-    where
-        T: 'static,
-    {
+    /// Mark this snapshot processed, advancing the durable watermark.
+    ///
+    /// Call this **after** your sink write has committed: a crash before
+    /// `commit` re-runs the snapshot (at-least-once), which an idempotent sink
+    /// (e.g. `write_idempotent` keyed by `snapshot.sequence_number`) absorbs.
+    pub async fn commit(self) -> Result<()> {
         self.record_metrics();
-        recorder
+        self.store
             .record(&self.process_name, &self.table_name, &self.snapshot)
-            .await?;
-        Ok(futures::stream::iter(self.data.into_iter()).boxed())
+            .await
     }
 }
 
 /// Start building a continuous snapshot poller. `Message` is the row type
 /// (`T: serde::de::DeserializeOwned`, decoded from each Arrow batch via
-/// [`batch_to_records`]); `State` is the watermark store (e.g. `sqlx::PgPool`).
-pub fn continuous<Message, State>() -> IcebergStreamPollerConfigBuilder<Message, State> {
+/// [`batch_to_records`]). Progress is persisted to a per-poller SQLite db
+/// (see [`IcebergStreamPollerConfigBuilder::db_dir`] /
+/// [`IcebergStreamPollerConfigBuilder::pool`]).
+pub fn continuous<Message>() -> IcebergStreamPollerConfigBuilder<Message> {
     IcebergStreamPollerConfigBuilder::default()
 }
 
@@ -131,45 +140,14 @@ mod tests {
     use super::*;
     use crate::test_harness::IcebergTestHarness;
     use crate::{FieldDefinition, PartitionDefinition, TableDefinition};
-    use async_trait::async_trait;
-    use iceberg::spec::Operation;
     use iceberg::table::Table;
-    use parser::batch_to_records;
     use serde::{Deserialize, Serialize};
-    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     struct Number {
         name: String,
         value: i64,
-    }
-
-    /// In-memory watermark store standing in for the Postgres impl.
-    #[derive(Clone, Default)]
-    struct MemState {
-        recorded: Arc<Mutex<Vec<SnapshotMeta>>>,
-    }
-
-    #[async_trait]
-    impl IcebergStreamState for MemState {
-        async fn latest_sequence_number(&self, _p: &str, _t: &str) -> Result<Option<i64>> {
-            Ok(self
-                .recorded
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|s| s.sequence_number)
-                .max())
-        }
-    }
-
-    #[async_trait]
-    impl IcebergStreamStateRecorder for MemState {
-        async fn record(&mut self, _p: &str, _t: &str, snap: &SnapshotMeta) -> Result<()> {
-            self.recorded.lock().unwrap().push(snap.clone());
-            Ok(())
-        }
     }
 
     fn numbers_table() -> TableDefinition {
@@ -252,12 +230,13 @@ mod tests {
         writer.write(vec![num("b", 2)]).await?;
         writer.write(vec![num("c", 3)]).await?;
 
-        let mut state = MemState::default();
-        let (mut rx, server) = continuous::<Number, MemState>()
+        // Let the poller open its own db under this dir.
+        let dir = tempfile::tempdir()?;
+        let (mut rx, server) = continuous::<Number>()
             .catalog(harness.iceberg_catalog().clone())
             .namespace("default")
             .table("numbers")
-            .state(state.clone())
+            .db_dir(dir.path())
             .poll_duration(Duration::from_millis(200))
             .create()
             .await?;
@@ -265,30 +244,31 @@ mod tests {
         let (trigger, listener) = triggered::trigger();
         let handle = tokio::spawn(server.run(listener));
 
-        use futures::StreamExt;
         let mut seen = Vec::new();
         let mut last_seq = i64::MIN;
         for _ in 0..3 {
-            let event = rx.recv().await.expect("event");
+            let mut event = rx.recv().await.expect("event");
             // Snapshots arrive in strictly increasing sequence-number order.
             assert!(event.snapshot.sequence_number > last_seq);
             last_seq = event.snapshot.sequence_number;
 
-            let mut rows = event.into_stream(&mut state).await?;
-            while let Some(row) = rows.next().await {
-                seen.push(row);
-            }
+            seen.extend(event.take_rows());
+            event.commit().await?;
         }
 
         seen.sort_by_key(|n| n.value);
         assert_eq!(seen, vec![num("a", 1), num("b", 2), num("c", 3)]);
 
-        // Watermark advanced to the latest snapshot's sequence number.
-        let watermark = state.latest_sequence_number("default", "numbers").await?;
-        assert_eq!(watermark, Some(last_seq));
-
         trigger.trigger();
         let _ = handle.await?;
+
+        // Watermark advanced to the latest snapshot's sequence number; reopen
+        // the poller's db (`default-numbers-default.db`) to read it back.
+        let store = WatermarkStore::open(dir.path().join("default-numbers-default.db")).await?;
+        assert_eq!(
+            store.latest_sequence_number("default", "numbers").await?,
+            Some(last_seq)
+        );
         Ok(())
     }
 
@@ -305,30 +285,28 @@ mod tests {
             .iceberg_catalog()
             .load_table("default", "numbers")
             .await?;
-        let second_seq = table
-            .metadata()
-            .snapshot_by_id(ids[1])
-            .unwrap()
-            .sequence_number();
-
-        let state = MemState {
-            recorded: Arc::new(Mutex::new(vec![SnapshotMeta {
-                snapshot_id: ids[1],
-                sequence_number: second_seq,
-                timestamp: chrono::Utc::now(),
-                operation: Operation::Append,
-            }])),
+        let second = table.metadata().snapshot_by_id(ids[1]).unwrap();
+        let second_meta = SnapshotMeta {
+            snapshot_id: ids[1],
+            sequence_number: second.sequence_number(),
+            timestamp: second.timestamp()?,
+            operation: second.summary().operation.clone(),
         };
+
+        // Seed the watermark in the db the poller will open, then close it.
+        let dir = tempfile::tempdir()?;
+        let store = WatermarkStore::open(dir.path().join("default-numbers-default.db")).await?;
+        store.record("default", "numbers", &second_meta).await?;
+        drop(store);
 
         // A third snapshot committed after the seeded watermark.
         writer.write(vec![num("c", 3)]).await?;
 
-        let mut state2 = state.clone();
-        let (mut rx, server) = continuous::<Number, MemState>()
+        let (mut rx, server) = continuous::<Number>()
             .catalog(harness.iceberg_catalog().clone())
             .namespace("default")
             .table("numbers")
-            .state(state.clone())
+            .db_dir(dir.path())
             .poll_duration(Duration::from_millis(200))
             .create()
             .await?;
@@ -336,13 +314,9 @@ mod tests {
         let (trigger, listener) = triggered::trigger();
         let handle = tokio::spawn(server.run(listener));
 
-        use futures::StreamExt;
-        let event = rx.recv().await.expect("event");
-        let mut rows = event.into_stream(&mut state2).await?;
-        let mut seen = Vec::new();
-        while let Some(row) = rows.next().await {
-            seen.push(row);
-        }
+        let mut event = rx.recv().await.expect("event");
+        let seen = event.take_rows();
+        event.commit().await?;
         // Only the post-watermark snapshot is replayed.
         assert_eq!(seen, vec![num("c", 3)]);
 

@@ -7,14 +7,11 @@ authors.workspace = true
 license.workspace = true
 
 [features]
-default = ["test-harness"]
+default = ["test-harness", "stream"]
 test-harness = ["dep:trino-rust-client"]
-# Postgres-backed `IcebergStreamState`/`IcebergStreamStateRecorder` impls for
-# the snapshot stream poller. Write-only users don't need sqlx.
-sqlx-postgres = ["dep:sqlx"]
-# SQLite-backed state store — one db file per poller, with the watermark table
-# migration bundled in this crate. Keeps the transactional `record` pattern.
-sqlite = ["dep:sqlx", "sqlx/sqlite"]
+# Iceberg snapshot stream poller, with a SQLite-backed watermark store (one db
+# file per poller, migration bundled). Write-only users of the crate skip it.
+stream = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -64,4 +61,4 @@ tracing-subscriber = { workspace = true }
 # The streaming example persists its watermark to a SQLite db.
 [[example]]
 name = "stream_heartbeats"
-required-features = ["sqlite"]
+required-features = ["stream"]

@@ -6,8 +6,14 @@
 //! channel, with the rows that snapshot appended already decoded. It is a
 //! [`ManagedTask`], so it slots into a `task_manager::TaskManager` alongside a
 //! `task_manager::channel_consumer` exactly like the file poller does.
+//!
+//! Progress is persisted to a per-poller SQLite [`WatermarkStore`]: either one
+//! the poller opens under a caller-provided directory
+//! (`{namespace}-{table}-{process_name}.db`) or a pre-created store passed via
+//! `.store(...)`.
 
 use std::marker::PhantomData;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -16,18 +22,30 @@ use futures::TryFutureExt;
 use iceberg::spec::Operation;
 use iceberg::table::Table;
 use serde::de::DeserializeOwned;
+use sqlx::SqlitePool;
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::catalog::Catalog;
 use crate::stream::parser::batch_to_records;
 use crate::stream::reader::added_record_batches;
-use crate::stream::state::{IcebergStreamState, SnapshotMeta};
+use crate::stream::watermark::{SnapshotMeta, WatermarkStore};
 use crate::stream::IcebergStream;
 use crate::{Error, Result};
 
 const DEFAULT_POLL_DURATION: std::time::Duration = std::time::Duration::from_secs(30);
 const DEFAULT_QUEUE_SIZE: usize = 5;
+
+/// Env var supplying the default watermark-db directory when `db_dir` isn't set
+/// explicitly (and no `pool` is provided).
+const DB_DIR_ENV: &str = "ICEBERG_STREAM_DB_DIR";
+
+/// Default `db_dir`: `$ICEBERG_STREAM_DB_DIR`, or the current directory.
+fn default_db_dir() -> PathBuf {
+    std::env::var_os(DB_DIR_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
 
 /// Counter incremented by the number of snapshots that were expired before the
 /// poller could process them (i.e. permanently-missed appended rows).
@@ -46,7 +64,7 @@ pub enum LookbackBehavior {
 
 impl Default for LookbackBehavior {
     fn default() -> Self {
-        // Can only go back to oldest snapshot still available on table
+        // Can only go back to the oldest snapshot still available on the table.
         LookbackBehavior::StartAfter(DateTime::<Utc>::UNIX_EPOCH)
     }
 }
@@ -74,13 +92,23 @@ impl LookbackBehavior {
 
 #[derive(Clone, Builder)]
 #[builder(pattern = "owned", build_fn(error = "crate::Error"))]
-pub struct IcebergStreamPollerConfig<Message, State> {
+pub struct IcebergStreamPollerConfig<Message> {
     catalog: Catalog,
     #[builder(setter(into))]
     namespace: String,
     #[builder(setter(into, name = "table"))]
     table_name: String,
-    state: State,
+    /// Pre-created SQLite pool for the watermark store. When set, the poller
+    /// migrates and uses it, and [`db_dir`](Self::db_dir) is ignored. When
+    /// unset, the poller opens a db under `db_dir`.
+    #[builder(default, setter(strip_option))]
+    pool: Option<SqlitePool>,
+    /// Directory the poller opens the watermark db in (as
+    /// `{namespace}-{table}-{process_name}.db`) when no `pool` is provided.
+    /// Mount this on a PVC. Defaults to `$ICEBERG_STREAM_DB_DIR`, falling back
+    /// to the current directory.
+    #[builder(default = "default_db_dir()", setter(into))]
+    db_dir: PathBuf,
     #[builder(default = "DEFAULT_POLL_DURATION")]
     poll_duration: std::time::Duration,
     #[builder(default = "DEFAULT_QUEUE_SIZE")]
@@ -102,7 +130,7 @@ pub struct IcebergStreamPollerConfig<Message, State> {
     p: PhantomData<Message>,
 }
 
-impl<Message, State> IcebergStreamPollerConfigBuilder<Message, State> {
+impl<Message> IcebergStreamPollerConfigBuilder<Message> {
     /// Begin reading after the given commit time (only used until a watermark exists).
     pub fn lookback_start_after(self, start_after: DateTime<Utc>) -> Self {
         self.lookback(LookbackBehavior::StartAfter(start_after))
@@ -155,10 +183,49 @@ impl<Message, State> IcebergStreamPollerConfigBuilder<Message, State> {
     pub fn poll_duration_opt(self, poll_duration: Option<std::time::Duration>) -> Self {
         self.poll_duration(poll_duration.unwrap_or(DEFAULT_POLL_DURATION))
     }
+
+    /// Build the poller, returning the receiver and the server task. If no
+    /// `.pool(...)` was provided, opens (and migrates) a per-poller SQLite db
+    /// at `{db_dir}/{namespace}-{table}-{process_name}.db`.
+    pub async fn create(
+        self,
+    ) -> Result<(
+        Receiver<IcebergStream<Message>>,
+        IcebergStreamPollerServer<Message>,
+    )> {
+        let mut config = self.build()?;
+        let store = match config.pool.take() {
+            Some(pool) => WatermarkStore::from_pool(pool).await?,
+            None => {
+                let path = config.db_dir.join(format!(
+                    "{}-{}-{}.db",
+                    config.namespace, config.table_name, config.process_name
+                ));
+                WatermarkStore::open(path).await?
+            }
+        };
+        let latest_sequence_number = store
+            .latest_sequence_number(&config.process_name, &config.table_name)
+            .await?;
+        let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
+
+        Ok((
+            receiver,
+            IcebergStreamPollerServer {
+                config,
+                store,
+                sender,
+                latest_sequence_number,
+                idle_since: None,
+                warned_gap_at: None,
+            },
+        ))
+    }
 }
 
-pub struct IcebergStreamPollerServer<Message, State> {
-    config: IcebergStreamPollerConfig<Message, State>,
+pub struct IcebergStreamPollerServer<Message> {
+    config: IcebergStreamPollerConfig<Message>,
+    store: WatermarkStore,
     sender: Sender<IcebergStream<Message>>,
     latest_sequence_number: Option<i64>,
     idle_since: Option<Instant>,
@@ -209,50 +276,18 @@ struct NextSnapshot {
     meta: SnapshotMeta,
 }
 
-impl<Message, State> IcebergStreamPollerConfigBuilder<Message, State>
-where
-    State: IcebergStreamState,
-{
-    pub async fn create(
-        self,
-    ) -> Result<(
-        Receiver<IcebergStream<Message>>,
-        IcebergStreamPollerServer<Message, State>,
-    )> {
-        let config = self.build()?;
-        let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
-        let latest_sequence_number = config
-            .state
-            .latest_sequence_number(&config.process_name, &config.table_name)
-            .await?;
-
-        Ok((
-            receiver,
-            IcebergStreamPollerServer {
-                config,
-                sender,
-                latest_sequence_number,
-                idle_since: None,
-                warned_gap_at: None,
-            },
-        ))
-    }
-}
-
-impl<Message, State> ManagedTask for IcebergStreamPollerServer<Message, State>
+impl<Message> ManagedTask for IcebergStreamPollerServer<Message>
 where
     Message: DeserializeOwned + Send + Sync + 'static,
-    State: IcebergStreamState,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
 
-impl<Message, State> IcebergStreamPollerServer<Message, State>
+impl<Message> IcebergStreamPollerServer<Message>
 where
     Message: DeserializeOwned + Send + Sync + 'static,
-    State: IcebergStreamState,
 {
     /// Pick the lowest-`sequence_number` snapshot that is past both the
     /// watermark and the lookback cutoff. Returns the chosen snapshot's
@@ -261,30 +296,33 @@ where
         let cutoff = self.config.lookback.cutoff(Utc::now());
         let watermark = self.latest_sequence_number.unwrap_or(i64::MIN);
 
-        let mut best: Option<SnapshotMeta> = None;
+        // Single O(n) pass picking the lowest sequence number above the
+        // watermark whose commit time clears the lookback cutoff. The snapshot
+        // list isn't ordered, and `timestamp()` is fallible and must stay a
+        // filter (a lower-sequence snapshot can fall below the cutoff while a
+        // higher one clears it), so a min-scan beats sorting then taking the
+        // first match. We carry the winning reference and build the
+        // `SnapshotMeta` once at the end rather than per candidate.
+        let mut best: Option<(&iceberg::spec::SnapshotRef, DateTime<Utc>)> = None;
         for snapshot in table.metadata().snapshots() {
-            let sequence_number = snapshot.sequence_number();
-            if sequence_number <= watermark {
+            if snapshot.sequence_number() <= watermark {
                 continue;
             }
             let timestamp = snapshot.timestamp().map_err(Error::Iceberg)?;
             if timestamp <= cutoff {
                 continue;
             }
-            if best
-                .as_ref()
-                .is_none_or(|b| sequence_number < b.sequence_number)
-            {
-                best = Some(SnapshotMeta {
-                    snapshot_id: snapshot.snapshot_id(),
-                    sequence_number,
-                    timestamp,
-                    operation: snapshot.summary().operation.clone(),
-                });
+            if best.is_none_or(|(b, _)| snapshot.sequence_number() < b.sequence_number()) {
+                best = Some((snapshot, timestamp));
             }
         }
 
-        Ok(best)
+        Ok(best.map(|(snapshot, timestamp)| SnapshotMeta {
+            snapshot_id: snapshot.snapshot_id(),
+            sequence_number: snapshot.sequence_number(),
+            timestamp,
+            operation: snapshot.summary().operation.clone(),
+        }))
     }
 
     /// Warn (once per watermark) if snapshots were expired before we processed
@@ -430,6 +468,7 @@ where
 
                             let sequence_number = next.meta.sequence_number;
                             let stream = IcebergStream::new(
+                                self.store.clone(),
                                 process_name.clone(),
                                 table_name.clone(),
                                 next.meta,

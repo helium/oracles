@@ -8,6 +8,7 @@ mod settings;
 mod table_creator;
 mod writer;
 
+#[cfg(feature = "stream")]
 pub mod stream;
 
 #[cfg(feature = "test-harness")]
@@ -24,12 +25,11 @@ pub use table_creator::{
 };
 pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
+#[cfg(feature = "stream")]
 pub use stream::{
-    batch_to_records, continuous, IcebergStream, IcebergStreamPollerServer, IcebergStreamState,
-    IcebergStreamStateRecorder, LookbackBehavior, SnapshotMeta,
+    added_data_files_to_batches, added_record_batches, batch_to_records, continuous, IcebergStream,
+    IcebergStreamPollerServer, LookbackBehavior, SnapshotMeta,
 };
-#[cfg(feature = "sqlite")]
-pub use stream::open_watermark_db;
 
 // Re-export the `iceberg` crate so consumers can name its types (e.g.
 // `helium_iceberg::iceberg::spec::Operation`) without depending on a matching

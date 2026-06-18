@@ -5,10 +5,10 @@
 //! clean stream of JSON docs (pipe it to `jq`).
 //!
 //! Run against the local docker stack (`docker compose up`). Requires the
-//! `sqlite` feature (the watermark is persisted to a SQLite db file):
+//! `stream` feature (the watermark is persisted to a SQLite db file):
 //!
 //! ```sh
-//! cargo run -p helium-iceberg --example stream_heartbeats --features sqlite
+//! cargo run -p helium-iceberg --example stream_heartbeats --features stream
 //! ```
 //!
 //! Connection defaults target the local Polaris/RustFS stack and can be
@@ -16,25 +16,21 @@
 //!   ICEBERG_CATALOG_URI, ICEBERG_CATALOG_NAME, ICEBERG_WAREHOUSE,
 //!   ICEBERG_CREDENTIAL, ICEBERG_SCOPE,
 //!   S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION,
-//!   WATERMARK_DB (path to the per-poller SQLite db, default
-//!   `./heartbeats-watermark.db`)
+//!   ICEBERG_STREAM_DB_DIR (directory for the per-poller SQLite db, default `.`)
 //!
 //! Rows are decoded into the typed [`Heartbeat`] struct below — the stream is
 //! generic over any `T: serde::de::DeserializeOwned`, so you just define a
-//! struct whose fields match the table's columns. The watermark is persisted in
-//! a SQLite db (one file per poller, as you'd mount on a PVC), so re-running
-//! resumes where the last run left off instead of replaying from the start.
+//! struct whose fields match the table's columns. The poller opens a per-poller
+//! SQLite db `{WATERMARK_DIR}/poc-heartbeats-default.db` (mount the dir on a
+//! PVC) and `event.commit()` advances the watermark, so re-running resumes
+//! where the last run left off instead of replaying from the start.
 
 use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
-use helium_iceberg::{
-    continuous, open_watermark_db, AuthConfig, Catalog, IcebergStream, S3Config, Settings,
-};
+use helium_iceberg::{continuous, AuthConfig, Catalog, IcebergStream, S3Config, Settings};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 /// A row of `iceberg.poc.heartbeats`. Field names and types match the table's
 /// columns; the poller decodes each Arrow row into this via serde
@@ -101,33 +97,19 @@ struct Totals {
     last_seq: Option<i64>,
 }
 
-/// Decode one snapshot's rows, advance the watermark, and print the event as a
-/// single JSON document: snapshot metadata, running totals, and a sample row.
+/// Decode one snapshot's rows, print the event as a single JSON document
+/// (snapshot metadata, running totals, a sample row), then advance the
+/// watermark.
 ///
-/// The watermark advance is committed in the same transaction the consumer
-/// would use for its own work — here there's no other side effect, so the
-/// commit just persists the watermark. A crash before `commit` re-runs the
+/// A real consumer would write the rows to its sink *before* `commit`; here
+/// there's no sink, so we just print. A crash before `commit` re-runs the
 /// snapshot on restart (at-least-once).
-async fn print_event(
-    event: IcebergStream<Heartbeat>,
-    pool: &SqlitePool,
-    totals: &mut Totals,
-) -> Result<()> {
+async fn print_event(mut event: IcebergStream<Heartbeat>, totals: &mut Totals) -> Result<()> {
     let snapshot = event.snapshot.clone();
 
-    let mut txn = pool.begin().await?;
-    // `into_stream` records the watermark into `txn`, then yields decoded rows.
-    let mut rows = event.into_stream(&mut txn).await?;
-    let mut row_count: u64 = 0;
-    let mut sample: Option<Heartbeat> = None;
-    while let Some(heartbeat) = rows.next().await {
-        if sample.is_none() {
-            sample = Some(heartbeat);
-        }
-        row_count += 1;
-    }
-    drop(rows);
-    txn.commit().await?;
+    let rows = event.take_rows();
+    let row_count = rows.len() as u64;
+    let sample = rows.into_iter().next();
 
     totals.snapshots += 1;
     totals.rows += row_count;
@@ -147,6 +129,9 @@ async fn print_event(
         "sample": sample,
     });
     println!("{}", serde_json::to_string_pretty(&doc)?);
+
+    // Advance the durable watermark now that this snapshot is handled.
+    event.commit().await?;
     Ok(())
 }
 
@@ -156,24 +141,21 @@ async fn main() -> Result<()> {
 
     let catalog = Catalog::connect(&settings_from_env()).await?;
 
-    // Per-poller SQLite watermark db (the file you'd mount on a PVC). Opening it
-    // applies the bundled migration; the pool is shared so we both seed the
-    // poller and record progress against the same db.
-    let db_path = env_or("WATERMARK_DB", "heartbeats-watermark.db");
-    let pool = open_watermark_db(&db_path).await?;
-    eprintln!("watermark db: {db_path}");
-
-    let (mut rx, server) = continuous::<Heartbeat, SqlitePool>()
+    // No `.pool(...)` set, so `create` opens (and migrates) a per-poller db at
+    // `<db_dir>/poc-heartbeats-default.db`, where `db_dir` defaults to
+    // `$ICEBERG_STREAM_DB_DIR` (or cwd). The watermark advances via
+    // `event.commit()` in `print_event`.
+    let (mut rx, server) = continuous::<Heartbeat>()
         .catalog(catalog)
         .namespace("poc")
         .table("heartbeats")
-        .state(pool.clone())
         // Start from the beginning of the table's history. Swap for
         // `.lookback_max(Duration::from_secs(24 * 60 * 60))` to only see the
         // last day, or `.lookback_start_after(some_datetime)`.
         .poll_duration(Duration::from_secs(5))
         .create()
         .await?;
+    eprintln!("watermark db: <ICEBERG_STREAM_DB_DIR>/poc-heartbeats-default.db");
 
     // Drive the poller in the background. Triggering stops it.
     let (trigger, listener) = triggered::trigger();
@@ -187,7 +169,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             maybe_event = rx.recv() => {
                 let Some(event) = maybe_event else { break };
-                print_event(event, &pool, &mut totals).await?;
+                print_event(event, &mut totals).await?;
             }
             _ = tokio::signal::ctrl_c() => {
                 eprintln!("shutdown requested");
@@ -199,7 +181,7 @@ async fn main() -> Result<()> {
 
     // Drain any snapshots the poller already queued before shutdown.
     while let Ok(event) = rx.try_recv() {
-        print_event(event, &pool, &mut totals).await?;
+        print_event(event, &mut totals).await?;
     }
 
     server.await??;
