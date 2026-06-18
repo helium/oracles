@@ -34,9 +34,6 @@ pub struct SnapshotMeta {
     pub operation: Operation,
 }
 
-/// Watermark-table migration bundled in this crate (`./migrations`).
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
-
 /// SQLite-backed watermark store, scoped to one `(process_name, table_name)` —
 /// one db file per poller. Cheap to clone (`SqlitePool` is reference-counted);
 /// the poller stamps a clone into every emitted event so the consumer can
@@ -84,7 +81,7 @@ impl StreamState {
         process_name: impl Into<String>,
         table_name: impl Into<String>,
     ) -> Result<Self> {
-        MIGRATOR.run(&pool).await?;
+        sqlx::migrate!().run(&pool).await?;
         Ok(Self {
             pool,
             process_name: process_name.into(),
