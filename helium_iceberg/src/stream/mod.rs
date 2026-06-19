@@ -200,7 +200,9 @@ mod event_tests {
             .unwrap();
 
         let result = event(state.clone(), 1, vec![10])
-            .with_rows(|_snapshot, _rows| async move { Err::<(), Error>(Error::Writer("boom".into())) })
+            .with_rows(
+                |_snapshot, _rows| async move { Err::<(), Error>(Error::Writer("boom".into())) },
+            )
             .await;
 
         assert!(result.is_err());
