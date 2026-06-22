@@ -1,0 +1,40 @@
+[package]
+name = "mobile-verifier-compare"
+version = "0.1.0"
+description = "Validation CLI: diffs mobile_verifier's Postgres reward-input queries against equivalent Trino/Iceberg queries, with a local-stack seed bootstrapper."
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "mobile-verifier-compare"
+path = "src/main.rs"
+
+[dependencies]
+# Production crate we call into so the Postgres side of every comparison is
+# *byte-identical* to what the reward pipeline runs (zero SQL drift).
+mobile-verifier = { path = "../mobile_verifier" }
+
+# Trino client (no longer optional anywhere — it's the whole point of this crate).
+trino-client = { path = "../trino_client" }
+trino-rust-client = { version = "0.9" }
+
+# Settings + PG pool plumbing (same shape mobile_verifier uses).
+db-store = { path = "../db_store" }
+custom-tracing = { path = "../custom_tracing" }
+
+# General workspace deps. Kept in lockstep with mobile_verifier's set so this
+# crate sees the same versions as the functions it calls into.
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+futures = { workspace = true }
+helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+rand = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

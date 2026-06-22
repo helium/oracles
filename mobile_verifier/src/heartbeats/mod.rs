@@ -27,7 +27,7 @@ use uuid::Uuid;
 use self::last_location::{LastLocation, LocationCache};
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
-const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
+pub const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone)]
 pub struct Heartbeat {

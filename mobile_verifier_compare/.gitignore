@@ -1,0 +1,4 @@
+# Auto-written by `mobile-verifier-compare seed` on first run, holds
+# docker-compose-defaults for local dev. Regenerated automatically — not
+# meant to be committed.
+pkg/compare-trino-settings.local.toml
