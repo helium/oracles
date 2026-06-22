@@ -8,6 +8,9 @@ mod settings;
 mod table_creator;
 mod writer;
 
+#[cfg(feature = "stream")]
+pub mod stream;
+
 #[cfg(feature = "test-harness")]
 pub mod test_harness;
 
@@ -22,9 +25,16 @@ pub use table_creator::{
 };
 pub use writer::{BoxedDataWriter, DataWriter, IntoBoxedDataWriter};
 
-// Re-export iceberg types for ergonomic API usage
-pub use iceberg::spec::{NullOrder, PrimitiveType, SortDirection, Transform, Type};
-pub use iceberg::{NamespaceIdent, TableIdent};
+#[cfg(feature = "stream")]
+pub use stream::{
+    added_data_files_to_batches, added_record_batches, batch_to_records, continuous, IcebergEvent,
+    IcebergStreamPollerServer, LookbackBehavior, SnapshotMeta,
+};
+
+// Re-export the `iceberg` crate so consumers can name its types (e.g.
+// `helium_iceberg::iceberg::spec::Operation`) without depending on a matching
+// iceberg-rust version directly.
+pub use iceberg;
 
 /// Converts a list of key-value pairs into a `HashMap`, only inserting the key
 /// when the value is `Some`.
