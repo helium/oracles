@@ -356,5 +356,25 @@ mod tests {
             let alloc = allocate(pool, keyed(&data));
             prop_assert!(alloc.rewards.windows(2).all(|w| w[0].reward == w[1].reward));
         }
+
+        /// Rounding dust is bounded by the gateway count: when any data credits
+        /// were burned (`total_dc > 0`), each gateway's floored reward loses at
+        /// most one bone, so the unallocated remainder can never exceed the number
+        /// of gateways being rewarded. (The whole pool is unallocated only when
+        /// `total_dc == 0`, excluded here by giving every gateway `dc >= 1` — the
+        /// worst case for dust, since every gateway can floor down.)
+        #[test]
+        fn unallocated_dust_never_exceeds_gateway_count(
+            pool in pool_strategy(),
+            data in prop::collection::vec((1u64..=u64::MAX, any::<u64>()), 1..256),
+        ) {
+            let alloc = allocate(pool, keyed(&data));
+            prop_assert!(
+                (alloc.unallocated as usize) <= data.len(),
+                "unallocated {} exceeded gateway count {}",
+                alloc.unallocated,
+                data.len(),
+            );
+        }
     }
 }
