@@ -380,6 +380,10 @@ impl CalculatedPocRewardShares {
     }
 }
 
+pub fn get_scheduled_tokens_for_data_transfer(total_emission_pool: Decimal) -> Decimal {
+    total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT
+}
+
 pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
     let poc_percent = MAX_DATA_TRANSFER_REWARDS_PERCENT + POC_REWARDS_PERCENT;
     total_emission_pool * poc_percent

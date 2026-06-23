@@ -7,14 +7,14 @@ use crate::{
     iceberg, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards},
-        dc_to_hnt_bones, get_scheduled_tokens_for_service_providers, CalculatedPocRewardShares,
-        CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
+        dc_to_hnt_bones, get_scheduled_tokens_for_data_transfer,
+        get_scheduled_tokens_for_service_providers, CalculatedPocRewardShares, CoverageShares,
+        DataTransferAndPocAllocatedRewardBuckets,
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
     telemetry, unique_connections, PriceInfo, Settings, ToProtoDecimal,
 };
-use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
@@ -366,39 +366,23 @@ pub async fn reward_poc_and_dc(
         .load_data_sessions(&reward_info.epoch_period)
         .await?;
 
-    // Gauge how the HNT value of all rewardable data credits compares to the
-    // data-transfer pool. A scale < 1.0 means demand exceeds the pool (data
-    // transfer is subsidized at less than its full DC value) — the same health
-    // signal as before. It no longer feeds the allocation, which now always
-    // distributes the full pool.
-    let reward_sum: Decimal = hotspot_data_sessions
-        .values()
-        .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
-        .sum();
-    let scale = if reward_sum > reward_shares.data_transfer {
-        reward_shares.data_transfer / reward_sum
-    } else {
-        Decimal::ONE
-    };
-    let Some(scale) = scale.to_f64() else {
-        bail!("The data transfer rewards scale cannot be converted to a float");
-    };
-    telemetry::data_transfer_rewards_scale(scale);
-
     // PoC has been removed from rewards: data transfer consumes the entire pool,
     // and `reward_dc` writes out its own rounding remainder as unallocated.
     reward_dc(
         &mobile_rewards,
         reward_info,
+        &price_info,
         hotspot_data_sessions,
-        reward_shares.data_transfer,
-        price_info.price_in_bones,
         reward_ctx,
     )
     .await?;
 
-    // The PoC pool is now zero (no data-transfer leftover is carried into it),
-    // so this emits no radio rewards.
+    // PoC rewards are disabled: data transfer consumes the whole pool above, so
+    // the PoC bucket is zero and `reward_poc` emits nothing — every radio reward
+    // floors to 0 and is filtered out by `into_rewards`. This branch still runs
+    // its coverage queries each epoch for no output.
+    // TODO: remove `reward_poc` (and the inputs it reads) once PoC is fully torn
+    // out of the pipeline.
     let (_poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
         &mobile_rewards,
@@ -512,11 +496,41 @@ pub async fn reward_poc(
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
+    price_info: &PriceInfo,
     rewardable: RewardableDataByHotspot,
-    pool: Decimal,
-    price: u64,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
+    // Section the first...
+    // wherein, we get all the required data.
+    let pool = {
+        let total_emission_pool =
+            get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
+
+        // TODO: lift price to receive a full PriceInfo here.
+        let reward_sum: Decimal = rewardable
+            .values()
+            .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
+            .sum();
+
+        // Gauge how the HNT value of all rewardable data credits compares to the
+        // data-transfer pool. A scale < 1.0 means demand exceeds the pool (data
+        // transfer is subsidized at less than its full DC value) — the same health
+        // signal as before. It no longer feeds the allocation, which now always
+        // distributes the full pool.
+        let scale = if reward_sum > total_emission_pool {
+            total_emission_pool / reward_sum
+        } else {
+            Decimal::ONE
+        };
+
+        let Some(scale) = scale.to_f64() else {
+            anyhow::bail!("The data transfer rewards scale cannot be converted to a float");
+        };
+        telemetry::data_transfer_rewards_scale(scale);
+
+        total_emission_pool
+    };
+
     // Distribute the whole pool across hotspots in proportion to their data
     // credits; rounding dust comes back as `unallocated`.
     let allocation = data_transfer::allocate(
@@ -534,7 +548,7 @@ pub async fn reward_dc(
         .rewards
         .into_iter()
         .filter(|r| r.reward != 0)
-        .map(|g| g.into_gateway_reward(price))
+        .map(|g| g.into_gateway_reward(price_info.price_in_bones))
         .collect::<Vec<_>>();
 
     telemetry::data_transfer_rewarded_gateways(rewards.len() as u64);
