@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::common::{self, default_price_info, reward_info_24_hours, RadioRewardV2Ext};
+use crate::common::{self, default_price_info, reward_info_24_hours};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store_oracles::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -72,34 +72,38 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
     let dc_rewards = rewards.gateway_rewards;
-    let unallocated_reward = rewards.unallocated.first();
 
-    let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
+    // PoC is disabled: no radios are rewarded for coverage, even though
+    // heartbeats/speedtests/coverage were seeded.
+    assert!(poc_rewards.is_empty());
 
-    assert_eq!(poc_sum / 3, poc_rewards[0].total_poc_reward());
-    assert_eq!(poc_sum / 3, poc_rewards[1].total_poc_reward());
-    assert_eq!(poc_sum / 3, poc_rewards[2].total_poc_reward());
+    // DC now consumes the whole data-transfer pool. The three hotspots burned
+    // equal DC, so they split the pool evenly (scaled up well past their raw DC
+    // value).
+    assert_eq!(dc_rewards.len(), 3);
+    assert_eq!(
+        dc_rewards[0].dc_transfer_reward,
+        dc_rewards[1].dc_transfer_reward
+    );
+    assert_eq!(
+        dc_rewards[1].dc_transfer_reward,
+        dc_rewards[2].dc_transfer_reward
+    );
+    assert!(dc_rewards[0].dc_transfer_reward > 0);
 
-    // assert the unallocated reward
-    let unallocated_reward = unallocated_reward.unwrap();
-    assert_eq!(unallocated_reward.amount, 1);
-
-    // assert the dc reward outputs
-    assert_eq!(500_000, dc_rewards[0].dc_transfer_reward);
-    assert_eq!(500_000, dc_rewards[1].dc_transfer_reward);
-    assert_eq!(500_000, dc_rewards[2].dc_transfer_reward);
-
-    // confirm the total rewards allocated matches expectations
+    // The pool is fully accounted for: DC rewards plus rounding dust (written as
+    // unallocated) equal the data-transfer allocation.
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-    let total = poc_sum + dc_sum + unallocated_reward.amount;
-
+    let unallocated_sum: u64 = rewards.unallocated.iter().map(|r| r.amount).sum();
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
-    assert_eq!(expected_sum, total);
+    assert_eq!(dc_sum + unallocated_sum, expected_sum);
+    // Only rounding dust is left over, not a real share.
+    assert!(unallocated_sum < dc_rewards[0].dc_transfer_reward);
 
     // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
+    let percent = (Decimal::from(dc_sum + unallocated_sum) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.70));
 
@@ -150,23 +154,21 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let poc_rewards = msgs.radio_reward_v2s;
     let dc_rewards = msgs.gateway_rewards;
 
-    // expecting single radio with poc rewards, no unallocated
-    assert_eq!(poc_rewards.len(), 1);
+    // PoC is disabled: unique connections no longer qualify a radio for coverage
+    // rewards. DC consumes the whole pool.
+    assert!(poc_rewards.is_empty());
     assert_eq!(dc_rewards.len(), 3);
-    assert_eq!(msgs.unallocated.len(), 0);
 
-    // Check that we used rewardable_bytes for calculation and not upload_bytes + download_bytes anymore
+    // rewardable_bytes is carried through to the gateway rewards (not upload + download)
     let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
     assert_eq!(rewardable_total, rewardable_sum);
 
-    let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-    let total = poc_sum + dc_sum;
-
+    let unallocated_sum: u64 = msgs.unallocated.iter().map(|r| r.amount).sum();
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
-    assert_eq!(expected_sum, total);
+    assert_eq!(dc_sum + unallocated_sum, expected_sum);
 
     Ok(())
 }
@@ -217,19 +219,26 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
-
     let dc_rewards = rewards.gateway_rewards;
 
-    // expecting single radio with poc rewards, minimal unallocated due to rounding
-    assert_eq!(poc_rewards.len(), 2);
+    // PoC is disabled, so there are no radio rewards regardless of bans. The DC
+    // path does not consult bans, so all three hotspots split the pool; rounding
+    // dust is unallocated.
+    assert!(poc_rewards.is_empty());
     assert_eq!(dc_rewards.len(), 3);
-    assert_eq!(rewards.unallocated.len(), 1);
+
+    let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
+    let unallocated_sum: u64 = rewards.unallocated.iter().map(|r| r.amount).sum();
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+        .to_u64()
+        .unwrap();
+    assert_eq!(dc_sum + unallocated_sum, expected_sum);
 
     Ok(())
 }
 
 #[sqlx::test]
-async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Result<()> {
+async fn test_data_banned_radio_no_longer_receives_poc(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -276,9 +285,17 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     let poc_rewards = rewards.radio_reward_v2s;
     let dc_rewards = rewards.gateway_rewards;
 
-    assert_eq!(poc_rewards.len(), 3);
+    // PoC is disabled, so the radio is not rewarded for coverage. No data
+    // sessions were seeded, so there are no DC rewards either, and the entire
+    // pool falls through to a single unallocated reward.
+    assert!(poc_rewards.is_empty());
     assert_eq!(dc_rewards.len(), 0);
-    assert_eq!(rewards.unallocated.len(), 1);
+
+    let unallocated_sum: u64 = rewards.unallocated.iter().map(|r| r.amount).sum();
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+        .to_u64()
+        .unwrap();
+    assert_eq!(unallocated_sum, expected_sum);
 
     Ok(())
 }
