@@ -38,7 +38,7 @@ pub async fn aggregate_hotspot_data_sessions_to_dc(
         .get_all(aggregate_statement(epoch).typed::<Row>())
         .await?;
 
-    let mut map = RewardableDataByHotspot::new();
+    let mut map = RewardableDataByHotspot::default();
     for row in rows {
         let pub_key: PublicKeyBinary = row.pub_key.parse()?;
         let totals = map.entry(pub_key).or_default();

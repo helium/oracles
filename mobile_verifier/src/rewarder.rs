@@ -6,10 +6,9 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     iceberg, resolve_subdao_pubkey,
     reward_shares::{
-        data_transfer::{self, into_proto_rewards, to_iceberg_rewards},
-        dc_to_hnt_bones, get_scheduled_tokens_for_data_transfer,
-        get_scheduled_tokens_for_service_providers, CalculatedPocRewardShares, CoverageShares,
-        DataTransferAndPocAllocatedRewardBuckets,
+        data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
+        get_scheduled_tokens_for_data_transfer, get_scheduled_tokens_for_service_providers,
+        CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
@@ -366,6 +365,10 @@ pub async fn reward_poc_and_dc(
         .load_data_sessions(&reward_info.epoch_period)
         .await?;
 
+    // Metrics only, derived from the inputs (not the computed rewards) — kept out
+    // of `reward_dc` so that function stays purely about rewards.
+    report_data_transfer_rewards_scale(&hotspot_data_sessions, &price_info, reward_info)?;
+
     // PoC has been removed from rewards: data transfer consumes the entire pool,
     // and `reward_dc` writes out its own rounding remainder as unallocated.
     reward_dc(
@@ -493,6 +496,29 @@ pub async fn reward_poc(
     Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
 }
 
+/// Emit the data-transfer reward scale gauge: `pool / demand` — the factor each
+/// hotspot's nominal DC value is scaled by (`< 1` when demand exceeds the pool,
+/// `> 1` when below it, `1` at parity). Metrics only, and derived purely from the
+/// inputs rather than the computed rewards, so it lives outside `reward_dc`.
+fn report_data_transfer_rewards_scale(
+    rewardable: &RewardableDataByHotspot,
+    price_info: &PriceInfo,
+    reward_info: &EpochRewardInfo,
+) -> anyhow::Result<()> {
+    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
+    let demand = rewardable.reward_sum(price_info);
+    let scale = if demand.is_zero() {
+        Decimal::ZERO // no data transfer -> nothing to scale
+    } else {
+        pool / demand
+    };
+    let Some(scale) = scale.to_f64() else {
+        anyhow::bail!("data transfer rewards scale cannot be converted to a float");
+    };
+    telemetry::data_transfer_rewards_scale(scale);
+    Ok(())
+}
+
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
@@ -500,65 +526,29 @@ pub async fn reward_dc(
     rewardable: RewardableDataByHotspot,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
-    // Section the first...
-    // wherein, we get all the required data.
-    let pool = {
-        let total_emission_pool =
-            get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
-
-        // TODO: lift price to receive a full PriceInfo here.
-        let reward_sum: Decimal = rewardable
-            .values()
-            .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
-            .sum();
-
-        // Gauge how the HNT value of all rewardable data credits compares to the
-        // data-transfer pool. A scale < 1.0 means demand exceeds the pool (data
-        // transfer is subsidized at less than its full DC value) — the same health
-        // signal as before. It no longer feeds the allocation, which now always
-        // distributes the full pool.
-        let scale = if reward_sum > total_emission_pool {
-            total_emission_pool / reward_sum
-        } else {
-            Decimal::ONE
-        };
-
-        let Some(scale) = scale.to_f64() else {
-            anyhow::bail!("The data transfer rewards scale cannot be converted to a float");
-        };
-        telemetry::data_transfer_rewards_scale(scale);
-
-        total_emission_pool
-    };
+    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
 
     // Distribute the whole pool across hotspots in proportion to their data
     // credits; rounding dust comes back as `unallocated`.
-    let allocation = data_transfer::allocate(
-        pool,
-        rewardable
-            .into_iter()
-            .map(|(hotspot_key, r)| data_transfer::GatewayDataTransfer {
-                hotspot_key,
-                rewardable_dc: r.rewardable_dc,
-                rewardable_bytes: r.rewardable_bytes,
-            }),
-    );
+    let DataTransferAllocation {
+        rewards,
+        unallocated,
+    } = data_transfer::allocate(pool, rewardable.into_gw_data_transfer());
 
-    let rewards = allocation
-        .rewards
+    let gw_rewards = rewards
         .into_iter()
         .filter(|r| r.reward != 0)
         .map(|g| g.into_gateway_reward(price_info.price_in_bones))
         .collect::<Vec<_>>();
 
-    telemetry::data_transfer_rewarded_gateways(rewards.len() as u64);
+    telemetry::data_transfer_rewarded_gateways(gw_rewards.len() as u64);
 
     if let Some((writers, id)) = reward_ctx {
-        let rewards = to_iceberg_rewards(&rewards, &reward_info.epoch_period);
+        let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);
         writers.write_data_transfer(id, rewards).await?;
     }
 
-    let proto_rewards = into_proto_rewards(rewards, &reward_info.epoch_period);
+    let proto_rewards = into_proto_rewards(gw_rewards, &reward_info.epoch_period);
     mobile_rewards.write_all(proto_rewards).await?;
 
     // Data transfer consumes the whole pool; only integer-rounding dust (or the
@@ -566,7 +556,7 @@ pub async fn reward_dc(
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::Poc,
-        allocation.unallocated,
+        unallocated,
         reward_info,
         reward_ctx,
     )
