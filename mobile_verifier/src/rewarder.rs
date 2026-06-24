@@ -367,7 +367,7 @@ pub async fn reward_poc_and_dc(
 
     // Metrics only, derived from the inputs (not the computed rewards) — kept out
     // of `reward_dc` so that function stays purely about rewards.
-    report_data_transfer_rewards_scale(&hotspot_data_sessions, &price_info, reward_info)?;
+    report_data_transfer_rewards_scale(&hotspot_data_sessions, &price_info, reward_info);
 
     // PoC has been removed from rewards: data transfer consumes the entire pool,
     // and `reward_dc` writes out its own rounding remainder as unallocated.
@@ -504,7 +504,7 @@ fn report_data_transfer_rewards_scale(
     rewardable: &RewardableDataByHotspot,
     price_info: &PriceInfo,
     reward_info: &EpochRewardInfo,
-) -> anyhow::Result<()> {
+) {
     let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
     let demand = rewardable.reward_sum(price_info);
     let scale = if demand.is_zero() {
@@ -512,11 +512,9 @@ fn report_data_transfer_rewards_scale(
     } else {
         pool / demand
     };
-    let Some(scale) = scale.to_f64() else {
-        anyhow::bail!("data transfer rewards scale cannot be converted to a float");
-    };
+
+    let scale = scale.to_f64().unwrap_or_default();
     telemetry::data_transfer_rewards_scale(scale);
-    Ok(())
 }
 
 pub async fn reward_dc(
