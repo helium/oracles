@@ -171,6 +171,9 @@ pub enum GatewayCommands {
     InfoAtTimestamp(GetHotspotAtTimestamp),
     /// Stream all gateways and print counts by device type
     DeviceTypeCounts(DeviceTypeCounts),
+    /// Stream all gateways whose location changed at or after the given
+    /// Unix epoch timestamp (in seconds)
+    LocationChangedAt(LocationChangedAt),
     /// Convert a base58 hotspot pubkey to the hex bytes stored in
     /// `gateways.address` (BYTEA) in the mobile-config database
     PubkeyToHex(PubkeyToHex),
@@ -184,6 +187,22 @@ pub struct PubkeyToHex {
 
 #[derive(Debug, Args)]
 pub struct DeviceTypeCounts {
+    #[arg(short, long, default_value = "5000")]
+    pub batch_size: u32,
+    #[arg(from_global)]
+    pub keypair: PathBuf,
+    #[arg(from_global)]
+    pub config_host: String,
+    #[arg(from_global)]
+    pub config_pubkey: String,
+}
+
+#[derive(Debug, Args)]
+pub struct LocationChangedAt {
+    /// Unix epoch timestamp (in seconds). Only hotspots whose location changed
+    /// at or after this time are returned.
+    #[arg(long)]
+    pub min_location_changed_at: u64,
     #[arg(short, long, default_value = "5000")]
     pub batch_size: u32,
     #[arg(from_global)]
