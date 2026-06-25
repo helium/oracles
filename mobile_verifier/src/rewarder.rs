@@ -365,10 +365,6 @@ pub async fn reward_poc_and_dc(
         .load_data_sessions(&reward_info.epoch_period)
         .await?;
 
-    // Metrics only, derived from the inputs (not the computed rewards) — kept out
-    // of `reward_dc` so that function stays purely about rewards.
-    report_data_transfer_rewards_scale(&hotspot_data_sessions, &price_info, reward_info);
-
     // PoC has been removed from rewards: data transfer consumes the entire pool,
     // and `reward_dc` writes out its own rounding remainder as unallocated.
     reward_dc(
@@ -496,27 +492,6 @@ pub async fn reward_poc(
     Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
 }
 
-/// Emit the data-transfer reward scale gauge: `pool / demand` — the factor each
-/// hotspot's nominal DC value is scaled by (`< 1` when demand exceeds the pool,
-/// `> 1` when below it, `1` at parity). Metrics only, and derived purely from the
-/// inputs rather than the computed rewards, so it lives outside `reward_dc`.
-fn report_data_transfer_rewards_scale(
-    rewardable: &RewardableDataByHotspot,
-    price_info: &PriceInfo,
-    reward_info: &EpochRewardInfo,
-) {
-    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
-    let demand = rewardable.reward_sum(price_info);
-    let scale = if demand.is_zero() {
-        Decimal::ZERO // no data transfer -> nothing to scale
-    } else {
-        pool / demand
-    };
-
-    let scale = scale.to_f64().unwrap_or_default();
-    telemetry::data_transfer_rewards_scale(scale);
-}
-
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
@@ -525,6 +500,8 @@ pub async fn reward_dc(
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
     let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
+    let demand = rewardable.reward_sum(price_info);
+    let total_bytes = rewardable.total_bytes();
 
     // Distribute the whole pool across hotspots in proportion to their data
     // credits; rounding dust comes back as `unallocated`.
@@ -539,7 +516,20 @@ pub async fn reward_dc(
         .map(|g| g.into_gateway_reward(price_info.price_in_bones))
         .collect::<Vec<_>>();
 
+    // All the data-transfer reward metrics, recorded together. The scale
+    // (`pool / demand`) and the *target* price per GB are input-derived; the
+    // *actual* price per GB uses the bones we really distributed, so it sits at or
+    // just below the target rate by the unallocated rounding dust.
+    let distributed_bones = data_transfer::distributed_bones(&gw_rewards);
+    let scale = data_transfer::scale(pool, demand);
+    let target = data_transfer::price_per_gb(pool, total_bytes, price_info.price_per_bone);
+    let actual =
+        data_transfer::price_per_gb(distributed_bones, total_bytes, price_info.price_per_bone);
+
     telemetry::data_transfer_rewarded_gateways(gw_rewards.len() as u64);
+    telemetry::data_transfer_rewards_scale(scale.to_f64().unwrap_or_default());
+    telemetry::data_transfer_target_price_per_gb(target.to_f64().unwrap_or_default());
+    telemetry::data_transfer_actual_price_per_gb(actual.to_f64().unwrap_or_default());
 
     if let Some((writers, id)) = reward_ctx {
         let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);

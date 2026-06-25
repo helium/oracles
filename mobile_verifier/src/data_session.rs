@@ -47,6 +47,10 @@ impl RewardableDataByHotspot {
             .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
             .sum()
     }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.0.values().map(|r| r.rewardable_bytes).sum()
+    }
 }
 
 impl std::ops::Deref for RewardableDataByHotspot {

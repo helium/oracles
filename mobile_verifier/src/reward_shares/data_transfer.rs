@@ -177,9 +177,48 @@ pub fn into_proto_rewards(
         .collect()
 }
 
+// ================================================================
+// Reward metrics
+//
+// Observability-only helpers (proptested below): they derive the data-transfer
+// reward gauges and never feed back into the allocation above.
+
+/// Bytes per gigabyte (decimal GB — the data-transfer convention).
+const BYTES_PER_GB: u64 = 1_000_000_000;
+
+/// Total bones actually paid out to gateways — the sum of every
+/// `dc_transfer_reward`. Pairs with [`scale`] / [`price_per_gb`] to report the
+/// realized (post-rounding) reward rate.
+pub fn distributed_bones(rewards: &[proto::GatewayReward]) -> Decimal {
+    let total: u64 = rewards.iter().map(|r| r.dc_transfer_reward).sum();
+    Decimal::from(total)
+}
+
+/// `pool / demand` — the per-DC reward multiplier (`< 1` scaled down, `> 1` scaled
+/// up, `1` at parity; `0` when there is no demand).
+pub fn scale(pool: Decimal, demand: Decimal) -> Decimal {
+    if demand.is_zero() {
+        Decimal::ZERO
+    } else {
+        pool / demand
+    }
+}
+
+/// Price per GB transferred: `value_bones` priced via `price_per_bone` and spread
+/// over the total GB (`0` when no data moved). Used both for the full-pool rate
+/// (`value = pool`) and the realized post-rounding rate (`value = distributed`).
+pub fn price_per_gb(value_bones: Decimal, total_bytes: u64, price_per_bone: Decimal) -> Decimal {
+    if total_bytes == 0 {
+        Decimal::ZERO
+    } else {
+        value_bones * price_per_bone * Decimal::from(BYTES_PER_GB) / Decimal::from(total_bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PriceInfo;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
 
@@ -375,6 +414,96 @@ mod tests {
                 alloc.unallocated,
                 data.len(),
             );
+        }
+    }
+
+    // ---- Reward-metric helpers: scale / price_per_gb / distributed_bones ----
+
+    #[test]
+    fn distributed_bones_sums_transfer_rewards() {
+        let rewards = vec![
+            proto::GatewayReward {
+                hotspot_key: vec![],
+                dc_transfer_reward: 3,
+                rewardable_bytes: 0,
+                price: 0,
+            },
+            proto::GatewayReward {
+                hotspot_key: vec![],
+                dc_transfer_reward: 7,
+                rewardable_bytes: 0,
+                price: 0,
+            },
+        ];
+        assert_eq!(distributed_bones(&rewards), dec!(10));
+    }
+
+    #[test]
+    fn scale_is_zero_without_demand() {
+        // No demand -> no multiplier (and, crucially, no 0/0 panic).
+        assert_eq!(scale(dec!(1000), Decimal::ZERO), Decimal::ZERO);
+    }
+
+    #[test]
+    fn price_per_gb_is_zero_without_bytes() {
+        // No data moved -> no price per GB (this guard is the divide-by-zero check).
+        let price_per_bone = PriceInfo::new(10_000_000, 8).price_per_bone;
+        assert_eq!(price_per_gb(dec!(1000000), 0, price_per_bone), Decimal::ZERO);
+    }
+
+    #[test]
+    fn price_per_gb_is_zero_without_value() {
+        // Nothing distributed -> $0 per GB, no matter how much data moved.
+        let price_per_bone = PriceInfo::new(10_000_000, 8).price_per_bone;
+        assert_eq!(
+            price_per_gb(Decimal::ZERO, 1_000_000_000, price_per_bone),
+            Decimal::ZERO
+        );
+    }
+
+    proptest! {
+        /// With demand present, `scale` is non-negative and tracks the pool-vs-demand
+        /// direction (`< 1` over-subscribed, `> 1` under, `= 1` at parity). The
+        /// zero-demand case is covered by `scale_is_zero_without_demand`.
+        #[test]
+        fn scale_invariants(
+            pool_bones in 0u64..=1_000_000_000_000_000,
+            demand_bones in 1u64..=1_000_000_000_000_000,
+        ) {
+            let pool = Decimal::from(pool_bones);
+            let demand = Decimal::from(demand_bones);
+            let multiplier = scale(pool, demand);
+
+            prop_assert!(multiplier >= Decimal::ZERO);
+            // the multiplier crosses 1 exactly as the pool crosses demand.
+            prop_assert_eq!(multiplier.cmp(&Decimal::ONE), pool.cmp(&demand));
+        }
+
+        /// With data present, `price_per_gb` is positive and monotonic in the
+        /// distributed value — so the realized rate (we pay out `pool` minus rounding
+        /// dust) never exceeds the full-pool rate. The zero-bytes and zero-value
+        /// cases are covered by the explicit tests above.
+        #[test]
+        fn price_per_gb_invariants(
+            pool_bones in 1u64..=1_000_000_000_000_000,
+            // rounding only ever leaves dust unallocated, so distributed <= pool.
+            dust in 0u64..=100_000,
+            total_bytes in 1u64..=u64::MAX,
+            // a realistic token price (kept small so the Decimal math can't overflow).
+            price_in_bones in 5_000_000u64..=20_000_000,
+        ) {
+            let pool = Decimal::from(pool_bones);
+            let distributed = Decimal::from(pool_bones.saturating_sub(dust));
+            let price_per_bone = PriceInfo::new(price_in_bones, 8).price_per_bone;
+
+            let pool_rate = price_per_gb(pool, total_bytes, price_per_bone);
+            let distributed_rate = price_per_gb(distributed, total_bytes, price_per_bone);
+
+            prop_assert!(distributed_rate >= Decimal::ZERO);
+            // distributed <= pool, so the realized rate never exceeds the full-pool rate.
+            prop_assert!(distributed_rate <= pool_rate);
+            // real money spread over real data -> a strictly positive rate.
+            prop_assert!(pool_rate > Decimal::ZERO);
         }
     }
 }
