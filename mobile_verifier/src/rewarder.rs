@@ -2,17 +2,18 @@ use crate::{
     banning,
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage,
-    data_session::{self, DataSessionSource, RewardableDataByHotspot},
+    data_session::{self, DataSessionSource},
     heartbeats::{self, HeartbeatReward},
     iceberg, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         get_scheduled_tokens_for_data_transfer, get_scheduled_tokens_for_service_providers,
         CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
+        TransferRewards,
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
-    telemetry, unique_connections, PriceInfo, Settings, ToProtoDecimal,
+    telemetry, unique_connections, PriceInfo, Settings,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
@@ -281,9 +282,8 @@ where
             .as_ref()
             .map(|writers| (writers, write_id.as_str()));
 
-        // process rewards for poc and data transfer
-        let poc_dc_shares = reward_poc_and_dc(
-            &self.pool,
+        // HIP-149: data transfer consumes the entire pool; PoC is not rewarded.
+        reward_dc_hip_149(
             &self.data_session_source,
             self.mobile_rewards.clone(),
             &reward_info,
@@ -316,7 +316,8 @@ where
 
         // now that the db has been purged, safe to write out the manifest
         let reward_data = ManifestMobileRewardData {
-            poc_bones_per_reward_share: Some(poc_dc_shares.normal.proto_decimal()),
+            // HIP-149: PoC is not rewarded, so the per-share value is the zero default.
+            poc_bones_per_reward_share: None,
             boosted_poc_bones_per_reward_share: None,
             service_provider_promotions: vec![],
             token: MobileRewardToken::Hnt as i32,
@@ -351,6 +352,81 @@ where
     }
 }
 
+/// HIP-149 reward path: data transfer consumes the entire emissions pool and
+/// Proof-of-Coverage is not rewarded. Replaces `reward_poc_and_dc` at the call
+/// site; the old PoC + DC pipeline below is retained (dead) for the cleanup PR.
+pub async fn reward_dc_hip_149(
+    data_session_source: &DataSessionSource,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
+    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
+) -> anyhow::Result<()> {
+    let rewardable = data_session_source
+        .load_data_sessions(&reward_info.epoch_period)
+        .await?;
+
+    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
+    let demand = rewardable.reward_sum(&price_info);
+    let total_bytes = rewardable.total_bytes();
+
+    // Distribute the whole pool across hotspots in proportion to their data
+    // credits; rounding dust comes back as `unallocated`.
+    let DataTransferAllocation {
+        rewards,
+        unallocated,
+    } = data_transfer::allocate(pool, rewardable.into_gw_data_transfer());
+
+    let gw_rewards = rewards
+        .into_iter()
+        .filter(|r| r.reward != 0)
+        .map(|g| g.into_gateway_reward(price_info.price_in_bones))
+        .collect::<Vec<_>>();
+
+    // All the data-transfer reward metrics, recorded together. The scale
+    // (`pool / demand`) and the *target* price per GB are input-derived; the
+    // *actual* price per GB uses the bones we really distributed, so it sits at or
+    // just below the target rate by the unallocated rounding dust.
+    let distributed_bones = data_transfer::distributed_bones(&gw_rewards);
+    let scale = data_transfer::scale(pool, demand);
+    let target = data_transfer::price_per_gb(pool, total_bytes, price_info.price_per_bone);
+    let actual =
+        data_transfer::price_per_gb(distributed_bones, total_bytes, price_info.price_per_bone);
+
+    telemetry::data_transfer_rewarded_gateways(gw_rewards.len() as u64);
+    telemetry::data_transfer_rewards_scale(scale.to_f64().unwrap_or_default());
+    telemetry::data_transfer_target_price_per_gb(target.to_f64().unwrap_or_default());
+    telemetry::data_transfer_actual_price_per_gb(actual.to_f64().unwrap_or_default());
+
+    if let Some((writers, id)) = reward_ctx {
+        let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);
+        writers.write_data_transfer(id, rewards).await?;
+    }
+
+    let proto_rewards = into_proto_rewards(gw_rewards, &reward_info.epoch_period);
+    mobile_rewards.write_all(proto_rewards).await?;
+
+    // Data transfer consumes the whole pool; only integer-rounding dust (or the
+    // entire pool when there was no data transfer) is written out as unallocated.
+    write_unallocated_reward(
+        &mobile_rewards,
+        UnallocatedRewardType::Poc,
+        unallocated,
+        reward_info,
+        reward_ctx,
+    )
+    .await?;
+
+    Ok(())
+}
+
+// ============================================================================
+// HIP-149: dead code. The old PoC + DC reward pipeline, kept for side-by-side
+// review and rollback. `reward()` now calls `reward_dc_hip_149` above instead.
+// Removed in the cleanup PR.
+// ============================================================================
+
+#[allow(dead_code)]
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     data_session_source: &DataSessionSource,
@@ -359,30 +435,37 @@ pub async fn reward_poc_and_dc(
     price_info: PriceInfo,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
-    let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
+    let mut reward_shares =
+        DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
     let hotspot_data_sessions = data_session_source
         .load_data_sessions(&reward_info.epoch_period)
         .await?;
 
-    // PoC has been removed from rewards: data transfer consumes the entire pool,
-    // and `reward_dc` writes out its own rounding remainder as unallocated.
-    reward_dc(
+    let transfer_rewards =
+        TransferRewards::from_transfer_sessions(price_info, hotspot_data_sessions, &reward_shares)
+            .await;
+
+    // It's important to gauge the scale metric. If this value is < 1.0, we are in
+    // big trouble.
+    let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
+        anyhow::bail!("The data transfer rewards scale cannot be converted to a float");
+    };
+    telemetry::data_transfer_rewards_scale(scale);
+
+    // reward dc before poc so that we can calculate the unallocated dc reward
+    // and carry this into the poc pool
+    let dc_unallocated_amount = reward_dc(
         &mobile_rewards,
         reward_info,
-        &price_info,
-        hotspot_data_sessions,
+        transfer_rewards,
+        &reward_shares,
         reward_ctx,
     )
     .await?;
 
-    // PoC rewards are disabled: data transfer consumes the whole pool above, so
-    // the PoC bucket is zero and `reward_poc` emits nothing — every radio reward
-    // floors to 0 and is filtered out by `into_rewards`. This branch still runs
-    // its coverage queries each epoch for no output.
-    // TODO: remove `reward_poc` (and the inputs it reads) once PoC is fully torn
-    // out of the pipeline.
-    let (_poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
+    reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
+    let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
         &mobile_rewards,
         reward_info,
@@ -391,9 +474,24 @@ pub async fn reward_poc_and_dc(
     )
     .await?;
 
+    let poc_unallocated_amount = poc_unallocated_amount
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+
+    write_unallocated_reward(
+        &mobile_rewards,
+        UnallocatedRewardType::Poc,
+        poc_unallocated_amount,
+        reward_info,
+        reward_ctx,
+    )
+    .await?;
+
     Ok(calculated_poc_reward_shares)
 }
 
+#[allow(dead_code)]
 pub async fn reward_poc(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
@@ -492,66 +590,62 @@ pub async fn reward_poc(
     Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
 }
 
+#[allow(dead_code)]
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
-    price_info: &PriceInfo,
-    rewardable: RewardableDataByHotspot,
+    transfer_rewards: TransferRewards,
+    reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
-) -> anyhow::Result<()> {
-    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
-    let demand = rewardable.reward_sum(price_info);
-    let total_bytes = rewardable.total_bytes();
+) -> anyhow::Result<Decimal> {
+    // handle dc reward outputs
+    let collect_iceberg = reward_ctx.is_some();
+    let mut allocated_dc_rewards = 0_u64;
+    let mut count_rewarded_gateways = 0;
+    let mut iceberg_gateway_rewards = Vec::new();
 
-    // Distribute the whole pool across hotspots in proportion to their data
-    // credits; rounding dust comes back as `unallocated`.
-    let DataTransferAllocation {
-        rewards,
-        unallocated,
-    } = data_transfer::allocate(pool, rewardable.into_gw_data_transfer());
+    let start_period = reward_info.epoch_period.start.encode_timestamp();
+    let end_period = reward_info.epoch_period.end.encode_timestamp();
 
-    let gw_rewards = rewards
-        .into_iter()
-        .filter(|r| r.reward != 0)
-        .map(|g| g.into_gateway_reward(price_info.price_in_bones))
-        .collect::<Vec<_>>();
+    for (dc_allocated, gateway) in transfer_rewards.into_rewards() {
+        allocated_dc_rewards += dc_allocated;
+        count_rewarded_gateways += 1;
 
-    // All the data-transfer reward metrics, recorded together. The scale
-    // (`pool / demand`) and the *target* price per GB are input-derived; the
-    // *actual* price per GB uses the bones we really distributed, so it sits at or
-    // just below the target rate by the unallocated rounding dust.
-    let distributed_bones = data_transfer::distributed_bones(&gw_rewards);
-    let scale = data_transfer::scale(pool, demand);
-    let target = data_transfer::price_per_gb(pool, total_bytes, price_info.price_per_bone);
-    let actual =
-        data_transfer::price_per_gb(distributed_bones, total_bytes, price_info.price_per_bone);
+        if collect_iceberg {
+            iceberg_gateway_rewards.push(
+                iceberg::gateway_reward::IcebergGatewayReward::from_gateway_reward(
+                    &gateway,
+                    &reward_info.epoch_period,
+                ),
+            );
+        }
 
-    telemetry::data_transfer_rewarded_gateways(gw_rewards.len() as u64);
-    telemetry::data_transfer_rewards_scale(scale.to_f64().unwrap_or_default());
-    telemetry::data_transfer_target_price_per_gb(target.to_f64().unwrap_or_default());
-    telemetry::data_transfer_actual_price_per_gb(actual.to_f64().unwrap_or_default());
+        let reward_share = proto::MobileRewardShare {
+            start_period,
+            end_period,
+            reward: Some(proto::mobile_reward_share::Reward::GatewayReward(gateway)),
+        };
 
-    if let Some((writers, id)) = reward_ctx {
-        let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);
-        writers.write_data_transfer(id, rewards).await?;
+        mobile_rewards.write(reward_share, []).await?.await??;
     }
 
-    let proto_rewards = into_proto_rewards(gw_rewards, &reward_info.epoch_period);
-    mobile_rewards.write_all(proto_rewards).await?;
-
-    // Data transfer consumes the whole pool; only integer-rounding dust (or the
-    // entire pool when there was no data transfer) is written out as unallocated.
-    write_unallocated_reward(
-        mobile_rewards,
-        UnallocatedRewardType::Poc,
-        unallocated,
-        reward_info,
-        reward_ctx,
-    )
-    .await?;
-
-    Ok(())
+    if let Some((writers, id)) = reward_ctx {
+        writers
+            .write_data_transfer(id, iceberg_gateway_rewards)
+            .await?;
+    }
+    telemetry::data_transfer_rewarded_gateways(count_rewarded_gateways);
+    // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
+    // it then gets added to the poc pool
+    // we return the full decimal value just to ensure we allocate all to poc
+    let unallocated_dc_reward_amount =
+        reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
+    Ok(unallocated_dc_reward_amount)
 }
+
+// ============================================================================
+// HIP-149: end of dead PoC + DC pipeline.
+// ============================================================================
 
 pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,

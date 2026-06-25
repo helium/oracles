@@ -448,7 +448,10 @@ mod tests {
     fn price_per_gb_is_zero_without_bytes() {
         // No data moved -> no price per GB (this guard is the divide-by-zero check).
         let price_per_bone = PriceInfo::new(10_000_000, 8).price_per_bone;
-        assert_eq!(price_per_gb(dec!(1000000), 0, price_per_bone), Decimal::ZERO);
+        assert_eq!(
+            price_per_gb(dec!(1000000), 0, price_per_bone),
+            Decimal::ZERO
+        );
     }
 
     #[test]

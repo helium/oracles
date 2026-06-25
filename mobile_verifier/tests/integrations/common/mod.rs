@@ -33,6 +33,16 @@ pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok
 
 pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
 
+pub trait RadioRewardV2Ext {
+    fn total_poc_reward(&self) -> u64;
+}
+
+impl RadioRewardV2Ext for RadioRewardV2 {
+    fn total_poc_reward(&self) -> u64 {
+        self.base_poc_reward + self.boosted_poc_reward
+    }
+}
+
 pub struct MockHexBoostDataAssignment {
     footfall: Assignment,
     urbanized: Assignment,
@@ -286,11 +296,7 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     SinkMessage::Data(sender, msg) => {
-                        // Mirror the real file sink: the write is recorded
-                        // regardless of whether the caller is still awaiting its
-                        // ack. `write_all` keeps only the last receiver, so the
-                        // earlier acks have no receiver — don't panic on that.
-                        let _ = sender.send(Ok(()));
+                        sender.send(Ok(())).expect("ack file data");
                         inner_msgs.write().await.push(msg);
                     }
                     SinkMessage::Commit(_sender) => (),

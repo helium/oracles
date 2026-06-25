@@ -31,6 +31,10 @@ pub struct RewardableData {
 pub struct RewardableDataByHotspot(HashMap<PublicKeyBinary, RewardableData>);
 
 impl RewardableDataByHotspot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn into_gw_data_transfer(self) -> Vec<data_transfer::GatewayDataTransfer<PublicKeyBinary>> {
         self.0
             .into_iter()
@@ -70,6 +74,15 @@ impl std::ops::DerefMut for RewardableDataByHotspot {
 impl FromIterator<(PublicKeyBinary, RewardableData)> for RewardableDataByHotspot {
     fn from_iter<T: IntoIterator<Item = (PublicKeyBinary, RewardableData)>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for RewardableDataByHotspot {
+    type Item = (PublicKeyBinary, RewardableData);
+    type IntoIter = std::collections::hash_map::IntoIter<PublicKeyBinary, RewardableData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -236,7 +249,7 @@ pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<RewardableDataByHotspot, sqlx::Error> {
     tokio::pin!(stream);
-    let mut map = RewardableDataByHotspot::default();
+    let mut map = RewardableDataByHotspot::new();
     while let Some(session) = stream.try_next().await? {
         let totals = map.entry(session.pub_key).or_default();
         totals.rewardable_dc += session.num_dcs as u64;
@@ -409,11 +422,17 @@ mod tests {
         }
     }
 
+    fn map<const N: usize>(
+        entries: [(PublicKeyBinary, RewardableData); N],
+    ) -> RewardableDataByHotspot {
+        entries.into_iter().collect()
+    }
+
     #[test]
     fn empty_sources_match() {
         let comparison = compare(
-            &RewardableDataByHotspot::default(),
-            &RewardableDataByHotspot::default(),
+            &RewardableDataByHotspot::new(),
+            &RewardableDataByHotspot::new(),
         );
         assert!(comparison.matches());
         assert_eq!(
@@ -428,14 +447,8 @@ mod tests {
 
     #[test]
     fn identical_sources_match() {
-        let pg = RewardableDataByHotspot::from_iter([
-            (pubkey(1), totals(100, 1000)),
-            (pubkey(2), totals(50, 500)),
-        ]);
-        let trino = RewardableDataByHotspot::from_iter([
-            (pubkey(1), totals(100, 1000)),
-            (pubkey(2), totals(50, 500)),
-        ]);
+        let pg = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
+        let trino = map([(pubkey(1), totals(100, 1000)), (pubkey(2), totals(50, 500))]);
 
         let comparison = compare(&pg, &trino);
         assert!(comparison.matches());
@@ -451,8 +464,8 @@ mod tests {
 
     #[test]
     fn mismatched_totals_diverge_with_signed_delta() {
-        let pg = RewardableDataByHotspot::from_iter([(pubkey(1), totals(100, 1000))]);
-        let trino = RewardableDataByHotspot::from_iter([(pubkey(1), totals(150, 1000))]); // 50 more DC in trino
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = map([(pubkey(1), totals(150, 1000))]); // 50 more DC in trino
 
         let comparison = compare(&pg, &trino);
         assert!(!comparison.matches());
@@ -468,8 +481,8 @@ mod tests {
 
     #[test]
     fn hotspot_only_in_postgres_diverges() {
-        let pg = RewardableDataByHotspot::from_iter([(pubkey(1), totals(100, 1000))]);
-        let trino = RewardableDataByHotspot::default();
+        let pg = map([(pubkey(1), totals(100, 1000))]);
+        let trino = RewardableDataByHotspot::new();
 
         let comparison = compare(&pg, &trino);
         assert!(!comparison.matches());
@@ -485,8 +498,8 @@ mod tests {
 
     #[test]
     fn hotspot_only_in_trino_diverges() {
-        let pg = RewardableDataByHotspot::default();
-        let trino = RewardableDataByHotspot::from_iter([(pubkey(1), totals(100, 1000))]);
+        let pg = RewardableDataByHotspot::new();
+        let trino = map([(pubkey(1), totals(100, 1000))]);
 
         let comparison = compare(&pg, &trino);
         assert!(!comparison.matches());
