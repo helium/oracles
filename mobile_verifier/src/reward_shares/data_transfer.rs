@@ -251,6 +251,19 @@ mod tests {
     }
 
     #[test]
+    fn into_gateway_reward_records_price() {
+        // The HNT price is stamped onto the reward here — and only here. It
+        // plays no part in the allocation, ensure it makes it is unchanged.
+        let key: PublicKeyBinary = vec![1u8; 33].into();
+        let gateway = reward(key.clone(), 4_200, 99).into_gateway_reward(123_456);
+
+        assert_eq!(gateway.price, 123_456);
+        assert_eq!(gateway.dc_transfer_reward, 4_200);
+        assert_eq!(gateway.rewardable_bytes, 99);
+        assert_eq!(gateway.hotspot_key, Vec::<u8>::from(key));
+    }
+
+    #[test]
     fn excess_demand_scales_down() {
         // 200 DC of demand sharing a 100-bone pool -> each scaled down to 50.
         let alloc = allocate(dec!(100), [gw("a", 100, 0), gw("b", 100, 0)]);
@@ -337,6 +350,7 @@ mod tests {
     }
 
     proptest! {
+
         /// The pool is fully accounted for, never over-allocated, and every key
         /// (and its bytes) is preserved 1:1 — across the full u64 range.
         #[test]
@@ -414,6 +428,19 @@ mod tests {
                 alloc.unallocated,
                 data.len(),
             );
+        }
+
+        #[test]
+        fn unallocated_never_exceeds_individual_gw_rewards(
+            pool in pool_strategy(),
+            data in prop::collection::vec((any::<u64>(), any::<u64>()), 0..256),
+        ) {
+
+            let alloc = allocate(pool, keyed(&data));
+
+            for reward in alloc.rewards {
+                prop_assert!(alloc.unallocated < reward.reward);
+            }
         }
     }
 
