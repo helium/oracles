@@ -3,6 +3,8 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
+use crate::data_session::DataSessionSource;
+
 /// Heartbeats are sent constantly throughout the day.
 ///
 /// If there are heartbeats that exists past the end of the rewardable period,
@@ -56,6 +58,19 @@ pub async fn no_unique_connections(
     .fetch_one(pool)
     .await?;
 
+    Ok(count == 0)
+}
+
+pub async fn no_data_transfer_sessions(
+    data_session_source: &DataSessionSource,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<bool> {
+    // We delegate here because we are still verifying parity between
+    // postgres/trino. When that is verified, this function along with many
+    // other things will be candidates for cleanup.
+    let count = data_session_source
+        .count_data_sessions(reward_period)
+        .await?;
     Ok(count == 0)
 }
 

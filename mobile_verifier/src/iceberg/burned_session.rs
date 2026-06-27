@@ -48,7 +48,7 @@ pub async fn aggregate_hotspot_data_sessions_to_dc(
     Ok(map)
 }
 
-/// True when no burned sessions exist past the end of the reward period — i.e.
+/// True when no burned sessions exist past within the reward period — i.e.
 /// the burn/write pipeline isn't current through the period we want to reward.
 ///
 /// Trino analogue of [`crate::rewarder::db::no_speedtests`] /
@@ -57,19 +57,32 @@ pub async fn no_burned_sessions(
     trino: &trino_client::Client,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<bool> {
+    let count = count_burned_sessions(trino, reward_period).await?;
+    Ok(count == 0)
+}
+
+pub async fn count_burned_sessions(
+    trino: &trino_client::Client,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<u64> {
     #[derive(Trino, Serialize, Deserialize)]
     struct Count {
-        n: i64,
+        n: u64,
     }
 
     let stmt = trino_client::Statement::new(format!(
-        "SELECT COUNT(*) AS n FROM {NAMESPACE}.{TABLE_NAME} WHERE burn_timestamp >= :end"
+        "
+        SELECT COUNT(*) AS n
+        FROM {NAMESPACE}.{TABLE_NAME}
+        WHERE burn_timestamp >= :start AND burn_timestamp < :end
+        "
     ))
+    .bind("start", reward_period.start)
     .bind("end", reward_period.end)
     .typed::<Count>();
 
     let count = trino.get_all(stmt).await?.first().map_or(0, |row| row.n);
-    Ok(count == 0)
+    Ok(count)
 }
 
 /// Statement that sums DC and rewardable bytes per hotspot over the half-open

@@ -245,6 +245,25 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
+pub async fn count_hotspot_data_sessions(
+    exec: impl sqlx::PgExecutor<'_>,
+    epoch: &Range<DateTime<Utc>>,
+) -> sqlx::Result<u64> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT count(*)
+        FROM hotspot_data_transfer_sessions
+        WHERE burn_timestamp >= $1 AND burn_timestamp < $2
+        "#,
+    )
+    .bind(epoch.start)
+    .bind(epoch.end)
+    .fetch_one(exec)
+    .await?;
+
+    Ok(count as u64)
+}
+
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<RewardableDataByHotspot, sqlx::Error> {
@@ -343,6 +362,33 @@ impl DataSessionSource {
                         "failed to read data sessions from trino for comparison"
                     ),
                 }
+                Ok(postgres)
+            }
+        }
+    }
+
+    pub async fn count_data_sessions(&self, epoch: &Range<DateTime<Utc>>) -> anyhow::Result<u64> {
+        match self {
+            DataSessionSource::Postgres { pool } => {
+                Ok(count_hotspot_data_sessions(pool, epoch).await?)
+            }
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres = count_hotspot_data_sessions(pool, epoch).await?;
+                match crate::iceberg::burned_session::count_burned_sessions(trino, epoch).await {
+                    Ok(iceberg) => {
+                        let iceberg = iceberg as i64;
+                        let postgres = postgres as i64;
+                        let divergance = (iceberg - postgres).abs();
+                        crate::telemetry::data_session::count_divergence(divergance);
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            "failed to count data sessions from trino for comparison"
+                        )
+                    }
+                }
+
                 Ok(postgres)
             }
         }

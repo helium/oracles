@@ -225,6 +225,11 @@ where
                 return Ok(false);
             }
 
+            if db::no_data_transfer_sessions(&self.data_session_source, reward_period).await? {
+                tracing::info!("No Burned Data Transfer Sessions found past reward period");
+                return Ok(false);
+            }
+
             if check_for_unprocessed_data_sets(&self.pool, reward_period.end).await? {
                 tracing::info!("Data sets still need to be processed");
                 return Ok(false);
