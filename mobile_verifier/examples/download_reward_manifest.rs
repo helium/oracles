@@ -58,7 +58,9 @@ async fn main() -> anyhow::Result<()> {
     let bucket = settings.buckets.output.connect().await;
     tokio::fs::create_dir_all(&args.out).await?;
 
-    let manifests = bucket.list_all_files(MANIFEST_PREFIX, after, before).await?;
+    let manifests = bucket
+        .list_all_files(MANIFEST_PREFIX, after, before)
+        .await?;
     if manifests.is_empty() {
         println!("no manifests found under '{MANIFEST_PREFIX}' in {after} .. {before}");
         return Ok(());
@@ -89,7 +91,10 @@ async fn main() -> anyhow::Result<()> {
         for file_name in &manifest.written_files {
             download(&bucket, file_name, &args.out).await?;
         }
-        println!("  downloaded manifest + {} share file(s)\n", manifest.written_files.len());
+        println!(
+            "  downloaded manifest + {} share file(s)\n",
+            manifest.written_files.len()
+        );
     }
 
     println!("done -> {}", args.out.display());
@@ -97,7 +102,12 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn download(bucket: &BucketClient, key: &str, out: &Path) -> anyhow::Result<()> {
-    let data = bucket.get_raw_file(key).await?.collect().await?.into_bytes();
+    let data = bucket
+        .get_raw_file(key)
+        .await?
+        .collect()
+        .await?
+        .into_bytes();
     let path = out.join(key);
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;

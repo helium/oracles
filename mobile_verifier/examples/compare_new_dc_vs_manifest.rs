@@ -266,7 +266,10 @@ async fn main() -> anyhow::Result<()> {
             alloc.unallocated
         );
         println!("  trino input: {} hotspots", rewardable.len());
-        println!("  hotspots differing : {}  | max |Δ| {max_abs}  | sum |Δ| {sum_abs}", diffs.len());
+        println!(
+            "  hotspots differing : {}  | max |Δ| {max_abs}  | sum |Δ| {sum_abs}",
+            diffs.len()
+        );
         if !diffs.is_empty() {
             println!("  largest deltas (new - historical):");
             for (k, d) in diffs.iter().take(10) {
