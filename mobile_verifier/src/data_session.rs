@@ -3,12 +3,16 @@ use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{
+    reward_shares::{data_transfer, dc_to_hnt_bones},
+    PriceInfo, Settings,
+};
 
 pub struct DataSessionIngestor {
     pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
@@ -23,7 +27,64 @@ pub struct RewardableData {
     pub rewardable_dc: u64,
 }
 
-pub type RewardableDataByHotspot = HashMap<PublicKeyBinary, RewardableData>;
+#[derive(Default)]
+pub struct RewardableDataByHotspot(HashMap<PublicKeyBinary, RewardableData>);
+
+impl RewardableDataByHotspot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn into_gw_data_transfer(self) -> Vec<data_transfer::GatewayDataTransfer<PublicKeyBinary>> {
+        self.0
+            .into_iter()
+            .map(|(hotspot_key, r)| data_transfer::GatewayDataTransfer {
+                hotspot_key,
+                rewardable_dc: r.rewardable_dc,
+                rewardable_bytes: r.rewardable_bytes,
+            })
+            .collect()
+    }
+
+    pub fn reward_sum(&self, price_info: &PriceInfo) -> Decimal {
+        self.values()
+            .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
+            .sum()
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.0.values().map(|r| r.rewardable_bytes).sum()
+    }
+}
+
+impl std::ops::Deref for RewardableDataByHotspot {
+    type Target = HashMap<PublicKeyBinary, RewardableData>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RewardableDataByHotspot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl FromIterator<(PublicKeyBinary, RewardableData)> for RewardableDataByHotspot {
+    fn from_iter<T: IntoIterator<Item = (PublicKeyBinary, RewardableData)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for RewardableDataByHotspot {
+    type Item = (PublicKeyBinary, RewardableData);
+    type IntoIter = std::collections::hash_map::IntoIter<PublicKeyBinary, RewardableData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 impl DataSessionIngestor {
     pub async fn create_managed_task(
@@ -317,7 +378,7 @@ fn compare(
     let trino_total_bytes: u64 = trino.values().map(|r| r.rewardable_bytes).sum();
 
     let mut divergent_hotspots = 0u64;
-    for (key, pg) in postgres {
+    for (key, pg) in postgres.iter() {
         // Differs if the hotspot is missing from trino, or its totals don't match.
         if trino.get(key) != Some(pg) {
             divergent_hotspots += 1;

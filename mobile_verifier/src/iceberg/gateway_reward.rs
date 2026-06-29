@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use chrono::{DateTime, FixedOffset, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
@@ -43,16 +45,15 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
 impl IcebergGatewayReward {
     pub fn from_gateway_reward(
         gateway: &proto::GatewayReward,
-        start_period: DateTime<Utc>,
-        end_period: DateTime<Utc>,
+        period: &Range<DateTime<Utc>>,
     ) -> Self {
         Self {
             hotspot_key: PublicKeyBinary::from(gateway.hotspot_key.as_slice()).to_string(),
             dc_transfer_reward: gateway.dc_transfer_reward,
             rewardable_bytes: gateway.rewardable_bytes,
             price: gateway.price,
-            start_period: start_period.into(),
-            end_period: end_period.into(),
+            start_period: period.start.into(),
+            end_period: period.end.into(),
         }
     }
 }
@@ -71,8 +72,7 @@ mod tests {
 
     #[test]
     fn convert_gateway_reward() {
-        let start_period = Utc::now();
-        let end_period = Utc::now();
+        let period = Utc::now()..Utc::now();
 
         let gateway = proto::GatewayReward {
             hotspot_key: vec![1, 2, 3],
@@ -81,7 +81,7 @@ mod tests {
             price: 100_000_000,
         };
 
-        let iceberg = IcebergGatewayReward::from_gateway_reward(&gateway, start_period, end_period);
+        let iceberg = IcebergGatewayReward::from_gateway_reward(&gateway, &period);
 
         assert_eq!(iceberg.dc_transfer_reward, 5000);
         assert_eq!(iceberg.rewardable_bytes, 1_000_000);

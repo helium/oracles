@@ -25,6 +25,7 @@ use std::{collections::HashMap, ops::Range};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
+pub mod data_transfer;
 mod radio_reward_v2;
 
 /// Maximum amount of the total emissions pool allocated for data transfer
@@ -46,6 +47,12 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 // Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
 pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;
 
+// ============================================================================
+// HIP-149: dead code. The old data-transfer allocator (`TransferRewards`) scaled
+// rewards by `pool / demand` and carried the leftover into the PoC pool. Replaced
+// by `reward_shares::data_transfer::allocate`; removed in the cleanup PR.
+// ============================================================================
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -54,12 +61,14 @@ pub struct TransferRewards {
     price_info: PriceInfo,
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
 pub struct TransferReward {
     bones: Decimal,
     bytes_rewarded: u64,
 }
 
+#[allow(dead_code)]
 impl TransferRewards {
     pub fn reward_scale(&self) -> Decimal {
         self.reward_scale
@@ -450,6 +459,8 @@ impl DataTransferAndPocAllocatedRewardBuckets {
     /// Rewards left over from Data Transfer rewards go into the POC pool. They
     /// do not get considered for boosted POC rewards if the boost shares
     /// surpasses the 10% allocation.
+    // HIP-149: dead code (old DC->PoC carry); removed in the cleanup PR.
+    #[allow(dead_code)]
     pub fn handle_unallocated_data_transfer(&mut self, unallocated_data_transfer: Decimal) {
         self.poc += unallocated_data_transfer;
     }
@@ -493,6 +504,10 @@ impl CalculatedPocRewardShares {
     fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
         self.base_poc_reward(points)
     }
+}
+
+pub fn get_scheduled_tokens_for_data_transfer(total_emission_pool: Decimal) -> Decimal {
+    total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT
 }
 
 pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
@@ -545,6 +560,7 @@ mod test {
         heartbeats::HeartbeatReward,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
+        PriceInfo,
     };
     use chrono::{Duration, Utc};
     use file_store_oracles::speedtest::CellSpeedtest;
@@ -607,6 +623,10 @@ mod test {
         }
     }
 
+    fn default_price_info() -> PriceInfo {
+        PriceInfo::new(10000000000000000, Token::Hnt.decimals())
+    }
+
     fn rewards_info_24_hours() -> EpochRewardInfo {
         let now = Utc::now();
         let epoch_duration = Duration::hours(1);
@@ -618,10 +638,6 @@ mod test {
             epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
             rewards_issued_at: now,
         }
-    }
-
-    fn default_price_info() -> PriceInfo {
-        PriceInfo::new(10000000000000000, Token::Hnt.decimals())
     }
 
     #[test]

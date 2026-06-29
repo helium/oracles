@@ -8,6 +8,7 @@ mod heartbeats;
 mod heartbeats_iceberg;
 mod last_location;
 mod modeled_coverage;
+mod reward_dc_hip_149;
 mod rewarder_dc_trino;
 mod rewarder_poc_dc;
 mod rewarder_sp_rewards;

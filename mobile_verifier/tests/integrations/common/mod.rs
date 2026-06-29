@@ -231,6 +231,17 @@ impl MobileRewardShareMessages {
             MobileReward::PromotionReward(inner) => self.promotion_rewards.push(inner),
         }
     }
+
+    pub fn dc_transfer_sum(&self) -> u64 {
+        self.gateway_rewards
+            .iter()
+            .map(|r| r.dc_transfer_reward)
+            .sum()
+    }
+
+    pub fn unallocated_sum(&self) -> u64 {
+        self.unallocated.iter().map(|r| r.amount).sum()
+    }
 }
 
 trait TestTimeoutExt<T>
@@ -296,7 +307,11 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     SinkMessage::Data(sender, msg) => {
-                        sender.send(Ok(())).expect("ack file data");
+                        // Mirror the real file sink: the write is recorded regardless of
+                        // whether the caller is still awaiting its ack. `write_all` keeps
+                        // only the last receiver, so earlier acks have no receiver — that
+                        // is expected, not an error.
+                        let _ = sender.send(Ok(()));
                         inner_msgs.write().await.push(msg);
                     }
                     SinkMessage::Commit(_sender) => (),
