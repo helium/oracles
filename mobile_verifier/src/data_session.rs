@@ -326,25 +326,6 @@ impl DataSessionSource {
         }
     }
 
-    /// Record, as a metric, whether Trino's burned-session data is ready for this
-    /// reward period — data exists past the period end, the same freshness signal
-    /// the heartbeat/speedtest checks use. No-op without Trino, and it never
-    /// blocks: a query failure is reported as "not ready" rather than propagated.
-    pub async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
-        let DataSessionSource::Compare { trino, .. } = self else {
-            return;
-        };
-        let ready =
-            match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await {
-                Ok(empty) => !empty,
-                Err(err) => {
-                    tracing::error!(?err, "failed to check trino burned-session readiness");
-                    false
-                }
-            };
-        crate::telemetry::data_session::trino_ready(ready);
-    }
-
     pub async fn load_data_sessions(
         &self,
         epoch: &Range<DateTime<Utc>>,
@@ -374,19 +355,32 @@ impl DataSessionSource {
         }
     }
 
-    /// The guard's count: source (Postgres, during the migration) data sessions
-    /// burned **past the end** of the reward period. The reward run reads from
-    /// this source, so this is what gates rewarding; Trino's readiness is tracked
-    /// separately as a non-blocking metric in [`Self::record_trino_readiness`].
+    /// Burned data sessions past the reward period end — the freshness signal the
+    /// reward guard gates on (see [`count_hotspot_data_sessions_past_period`]). The
+    /// count comes from Postgres, the source rewarding reads during the migration,
+    /// so Postgres is the only backend that gates.
+    ///
+    /// When a Trino client is configured the same freshness check is run against
+    /// Trino and recorded via [`record_trino_readiness`], so we can confirm both
+    /// backends become ready together — but Trino never gates and a Trino failure
+    /// is never propagated. Mirrors [`Self::load_data_sessions`]: check both,
+    /// observe Trino, continue with the Postgres result.
     pub async fn count_data_sessions_past_period(
         &self,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<u64> {
-        let pool = match self {
-            DataSessionSource::Postgres { pool } => pool,
-            DataSessionSource::Compare { pool, .. } => pool,
+        let postgres_count = match self {
+            DataSessionSource::Postgres { pool } => {
+                count_hotspot_data_sessions_past_period(pool, reward_period).await?
+            }
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres_count =
+                    count_hotspot_data_sessions_past_period(pool, reward_period).await?;
+                record_trino_readiness(trino, reward_period).await;
+                postgres_count
+            }
         };
-        Ok(count_hotspot_data_sessions_past_period(pool, reward_period).await?)
+        Ok(postgres_count)
     }
 }
 
@@ -445,6 +439,26 @@ fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableD
     crate::telemetry::data_session::dc_divergence(comparison.dc_delta as i64);
     crate::telemetry::data_session::bytes_divergence(comparison.bytes_delta as i64);
     crate::telemetry::data_session::hotspot_divergence(comparison.divergent_hotspots);
+}
+
+/// Run the same past-the-period freshness check the Postgres guard uses against
+/// Trino, recording the result as the `data_session_trino_ready` gauge so we can
+/// confirm Trino becomes ready alongside Postgres during the migration. Trino
+/// never gates the reward guard: a query failure is recorded as "not ready"
+/// rather than propagated.
+async fn record_trino_readiness(
+    trino: &trino_client::Client,
+    reward_period: &Range<DateTime<Utc>>,
+) {
+    let ready = match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await
+    {
+        Ok(empty) => !empty,
+        Err(err) => {
+            tracing::error!(?err, "failed to check trino burned-session readiness");
+            false
+        }
+    };
+    crate::telemetry::data_session::trino_ready(ready);
 }
 
 #[cfg(test)]
