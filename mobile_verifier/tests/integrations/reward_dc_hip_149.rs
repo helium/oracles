@@ -93,10 +93,7 @@ async fn test_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     // unallocated) equal the data-transfer allocation.
     let dc_sum = rewards.dc_transfer_sum();
     let unallocated_sum = rewards.unallocated_sum();
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(dc_sum + unallocated_sum, expected_sum);
 
     // Only rounding dust is left over, not a real share.
@@ -162,10 +159,7 @@ async fn test_poc_inputs_are_ignored(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(rewardable_total, rewardable_sum);
 
     // The whole data-transfer pool is accounted for.
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -201,10 +195,7 @@ async fn test_no_data_sessions_unallocate_whole_pool(pool: PgPool) -> anyhow::Re
     assert!(rewards.gateway_rewards.is_empty());
     assert_eq!(rewards.unallocated.len(), 1);
 
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(rewards.unallocated_sum(), expected_sum);
 
     Ok(())
@@ -260,10 +251,7 @@ async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<
     assert!((r3 - (3 * r1)).abs() <= 3, "expected ~3x: {r1} vs {r3}");
 
     // The whole pool is still distributed.
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -324,10 +312,7 @@ async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Res
     }
 
     // ...but the whole pool is still distributed.
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -363,10 +348,7 @@ async fn test_single_hotspot_takes_whole_pool(pool: PgPool) -> anyhow::Result<()
 
     // The lone hotspot's share is 100% of the pool, so it consumes it whole with
     // no rounding remainder.
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
     assert_eq!(rewards.gateway_rewards.len(), 1);
     assert_eq!(rewards.gateway_rewards[0].dc_transfer_reward, expected_sum);
     assert_eq!(rewards.unallocated_sum(), 0);

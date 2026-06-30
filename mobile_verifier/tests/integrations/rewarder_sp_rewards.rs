@@ -43,10 +43,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(network_reward.rewardable_entity_key, "Helium Mobile");
 
     // confirm the total rewards allocated matches expectations
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).service_provider;
     assert_eq!(
         expected_sum - reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
         network_reward.amount
@@ -76,8 +73,10 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let mut reward_info = reward_info_24_hours();
-    // Total reward amount of 350 HNT
+    // Total reward amount of 350 HNT (6% delegation carved out on-chain).
     reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
+    reward_info.hnt_rewards_issued = Decimal::from(35_000_000_000u64 - 35_000_000_000u64 * 6 / 100);
+    reward_info.delegation_rewards_issued = Decimal::from(35_000_000_000u64 * 6 / 100);
 
     rewarder::reward_service_providers(mobile_rewards_client, &reward_info, None).await?;
 
