@@ -69,7 +69,7 @@ pub async fn no_data_transfer_sessions(
     // postgres/trino. When that is verified, this function along with many
     // other things will be candidates for cleanup.
     let count = data_session_source
-        .count_data_sessions(reward_period)
+        .count_data_sessions_past_period(reward_period)
         .await?;
     Ok(count == 0)
 }
@@ -146,6 +146,46 @@ mod tests {
         assert!(no_speedtests(&pool, &reward_period).await?);
         assert!(no_unique_connections(&pool, &reward_period).await?);
 
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn data_transfer_guard_requires_burns_past_period(pool: PgPool) -> anyhow::Result<()> {
+        let reward_period = Utc::now() - chrono::Duration::days(1)..Utc::now();
+        let source = DataSessionSource::new(pool.clone(), None);
+
+        // Empty -> not ready.
+        assert!(no_data_transfer_sessions(&source, &reward_period).await?);
+
+        // A session burned *within* the epoch is not a completeness signal — more
+        // could still be arriving — so the guard still holds.
+        save_data_session(&pool, reward_period.start).await?;
+        assert!(no_data_transfer_sessions(&source, &reward_period).await?);
+
+        // A session burned at/after the period end tells us the burns are in.
+        save_data_session(&pool, reward_period.end).await?;
+        assert!(!no_data_transfer_sessions(&source, &reward_period).await?);
+
+        Ok(())
+    }
+
+    async fn save_data_session(pool: &PgPool, burn_timestamp: DateTime<Utc>) -> anyhow::Result<()> {
+        let keypair = Keypair::generate(KeyTag::default(), &mut OsRng);
+        let pubkey: PublicKeyBinary = keypair.public_key().to_owned().into();
+        let mut txn = pool.begin().await?;
+        crate::data_session::HotspotDataSession {
+            pub_key: pubkey.clone(),
+            payer: pubkey,
+            upload_bytes: 0,
+            download_bytes: 0,
+            rewardable_bytes: 0,
+            num_dcs: 1,
+            received_timestamp: burn_timestamp,
+            burn_timestamp,
+        }
+        .save(&mut txn)
+        .await?;
+        txn.commit().await?;
         Ok(())
     }
 

@@ -245,19 +245,26 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
-pub async fn count_hotspot_data_sessions(
+/// Count burned data-transfer sessions **past the end** of the reward period —
+/// what the reward guard gates on.
+///
+/// This is a freshness signal, not a tally of the epoch's sessions: like the
+/// heartbeat/speedtest checks, a session burned at or after the period end tells
+/// us the burn pipeline has caught up beyond the window we're rewarding, so the
+/// epoch's burns are complete. Sessions *within* the epoch don't prove that —
+/// more could still be arriving.
+pub async fn count_hotspot_data_sessions_past_period(
     exec: impl sqlx::PgExecutor<'_>,
-    epoch: &Range<DateTime<Utc>>,
+    reward_period: &Range<DateTime<Utc>>,
 ) -> sqlx::Result<u64> {
     let count: i64 = sqlx::query_scalar(
         r#"
         SELECT count(*)
         FROM hotspot_data_transfer_sessions
-        WHERE burn_timestamp >= $1 AND burn_timestamp < $2
+        WHERE burn_timestamp >= $1
         "#,
     )
-    .bind(epoch.start)
-    .bind(epoch.end)
+    .bind(reward_period.end)
     .fetch_one(exec)
     .await?;
 
@@ -367,31 +374,19 @@ impl DataSessionSource {
         }
     }
 
-    pub async fn count_data_sessions(&self, epoch: &Range<DateTime<Utc>>) -> anyhow::Result<u64> {
-        match self {
-            DataSessionSource::Postgres { pool } => {
-                Ok(count_hotspot_data_sessions(pool, epoch).await?)
-            }
-            DataSessionSource::Compare { pool, trino } => {
-                let postgres = count_hotspot_data_sessions(pool, epoch).await?;
-                match crate::iceberg::burned_session::count_burned_sessions(trino, epoch).await {
-                    Ok(iceberg) => {
-                        let iceberg = iceberg as i64;
-                        let postgres = postgres as i64;
-                        let divergance = (iceberg - postgres).abs();
-                        crate::telemetry::data_session::count_divergence(divergance);
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            ?err,
-                            "failed to count data sessions from trino for comparison"
-                        )
-                    }
-                }
-
-                Ok(postgres)
-            }
-        }
+    /// The guard's count: source (Postgres, during the migration) data sessions
+    /// burned **past the end** of the reward period. The reward run reads from
+    /// this source, so this is what gates rewarding; Trino's readiness is tracked
+    /// separately as a non-blocking metric in [`Self::record_trino_readiness`].
+    pub async fn count_data_sessions_past_period(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<u64> {
+        let pool = match self {
+            DataSessionSource::Postgres { pool } => pool,
+            DataSessionSource::Compare { pool, .. } => pool,
+        };
+        Ok(count_hotspot_data_sessions_past_period(pool, reward_period).await?)
     }
 }
 

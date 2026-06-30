@@ -54,7 +54,6 @@ pub mod data_session {
     const DC_DIVERGENCE: &str = "data_session_dc_divergence";
     const BYTES_DIVERGENCE: &str = "data_session_bytes_divergence";
     const HOTSPOT_DIVERGENCE: &str = "data_session_hotspot_divergence";
-    const COUNT_DIVERGENCE: &str = "data_session_count_divergence";
 
     /// "When rewards need to run, was the Trino data ready?" — 1.0 when burned
     /// sessions exist past the reward period end, else 0.0. Emitted once per
@@ -84,10 +83,5 @@ pub mod data_session {
     /// (mismatched totals or present in only one source).
     pub fn hotspot_divergence(count: u64) {
         metrics::gauge!(HOTSPOT_DIVERGENCE).set(count as f64);
-    }
-
-    /// Signed delta (trino - postgres) in total number of data sessions for the epoch
-    pub fn count_divergence(delta: i64) {
-        metrics::gauge!(COUNT_DIVERGENCE).set(delta as f64);
     }
 }
