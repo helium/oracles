@@ -42,14 +42,12 @@ use mobile_config::client::sub_dao_client::{SubDaoClient, SubDaoEpochRewardInfoR
 use mobile_verifier::{
     iceberg::burned_session,
     resolve_subdao_pubkey,
-    reward_shares::{
-        data_transfer::{self, GatewayDataTransfer},
-        get_scheduled_tokens_for_data_transfer,
-    },
+    reward_shares::data_transfer::{self, GatewayDataTransfer},
     Settings,
 };
 use prost::Message;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 const MANIFEST_PREFIX: &str = "network_reward_manifest_v1";
 
@@ -182,7 +180,9 @@ async fn main() -> anyhow::Result<()> {
         // reconstructed integer pool if emissions can't be obtained.
         let (pool, pool_src) = match args.emissions {
             Some(em) => (
-                get_scheduled_tokens_for_data_transfer(Decimal::from(em)),
+                // Reconstruct the historical (pre-HIP-149) 70% pool; this tool
+                // compares the new DC allocator against old 70%-era manifests.
+                Decimal::from(em) * dec!(0.7),
                 format!("0.7 × emissions {em} (--emissions)"),
             ),
             None => match sub_dao_client
@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
                 .await
             {
                 Ok(Some(info)) => (
-                    get_scheduled_tokens_for_data_transfer(info.epoch_emissions),
+                    info.epoch_emissions * dec!(0.7),
                     format!("0.7 × emissions {} (mobile-config)", info.epoch_emissions),
                 ),
                 Ok(None) => {

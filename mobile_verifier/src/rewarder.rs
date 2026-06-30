@@ -7,9 +7,8 @@ use crate::{
     iceberg, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
-        get_scheduled_tokens_for_data_transfer, get_scheduled_tokens_for_service_providers,
-        CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
-        TransferRewards,
+        hip_149_reward_pools, CalculatedPocRewardShares, CoverageShares,
+        DataTransferAndPocAllocatedRewardBuckets, TransferRewards,
     },
     speedtests,
     speedtests_average::SpeedtestAverages,
@@ -366,7 +365,10 @@ pub async fn reward_dc_hip_149(
         .load_data_sessions(&reward_info.epoch_period)
         .await?;
 
-    let pool = get_scheduled_tokens_for_data_transfer(reward_info.epoch_emissions);
+    // HIP-149: data transfer is the residual of `hnt_rewards_issued` after the
+    // flat 24% service-provider cut, so the cap/backstop shift is absorbed here
+    // rather than over-/under-allocating. See `reward_shares::emissions_split`.
+    let pool = Decimal::from(hip_149_reward_pools(reward_info).data_transfer);
     let demand = rewardable.reward_sum(&price_info);
     let total_bytes = rewardable.total_bytes();
 
@@ -652,11 +654,8 @@ pub async fn reward_service_providers(
     reward_info: &EpochRewardInfo,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
-    let total_sp_rewards = get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions);
-    let sp_reward_amount = total_sp_rewards
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
+    // HIP-149: a flat 24% of total emissions (see `reward_shares::emissions_split`).
+    let sp_reward_amount = hip_149_reward_pools(reward_info).service_provider;
 
     let subscriber_amount = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
     let network_amount = sp_reward_amount.saturating_sub(subscriber_amount);

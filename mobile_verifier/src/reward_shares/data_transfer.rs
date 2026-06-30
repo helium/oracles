@@ -27,8 +27,9 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
 use helium_crypto::PublicKeyBinary;
-use rust_decimal::{prelude::*, Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 
+use super::floor_to_u64;
 use crate::iceberg::gateway_reward::IcebergGatewayReward;
 
 mod proto {
@@ -129,16 +130,6 @@ pub fn allocate<K>(
         // assert that saturation never actually triggers.
         unallocated: pool_bones.saturating_sub(allocated),
     }
-}
-
-/// Floor a non-negative `Decimal` to a `u64` (`ToZero` matches the existing
-/// reward rounding). Values above `u64::MAX` saturate, which never happens for a
-/// real reward pool.
-fn floor_to_u64(value: Decimal) -> u64 {
-    value
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0)
 }
 
 // ================================================================

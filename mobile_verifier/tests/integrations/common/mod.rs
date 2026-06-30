@@ -177,6 +177,12 @@ pub fn reward_info_24_hours() -> EpochRewardInfo {
         sub_dao_address: SUB_DAO_ADDRESS.into(),
         epoch_period: (now - epoch_duration)..now,
         epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
+        // 6% is carved out for veHNT delegators on-chain; the rewarder
+        // distributes the remaining ~94%.
+        hnt_rewards_issued: Decimal::from(
+            EMISSIONS_POOL_IN_BONES_24_HOURS - EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100,
+        ),
+        delegation_rewards_issued: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100),
         rewards_issued_at: now,
     }
 }
