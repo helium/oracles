@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn convert_unallocated_reward() {
         let reward = proto::UnallocatedReward {
-            reward_type: UnallocatedRewardType::Poc as i32,
+            reward_type: UnallocatedRewardType::Data as i32,
             amount: 999_999,
         };
 
