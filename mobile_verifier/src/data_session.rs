@@ -245,6 +245,32 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
+/// Count burned data-transfer sessions **past the end** of the reward period —
+/// what the reward guard gates on.
+///
+/// This is a freshness signal, not a tally of the epoch's sessions: like the
+/// heartbeat/speedtest checks, a session burned at or after the period end tells
+/// us the burn pipeline has caught up beyond the window we're rewarding, so the
+/// epoch's burns are complete. Sessions *within* the epoch don't prove that —
+/// more could still be arriving.
+pub async fn count_hotspot_data_sessions_past_period(
+    exec: impl sqlx::PgExecutor<'_>,
+    reward_period: &Range<DateTime<Utc>>,
+) -> sqlx::Result<u64> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT count(*)
+        FROM hotspot_data_transfer_sessions
+        WHERE burn_timestamp >= $1
+        "#,
+    )
+    .bind(reward_period.end)
+    .fetch_one(exec)
+    .await?;
+
+    Ok(count as u64)
+}
+
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<RewardableDataByHotspot, sqlx::Error> {
@@ -300,25 +326,6 @@ impl DataSessionSource {
         }
     }
 
-    /// Record, as a metric, whether Trino's burned-session data is ready for this
-    /// reward period — data exists past the period end, the same freshness signal
-    /// the heartbeat/speedtest checks use. No-op without Trino, and it never
-    /// blocks: a query failure is reported as "not ready" rather than propagated.
-    pub async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
-        let DataSessionSource::Compare { trino, .. } = self else {
-            return;
-        };
-        let ready =
-            match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await {
-                Ok(empty) => !empty,
-                Err(err) => {
-                    tracing::error!(?err, "failed to check trino burned-session readiness");
-                    false
-                }
-            };
-        crate::telemetry::data_session::trino_ready(ready);
-    }
-
     pub async fn load_data_sessions(
         &self,
         epoch: &Range<DateTime<Utc>>,
@@ -346,6 +353,34 @@ impl DataSessionSource {
                 Ok(postgres)
             }
         }
+    }
+
+    /// Burned data sessions past the reward period end — the freshness signal the
+    /// reward guard gates on (see [`count_hotspot_data_sessions_past_period`]). The
+    /// count comes from Postgres, the source rewarding reads during the migration,
+    /// so Postgres is the only backend that gates.
+    ///
+    /// When a Trino client is configured the same freshness check is run against
+    /// Trino and recorded via [`record_trino_readiness`], so we can confirm both
+    /// backends become ready together — but Trino never gates and a Trino failure
+    /// is never propagated. Mirrors [`Self::load_data_sessions`]: check both,
+    /// observe Trino, continue with the Postgres result.
+    pub async fn count_data_sessions_past_period(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<u64> {
+        let postgres_count = match self {
+            DataSessionSource::Postgres { pool } => {
+                count_hotspot_data_sessions_past_period(pool, reward_period).await?
+            }
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres_count =
+                    count_hotspot_data_sessions_past_period(pool, reward_period).await?;
+                record_trino_readiness(trino, reward_period).await;
+                postgres_count
+            }
+        };
+        Ok(postgres_count)
     }
 }
 
@@ -404,6 +439,26 @@ fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableD
     crate::telemetry::data_session::dc_divergence(comparison.dc_delta as i64);
     crate::telemetry::data_session::bytes_divergence(comparison.bytes_delta as i64);
     crate::telemetry::data_session::hotspot_divergence(comparison.divergent_hotspots);
+}
+
+/// Run the same past-the-period freshness check the Postgres guard uses against
+/// Trino, recording the result as the `data_session_trino_ready` gauge so we can
+/// confirm Trino becomes ready alongside Postgres during the migration. Trino
+/// never gates the reward guard: a query failure is recorded as "not ready"
+/// rather than propagated.
+async fn record_trino_readiness(
+    trino: &trino_client::Client,
+    reward_period: &Range<DateTime<Utc>>,
+) {
+    let ready = match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await
+    {
+        Ok(empty) => !empty,
+        Err(err) => {
+            tracing::error!(?err, "failed to check trino burned-session readiness");
+            false
+        }
+    };
+    crate::telemetry::data_session::trino_ready(ready);
 }
 
 #[cfg(test)]
