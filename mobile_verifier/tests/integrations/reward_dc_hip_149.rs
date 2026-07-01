@@ -19,6 +19,7 @@ use helium_iceberg::IcebergTestHarness;
 use helium_iceberg_oracles::data_transfer::burned_session::{
     self, IcebergBurnedDataTransferSession,
 };
+use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
@@ -93,7 +94,7 @@ async fn test_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     // unallocated) equal the data-transfer allocation.
     let dc_sum = rewards.dc_transfer_sum();
     let unallocated_sum = rewards.unallocated_sum();
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(dc_sum + unallocated_sum, expected_sum);
 
     // Only rounding dust is left over, not a real share.
@@ -159,7 +160,7 @@ async fn test_poc_inputs_are_ignored(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(rewardable_total, rewardable_sum);
 
     // The whole data-transfer pool is accounted for.
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -195,7 +196,7 @@ async fn test_no_data_sessions_unallocate_whole_pool(pool: PgPool) -> anyhow::Re
     assert!(rewards.gateway_rewards.is_empty());
     assert_eq!(rewards.unallocated.len(), 1);
 
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(rewards.unallocated_sum(), expected_sum);
 
     Ok(())
@@ -251,7 +252,7 @@ async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<
     assert!((r3 - (3 * r1)).abs() <= 3, "expected ~3x: {r1} vs {r3}");
 
     // The whole pool is still distributed.
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -312,7 +313,7 @@ async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Res
     }
 
     // ...but the whole pool is still distributed.
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(
         rewards.dc_transfer_sum() + rewards.unallocated_sum(),
         expected_sum
@@ -348,10 +349,134 @@ async fn test_single_hotspot_takes_whole_pool(pool: PgPool) -> anyhow::Result<()
 
     // The lone hotspot's share is 100% of the pool, so it consumes it whole with
     // no rounding remainder.
-    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).data_transfer;
+    let expected_sum = expected_data_transfer_pool(&reward_info);
     assert_eq!(rewards.gateway_rewards.len(), 1);
     assert_eq!(rewards.gateway_rewards[0].dc_transfer_reward, expected_sum);
     assert_eq!(rewards.unallocated_sum(), 0);
+
+    Ok(())
+}
+
+// HIP-149 sizes data transfer as the residual of `hnt_rewards_issued` after a flat
+// 24% service-provider cut, so the 3× cap (which moves HNT into delegation) and the
+// backstop (which re-emits it) land entirely on the data-transfer pool. The two
+// tests below drive a capped and a backstopped epoch end-to-end and assert the
+// distributed pool shrinks / grows accordingly — the only place that wiring is
+// exercised at the integration level (the split math itself is unit-tested in
+// `reward_shares::emissions_split`). Expectations are concrete, computed
+// independently of `hip_149_reward_pools` so they can't pass by mirroring a bug in
+// the code under test.
+
+/// A round 1e12-bone pool. The 24% SP cut (240e9) clears the 45e9 subscriber floor,
+/// and the residual data-transfer pools land on clean numbers.
+const SPLIT_TEST_EMISSIONS: u64 = 1_000_000_000_000;
+/// Baseline (6% delegation) data-transfer pool at [`SPLIT_TEST_EMISSIONS`]:
+/// 94% issued (940e9) − 24% SP (240e9). The cap shrinks below this; the backstop
+/// grows above it.
+const BASELINE_DATA_POOL: u64 = 700_000_000_000;
+
+/// [`reward_info_24_hours`] with the on-chain split overridden. `hnt_issued` is what
+/// the chain handed this rewarder; `delegation` is paid to veHNT holders on-chain.
+/// Emissions are their sum, so the service-provider pool (a flat 24% of emissions)
+/// stays fixed while only the issued/delegation split moves.
+fn reward_info_with_split(hnt_issued: u64, delegation: u64) -> EpochRewardInfo {
+    let mut reward_info = reward_info_24_hours();
+    reward_info.epoch_emissions = Decimal::from(hnt_issued + delegation);
+    reward_info.hnt_rewards_issued = Decimal::from(hnt_issued);
+    reward_info.delegation_rewards_issued = Decimal::from(delegation);
+    reward_info
+}
+
+/// Data-transfer pool computed *independently* of `hip_149_reward_pools` (the code
+/// the production path uses), via plain integer math: SP takes a flat floored 24%
+/// of total emissions, data transfer is the rest of the issued HNT.
+fn expected_data_transfer_pool(reward_info: &EpochRewardInfo) -> u64 {
+    let emissions = reward_info.epoch_emissions.to_u64().unwrap();
+    let hnt_issued = reward_info.hnt_rewards_issued.to_u64().unwrap();
+    let service_provider = (emissions as u128 * 24 / 100) as u64;
+    hnt_issued - service_provider
+}
+
+#[sqlx::test]
+async fn test_cap_shrinks_data_transfer_pool(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+
+    // 3× cap moved 14% of emissions out of the data bucket into delegation:
+    // delegation 6%+14%=20%, issued HNT 80%. SP holds at 24%, so data transfer
+    // absorbs the whole cut (70% → 56%).
+    let reward_info = reward_info_with_split(
+        SPLIT_TEST_EMISSIONS * 80 / 100,
+        SPLIT_TEST_EMISSIONS * 20 / 100,
+    );
+
+    let harness = common::setup_iceberg().await?;
+    let mut txn = pool.begin().await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
+    txn.commit().await?;
+
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    rewarder::reward_dc_hip_149(
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        default_price_info(),
+        None,
+    )
+    .await?;
+
+    let rewards = mobile_rewards.finish().await?;
+    assert_eq!(rewards.gateway_rewards.len(), 3);
+
+    // The whole pool is distributed, and it is the cap-shrunk residual.
+    let realized = rewards.dc_transfer_sum() + rewards.unallocated_sum();
+    assert_eq!(realized, expected_data_transfer_pool(&reward_info));
+    assert_eq!(realized, 560_000_000_000, "80% issued − 24% SP");
+    assert!(
+        realized < BASELINE_DATA_POOL,
+        "cap must shrink the data-transfer pool below baseline"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_backstop_grows_data_transfer_pool(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+
+    // Backstop re-emitted HNT into the data bucket: issued HNT rises to 98%
+    // (delegation 2%). SP still holds at 24%, so data transfer absorbs the boost
+    // (70% → 74%).
+    let reward_info = reward_info_with_split(
+        SPLIT_TEST_EMISSIONS * 98 / 100,
+        SPLIT_TEST_EMISSIONS * 2 / 100,
+    );
+
+    let harness = common::setup_iceberg().await?;
+    let mut txn = pool.begin().await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
+    txn.commit().await?;
+
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    rewarder::reward_dc_hip_149(
+        &DataSessionSource::new(pool.clone(), Some(trino)),
+        mobile_rewards_client,
+        &reward_info,
+        default_price_info(),
+        None,
+    )
+    .await?;
+
+    let rewards = mobile_rewards.finish().await?;
+    assert_eq!(rewards.gateway_rewards.len(), 3);
+
+    // The whole pool is distributed, and it is the backstop-grown residual.
+    let realized = rewards.dc_transfer_sum() + rewards.unallocated_sum();
+    assert_eq!(realized, expected_data_transfer_pool(&reward_info));
+    assert_eq!(realized, 740_000_000_000, "98% issued − 24% SP");
+    assert!(
+        realized > BASELINE_DATA_POOL,
+        "backstop must grow the data-transfer pool above baseline"
+    );
 
     Ok(())
 }
