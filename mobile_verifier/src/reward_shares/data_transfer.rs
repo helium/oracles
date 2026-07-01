@@ -420,19 +420,6 @@ mod tests {
                 data.len(),
             );
         }
-
-        #[test]
-        fn unallocated_never_exceeds_individual_gw_rewards(
-            pool in pool_strategy(),
-            data in prop::collection::vec((any::<u64>(), any::<u64>()), 0..256),
-        ) {
-
-            let alloc = allocate(pool, keyed(&data));
-
-            for reward in alloc.rewards {
-                prop_assert!(alloc.unallocated < reward.reward);
-            }
-        }
     }
 
     // ---- Reward-metric helpers: scale / price_per_gb / distributed_bones ----

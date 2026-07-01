@@ -122,19 +122,14 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
 
             let hnt_rewards_issued = row.get::<i64, &str>("hnt_rewards_issued") as u64;
-            if hnt_rewards_issued == 0 {
-                return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
-                    Box::from("hnt_rewards_issued is 0"),
-                ))));
-            }
-
             let delegation_rewards_issued =
                 row.get::<i64, &str>("delegation_rewards_issued") as u64;
-            if delegation_rewards_issued == 0 {
+
+            if hnt_rewards_issued == 0 && delegation_rewards_issued == 0 {
                 return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
-                    Box::from("delegation_rewards_issued is 0"),
+                    Box::from("hnt_rewards_issued and delegation_rewards_issued are 0, epoch is not closed"),
                 ))));
-            };
+            }
 
             Ok(Self {
                 epoch: row.get::<i64, &str>("epoch") as u64,

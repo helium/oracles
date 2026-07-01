@@ -410,7 +410,7 @@ pub async fn reward_dc_hip_149(
     // entire pool when there was no data transfer) is written out as unallocated.
     write_unallocated_reward(
         &mobile_rewards,
-        UnallocatedRewardType::Poc,
+        UnallocatedRewardType::Data,
         unallocated,
         reward_info,
         reward_ctx,

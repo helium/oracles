@@ -111,3 +111,39 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
 
     Ok(())
 }
+
+/// HIP-149: the service-provider pool is a flat 24% of *total* emissions, so the
+/// 3× cap / backstop — which shifts HNT between issued and delegation — must leave
+/// it untouched. Run a capped and a backstopped epoch at the same emissions and
+/// confirm the emitted SP reward is identical. Complements the data-transfer
+/// cap/backstop tests, which show the data pool absorbing the whole shift.
+#[sqlx::test]
+async fn test_service_provider_flat_across_cap_and_backstop(_pool: PgPool) -> anyhow::Result<()> {
+    // 1e12 emissions keeps the 24% cut (240e9) clear of the 45e9 subscriber floor.
+    const EMISSIONS: u64 = 1_000_000_000_000;
+
+    async fn sp_total(hnt_issued: u64, delegation: u64) -> anyhow::Result<u64> {
+        let (client, sink) = common::create_file_sink();
+        let mut reward_info = reward_info_24_hours();
+        reward_info.epoch_emissions = Decimal::from(hnt_issued + delegation);
+        reward_info.hnt_rewards_issued = Decimal::from(hnt_issued);
+        reward_info.delegation_rewards_issued = Decimal::from(delegation);
+
+        rewarder::reward_service_providers(client, &reward_info, None).await?;
+        let rewards = sink.finish().await?;
+        Ok(rewards.sp_rewards.iter().map(|r| r.amount).sum())
+    }
+
+    // Cap: issued 80%, delegation 20%. Backstop: issued 98%, delegation 2%.
+    let capped = sp_total(EMISSIONS * 80 / 100, EMISSIONS * 20 / 100).await?;
+    let backstopped = sp_total(EMISSIONS * 98 / 100, EMISSIONS * 2 / 100).await?;
+
+    assert_eq!(
+        capped, backstopped,
+        "SP pool must not move with the cap/backstop"
+    );
+    // Independent of `hip_149_reward_pools`: a flat 24% of total emissions.
+    assert_eq!(capped, 240_000_000_000);
+
+    Ok(())
+}
