@@ -43,10 +43,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(network_reward.rewardable_entity_key, "Helium Mobile");
 
     // confirm the total rewards allocated matches expectations
-    let expected_sum =
-        reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    let expected_sum = reward_shares::hip_149_reward_pools(&reward_info).service_provider;
     assert_eq!(
         expected_sum - reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
         network_reward.amount
@@ -76,8 +73,10 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let mut reward_info = reward_info_24_hours();
-    // Total reward amount of 350 HNT
+    // Total reward amount of 350 HNT (6% delegation carved out on-chain).
     reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
+    reward_info.hnt_rewards_issued = Decimal::from(35_000_000_000u64 - 35_000_000_000u64 * 6 / 100);
+    reward_info.delegation_rewards_issued = Decimal::from(35_000_000_000u64 * 6 / 100);
 
     rewarder::reward_service_providers(mobile_rewards_client, &reward_info, None).await?;
 
@@ -109,6 +108,42 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         RewardableEntityKey::Network.to_string()
     );
     assert_eq!(0, network_reward.amount);
+
+    Ok(())
+}
+
+/// HIP-149: the service-provider pool is a flat 24% of *total* emissions, so the
+/// 3× cap / backstop — which shifts HNT between issued and delegation — must leave
+/// it untouched. Run a capped and a backstopped epoch at the same emissions and
+/// confirm the emitted SP reward is identical. Complements the data-transfer
+/// cap/backstop tests, which show the data pool absorbing the whole shift.
+#[sqlx::test]
+async fn test_service_provider_flat_across_cap_and_backstop(_pool: PgPool) -> anyhow::Result<()> {
+    // 1e12 emissions keeps the 24% cut (240e9) clear of the 45e9 subscriber floor.
+    const EMISSIONS: u64 = 1_000_000_000_000;
+
+    async fn sp_total(hnt_issued: u64, delegation: u64) -> anyhow::Result<u64> {
+        let (client, sink) = common::create_file_sink();
+        let mut reward_info = reward_info_24_hours();
+        reward_info.epoch_emissions = Decimal::from(hnt_issued + delegation);
+        reward_info.hnt_rewards_issued = Decimal::from(hnt_issued);
+        reward_info.delegation_rewards_issued = Decimal::from(delegation);
+
+        rewarder::reward_service_providers(client, &reward_info, None).await?;
+        let rewards = sink.finish().await?;
+        Ok(rewards.sp_rewards.iter().map(|r| r.amount).sum())
+    }
+
+    // Cap: issued 80%, delegation 20%. Backstop: issued 98%, delegation 2%.
+    let capped = sp_total(EMISSIONS * 80 / 100, EMISSIONS * 20 / 100).await?;
+    let backstopped = sp_total(EMISSIONS * 98 / 100, EMISSIONS * 2 / 100).await?;
+
+    assert_eq!(
+        capped, backstopped,
+        "SP pool must not move with the cap/backstop"
+    );
+    // Independent of `hip_149_reward_pools`: a flat 24% of total emissions.
+    assert_eq!(capped, 240_000_000_000);
 
     Ok(())
 }

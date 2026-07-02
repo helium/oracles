@@ -3,12 +3,16 @@ use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{
+    reward_shares::{data_transfer, dc_to_hnt_bones},
+    PriceInfo, Settings,
+};
 
 pub struct DataSessionIngestor {
     pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
@@ -23,7 +27,64 @@ pub struct RewardableData {
     pub rewardable_dc: u64,
 }
 
-pub type RewardableDataByHotspot = HashMap<PublicKeyBinary, RewardableData>;
+#[derive(Default)]
+pub struct RewardableDataByHotspot(HashMap<PublicKeyBinary, RewardableData>);
+
+impl RewardableDataByHotspot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn into_gw_data_transfer(self) -> Vec<data_transfer::GatewayDataTransfer<PublicKeyBinary>> {
+        self.0
+            .into_iter()
+            .map(|(hotspot_key, r)| data_transfer::GatewayDataTransfer {
+                hotspot_key,
+                rewardable_dc: r.rewardable_dc,
+                rewardable_bytes: r.rewardable_bytes,
+            })
+            .collect()
+    }
+
+    pub fn reward_sum(&self, price_info: &PriceInfo) -> Decimal {
+        self.values()
+            .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
+            .sum()
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.0.values().map(|r| r.rewardable_bytes).sum()
+    }
+}
+
+impl std::ops::Deref for RewardableDataByHotspot {
+    type Target = HashMap<PublicKeyBinary, RewardableData>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RewardableDataByHotspot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl FromIterator<(PublicKeyBinary, RewardableData)> for RewardableDataByHotspot {
+    fn from_iter<T: IntoIterator<Item = (PublicKeyBinary, RewardableData)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for RewardableDataByHotspot {
+    type Item = (PublicKeyBinary, RewardableData);
+    type IntoIter = std::collections::hash_map::IntoIter<PublicKeyBinary, RewardableData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 impl DataSessionIngestor {
     pub async fn create_managed_task(
@@ -184,6 +245,32 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
+/// Count burned data-transfer sessions **past the end** of the reward period —
+/// what the reward guard gates on.
+///
+/// This is a freshness signal, not a tally of the epoch's sessions: like the
+/// heartbeat/speedtest checks, a session burned at or after the period end tells
+/// us the burn pipeline has caught up beyond the window we're rewarding, so the
+/// epoch's burns are complete. Sessions *within* the epoch don't prove that —
+/// more could still be arriving.
+pub async fn count_hotspot_data_sessions_past_period(
+    exec: impl sqlx::PgExecutor<'_>,
+    reward_period: &Range<DateTime<Utc>>,
+) -> sqlx::Result<u64> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT count(*)
+        FROM hotspot_data_transfer_sessions
+        WHERE burn_timestamp >= $1
+        "#,
+    )
+    .bind(reward_period.end)
+    .fetch_one(exec)
+    .await?;
+
+    Ok(count as u64)
+}
+
 pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<RewardableDataByHotspot, sqlx::Error> {
@@ -239,25 +326,6 @@ impl DataSessionSource {
         }
     }
 
-    /// Record, as a metric, whether Trino's burned-session data is ready for this
-    /// reward period — data exists past the period end, the same freshness signal
-    /// the heartbeat/speedtest checks use. No-op without Trino, and it never
-    /// blocks: a query failure is reported as "not ready" rather than propagated.
-    pub async fn record_trino_readiness(&self, reward_period: &Range<DateTime<Utc>>) {
-        let DataSessionSource::Compare { trino, .. } = self else {
-            return;
-        };
-        let ready =
-            match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await {
-                Ok(empty) => !empty,
-                Err(err) => {
-                    tracing::error!(?err, "failed to check trino burned-session readiness");
-                    false
-                }
-            };
-        crate::telemetry::data_session::trino_ready(ready);
-    }
-
     pub async fn load_data_sessions(
         &self,
         epoch: &Range<DateTime<Utc>>,
@@ -285,6 +353,34 @@ impl DataSessionSource {
                 Ok(postgres)
             }
         }
+    }
+
+    /// Burned data sessions past the reward period end — the freshness signal the
+    /// reward guard gates on (see [`count_hotspot_data_sessions_past_period`]). The
+    /// count comes from Postgres, the source rewarding reads during the migration,
+    /// so Postgres is the only backend that gates.
+    ///
+    /// When a Trino client is configured the same freshness check is run against
+    /// Trino and recorded via [`record_trino_readiness`], so we can confirm both
+    /// backends become ready together — but Trino never gates and a Trino failure
+    /// is never propagated. Mirrors [`Self::load_data_sessions`]: check both,
+    /// observe Trino, continue with the Postgres result.
+    pub async fn count_data_sessions_past_period(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<u64> {
+        let postgres_count = match self {
+            DataSessionSource::Postgres { pool } => {
+                count_hotspot_data_sessions_past_period(pool, reward_period).await?
+            }
+            DataSessionSource::Compare { pool, trino } => {
+                let postgres_count =
+                    count_hotspot_data_sessions_past_period(pool, reward_period).await?;
+                record_trino_readiness(trino, reward_period).await;
+                postgres_count
+            }
+        };
+        Ok(postgres_count)
     }
 }
 
@@ -317,7 +413,7 @@ fn compare(
     let trino_total_bytes: u64 = trino.values().map(|r| r.rewardable_bytes).sum();
 
     let mut divergent_hotspots = 0u64;
-    for (key, pg) in postgres {
+    for (key, pg) in postgres.iter() {
         // Differs if the hotspot is missing from trino, or its totals don't match.
         if trino.get(key) != Some(pg) {
             divergent_hotspots += 1;
@@ -343,6 +439,26 @@ fn compare_data_sessions(postgres: &RewardableDataByHotspot, trino: &RewardableD
     crate::telemetry::data_session::dc_divergence(comparison.dc_delta as i64);
     crate::telemetry::data_session::bytes_divergence(comparison.bytes_delta as i64);
     crate::telemetry::data_session::hotspot_divergence(comparison.divergent_hotspots);
+}
+
+/// Run the same past-the-period freshness check the Postgres guard uses against
+/// Trino, recording the result as the `data_session_trino_ready` gauge so we can
+/// confirm Trino becomes ready alongside Postgres during the migration. Trino
+/// never gates the reward guard: a query failure is recorded as "not ready"
+/// rather than propagated.
+async fn record_trino_readiness(
+    trino: &trino_client::Client,
+    reward_period: &Range<DateTime<Utc>>,
+) {
+    let ready = match crate::iceberg::burned_session::no_burned_sessions(trino, reward_period).await
+    {
+        Ok(empty) => !empty,
+        Err(err) => {
+            tracing::error!(?err, "failed to check trino burned-session readiness");
+            false
+        }
+    };
+    crate::telemetry::data_session::trino_ready(ready);
 }
 
 #[cfg(test)]

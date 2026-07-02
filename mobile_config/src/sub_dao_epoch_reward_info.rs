@@ -11,7 +11,21 @@ pub struct EpochRewardInfo {
     pub epoch_address: String,
     pub sub_dao_address: String,
     pub epoch_period: Range<DateTime<Utc>>,
+    /// Total mobile sub-DAO emissions for the epoch (100%): the HNT this rewarder
+    /// distributes (`hnt_rewards_issued`) plus the delegation rewards already paid
+    /// to veHNT holders on-chain.
     pub epoch_emissions: Decimal,
+    /// The slice of `epoch_emissions` this rewarder is responsible for
+    /// distributing (service providers + data transfer). Under the HIP-149 3×
+    /// cap / backstop the chain shifts HNT between this and the delegation
+    /// rewards, so it is no longer a fixed 94% of `epoch_emissions`; the rewarder
+    /// must distribute exactly this amount — no more, no less.
+    pub hnt_rewards_issued: Decimal,
+    /// The portion of `epoch_emissions` paid to veHNT delegators on-chain
+    /// (`epoch_emissions - hnt_rewards_issued`). The rewarder does not distribute
+    /// this; it is carried so the full on-chain split is available without another
+    /// mobile-config change.
+    pub delegation_rewards_issued: Decimal,
     pub rewards_issued_at: DateTime<Utc>,
 }
 
@@ -49,14 +63,17 @@ impl TryFrom<SubDaoEpochRewardInfoProto> for EpochRewardInfo {
 
     fn try_from(info: SubDaoEpochRewardInfoProto) -> Result<Self, Self::Error> {
         let epoch_period: EpochInfo = info.epoch.into();
-        let epoch_rewards = Decimal::from(info.hnt_rewards_issued + info.delegation_rewards_issued);
+        let hnt_rewards_issued = Decimal::from(info.hnt_rewards_issued);
+        let delegation_rewards_issued = Decimal::from(info.delegation_rewards_issued);
 
         Ok(Self {
             epoch_day: info.epoch,
             epoch_address: info.epoch_address,
             sub_dao_address: info.sub_dao_address,
             epoch_period: epoch_period.period,
-            epoch_emissions: epoch_rewards,
+            epoch_emissions: hnt_rewards_issued + delegation_rewards_issued,
+            hnt_rewards_issued,
+            delegation_rewards_issued,
             rewards_issued_at: info.rewards_issued_at.to_timestamp()?,
         })
     }
@@ -105,19 +122,14 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
 
             let hnt_rewards_issued = row.get::<i64, &str>("hnt_rewards_issued") as u64;
-            if hnt_rewards_issued == 0 {
-                return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
-                    Box::from("hnt_rewards_issued is 0"),
-                ))));
-            }
-
             let delegation_rewards_issued =
                 row.get::<i64, &str>("delegation_rewards_issued") as u64;
-            if delegation_rewards_issued == 0 {
+
+            if hnt_rewards_issued == 0 && delegation_rewards_issued == 0 {
                 return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
-                    Box::from("delegation_rewards_issued is 0"),
+                    Box::from("hnt_rewards_issued and delegation_rewards_issued are 0, epoch is not closed"),
                 ))));
-            };
+            }
 
             Ok(Self {
                 epoch: row.get::<i64, &str>("epoch") as u64,

@@ -57,19 +57,33 @@ pub async fn no_burned_sessions(
     trino: &trino_client::Client,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<bool> {
+    let count = count_burned_sessions_past_period(trino, reward_period).await?;
+    Ok(count == 0)
+}
+
+/// Count burned sessions past the end of the reward period — the freshness
+/// signal (see [`no_burned_sessions`]), not a tally of the epoch's sessions.
+async fn count_burned_sessions_past_period(
+    trino: &trino_client::Client,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<u64> {
     #[derive(Trino, Serialize, Deserialize)]
     struct Count {
-        n: i64,
+        n: u64,
     }
 
     let stmt = trino_client::Statement::new(format!(
-        "SELECT COUNT(*) AS n FROM {NAMESPACE}.{TABLE_NAME} WHERE burn_timestamp >= :end"
+        "
+        SELECT COUNT(*) AS n
+        FROM {NAMESPACE}.{TABLE_NAME}
+        WHERE burn_timestamp >= :end
+        "
     ))
     .bind("end", reward_period.end)
     .typed::<Count>();
 
     let count = trino.get_all(stmt).await?.first().map_or(0, |row| row.n);
-    Ok(count == 0)
+    Ok(count)
 }
 
 /// Statement that sums DC and rewardable bytes per hotspot over the half-open

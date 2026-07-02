@@ -177,6 +177,12 @@ pub fn reward_info_24_hours() -> EpochRewardInfo {
         sub_dao_address: SUB_DAO_ADDRESS.into(),
         epoch_period: (now - epoch_duration)..now,
         epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
+        // 6% is carved out for veHNT delegators on-chain; the rewarder
+        // distributes the remaining ~94%.
+        hnt_rewards_issued: Decimal::from(
+            EMISSIONS_POOL_IN_BONES_24_HOURS - EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100,
+        ),
+        delegation_rewards_issued: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100),
         rewards_issued_at: now,
     }
 }
@@ -230,6 +236,17 @@ impl MobileRewardShareMessages {
             MobileReward::RadioRewardV2(inner) => self.radio_reward_v2s.push(inner),
             MobileReward::PromotionReward(inner) => self.promotion_rewards.push(inner),
         }
+    }
+
+    pub fn dc_transfer_sum(&self) -> u64 {
+        self.gateway_rewards
+            .iter()
+            .map(|r| r.dc_transfer_reward)
+            .sum()
+    }
+
+    pub fn unallocated_sum(&self) -> u64 {
+        self.unallocated.iter().map(|r| r.amount).sum()
     }
 }
 
@@ -296,7 +313,11 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     SinkMessage::Data(sender, msg) => {
-                        sender.send(Ok(())).expect("ack file data");
+                        // Mirror the real file sink: the write is recorded regardless of
+                        // whether the caller is still awaiting its ack. `write_all` keeps
+                        // only the last receiver, so earlier acks have no receiver — that
+                        // is expected, not an error.
+                        let _ = sender.send(Ok(()));
                         inner_msgs.write().await.push(msg);
                     }
                     SinkMessage::Commit(_sender) => (),

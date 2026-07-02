@@ -19,13 +19,17 @@ use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use radio_reward_v2::RadioRewardV2Ext;
-use rust_decimal::prelude::*;
+use rust_decimal::{prelude::*, RoundingStrategy};
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
+pub mod data_transfer;
+pub mod emissions_split;
 mod radio_reward_v2;
+
+pub use emissions_split::hip_149_reward_pools;
 
 /// Maximum amount of the total emissions pool allocated for data transfer
 /// rewards
@@ -46,6 +50,12 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 // Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
 pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;
 
+// ============================================================================
+// HIP-149: dead code. The old data-transfer allocator (`TransferRewards`) scaled
+// rewards by `pool / demand` and carried the leftover into the PoC pool. Replaced
+// by `reward_shares::data_transfer::allocate`; removed in the cleanup PR.
+// ============================================================================
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -54,12 +64,14 @@ pub struct TransferRewards {
     price_info: PriceInfo,
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
 pub struct TransferReward {
     bones: Decimal,
     bytes_rewarded: u64,
 }
 
+#[allow(dead_code)]
 impl TransferRewards {
     pub fn reward_scale(&self) -> Decimal {
         self.reward_scale
@@ -450,6 +462,8 @@ impl DataTransferAndPocAllocatedRewardBuckets {
     /// Rewards left over from Data Transfer rewards go into the POC pool. They
     /// do not get considered for boosted POC rewards if the boost shares
     /// surpasses the 10% allocation.
+    // HIP-149: dead code (old DC->PoC carry); removed in the cleanup PR.
+    #[allow(dead_code)]
     pub fn handle_unallocated_data_transfer(&mut self, unallocated_data_transfer: Decimal) {
         self.poc += unallocated_data_transfer;
     }
@@ -500,8 +514,16 @@ pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
     total_emission_pool * poc_percent
 }
 
-pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) -> Decimal {
-    total_emission_pool * SERVICE_PROVIDER_PERCENT
+/// Floor a non-negative `Decimal` to `u64` bones using the reward rounding
+/// convention (`ToZero`). Shared by every reward pool so percentage splits always
+/// round the same direction — never up, which is what lets the residual data
+/// pool absorb the dropped sub-bone without over-allocating. Values above
+/// `u64::MAX` saturate, which never happens for a real reward pool.
+pub(crate) fn floor_to_u64(value: Decimal) -> u64 {
+    value
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0)
 }
 
 #[derive(Display, EnumString)]
@@ -545,6 +567,7 @@ mod test {
         heartbeats::HeartbeatReward,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
+        PriceInfo,
     };
     use chrono::{Duration, Utc};
     use file_store_oracles::speedtest::CellSpeedtest;
@@ -603,8 +626,18 @@ mod test {
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
             epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_1_HOUR),
+            // 6% is carved out for veHNT delegators on-chain; the rewarder
+            // distributes the remaining ~94%.
+            hnt_rewards_issued: Decimal::from(
+                EMISSIONS_POOL_IN_BONES_1_HOUR - EMISSIONS_POOL_IN_BONES_1_HOUR * 6 / 100,
+            ),
+            delegation_rewards_issued: Decimal::from(EMISSIONS_POOL_IN_BONES_1_HOUR * 6 / 100),
             rewards_issued_at: now,
         }
+    }
+
+    fn default_price_info() -> PriceInfo {
+        PriceInfo::new(10000000000000000, Token::Hnt.decimals())
     }
 
     fn rewards_info_24_hours() -> EpochRewardInfo {
@@ -616,24 +649,20 @@ mod test {
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
             epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
+            // 6% is carved out for veHNT delegators on-chain; the rewarder
+            // distributes the remaining ~94%.
+            hnt_rewards_issued: Decimal::from(
+                EMISSIONS_POOL_IN_BONES_24_HOURS - EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100,
+            ),
+            delegation_rewards_issued: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS * 6 / 100),
             rewards_issued_at: now,
         }
-    }
-
-    fn default_price_info() -> PriceInfo {
-        PriceInfo::new(10000000000000000, Token::Hnt.decimals())
     }
 
     #[test]
     fn test_poc_scheduled_tokens() {
         let v = get_scheduled_tokens_for_poc(dec!(100));
         assert_eq!(dec!(70), v, "poc gets 70%");
-    }
-
-    #[test]
-    fn test_service_provider_scheduled_tokens() {
-        let v = get_scheduled_tokens_for_service_providers(dec!(100));
-        assert_eq!(dec!(24), v, "service providers get 24%");
     }
 
     #[test]
