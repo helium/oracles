@@ -25,6 +25,14 @@ use sqlx::SqlitePool;
 use std::path::Path;
 use std::time::Duration;
 
+/// How many of the most recent processed-snapshot rows to retain per
+/// `(process_name, table_name)`. Only the highest `sequence_number` is ever
+/// read back (the watermark); the rest are kept purely as history to aid
+/// troubleshooting. The poller calls [`StreamState::prune_history`] on a timer
+/// to trim everything older than this so the db stays bounded rather than
+/// growing forever.
+const HISTORY_LIMIT: i64 = 100;
+
 /// Metadata describing a single Iceberg snapshot consumed as a stream event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotMeta {
@@ -116,6 +124,10 @@ impl StreamState {
     /// Record a snapshot as processed, advancing the durable watermark. A
     /// single autocommitting statement, idempotent on the snapshot key, so a
     /// reprocessed snapshot (after a crash before recording) is a no-op.
+    ///
+    /// This only ever appends; bounding the table's growth is
+    /// [`prune_history`](Self::prune_history)'s job, which the poller runs on a
+    /// timer to keep it off this per-snapshot hot path.
     pub(crate) async fn record(&self, snapshot: &SnapshotMeta) -> Result<()> {
         sqlx::query(
             r#"
@@ -136,6 +148,34 @@ impl StreamState {
         .map(|_| ())
         .map_err(Error::from)
     }
+
+    /// Delete all but the [`HISTORY_LIMIT`] highest-`sequence_number` rows for
+    /// this stream, keeping the watermark plus a bounded window of history.
+    /// Runs independently of [`record`](Self::record) — the poller drives it on
+    /// a timer — so it never adds latency to the per-snapshot commit path.
+    pub(crate) async fn prune_history(&self) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM iceberg_snapshots_processed
+            WHERE process_name = ? AND table_name = ?
+              AND sequence_number NOT IN (
+                  SELECT sequence_number FROM iceberg_snapshots_processed
+                  WHERE process_name = ? AND table_name = ?
+                  ORDER BY sequence_number DESC
+                  LIMIT ?
+              )
+            "#,
+        )
+        .bind(&self.process_name)
+        .bind(&self.table_name)
+        .bind(&self.process_name)
+        .bind(&self.table_name)
+        .bind(HISTORY_LIMIT)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(Error::from)
+    }
 }
 
 #[cfg(test)]
@@ -149,6 +189,60 @@ mod tests {
             timestamp: Utc::now(),
             operation: Operation::Append,
         }
+    }
+
+    async fn row_count(store: &StreamState) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*) FROM iceberg_snapshots_processed
+            WHERE process_name = ? AND table_name = ?
+            "#,
+        )
+        .bind(&store.process_name)
+        .bind(&store.table_name)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn prune_history_keeps_recent_window_and_watermark() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StreamState::open(dir.path().join("wm.db"), "default", "t")
+            .await
+            .unwrap();
+
+        // Record well past the retention window; record alone never prunes.
+        let total = HISTORY_LIMIT + 50;
+        for seq in 1..=total {
+            store.record(&meta(seq)).await.unwrap();
+        }
+        assert_eq!(row_count(&store).await, total);
+
+        store.prune_history().await.unwrap();
+
+        // Only the most recent HISTORY_LIMIT rows are kept...
+        assert_eq!(row_count(&store).await, HISTORY_LIMIT);
+        // ...and the watermark is still the highest sequence number seen.
+        assert_eq!(
+            store.latest_sequence_number().await.unwrap(),
+            Some(total)
+        );
+
+        // The retained window is the newest rows, so the oldest surviving
+        // sequence number is `total - HISTORY_LIMIT + 1`.
+        let min_seq = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT MIN(sequence_number) FROM iceberg_snapshots_processed
+            WHERE process_name = ? AND table_name = ?
+            "#,
+        )
+        .bind(&store.process_name)
+        .bind(&store.table_name)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(min_seq, total - HISTORY_LIMIT + 1);
     }
 
     #[tokio::test]
