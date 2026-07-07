@@ -96,7 +96,12 @@ pub async fn new_client(
 
     let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
-    let mut s3_config = aws_sdk_s3::config::Builder::from(&config);
+    // Force `WhenRequired`: the newer aws-sdk-s3 default (`when_supported`) adds a
+    // trailing checksum via `Content-Encoding: aws-chunked`, which triggered
+    // intermittent S3 RequestTimeout errors on PutObject. This reverts to the plain
+    // upload path. TLS still protects integrity in transit.
+    let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
+        .request_checksum_calculation(aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired);
 
     if let Some(region_str) = region {
         s3_config = s3_config.region(aws_config::Region::new(region_str));
