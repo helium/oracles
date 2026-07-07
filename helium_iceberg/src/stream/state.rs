@@ -224,10 +224,7 @@ mod tests {
         // Only the most recent HISTORY_LIMIT rows are kept...
         assert_eq!(row_count(&store).await, HISTORY_LIMIT);
         // ...and the watermark is still the highest sequence number seen.
-        assert_eq!(
-            store.latest_sequence_number().await.unwrap(),
-            Some(total)
-        );
+        assert_eq!(store.latest_sequence_number().await.unwrap(), Some(total));
 
         // The retained window is the newest rows, so the oldest surviving
         // sequence number is `total - HISTORY_LIMIT + 1`.
