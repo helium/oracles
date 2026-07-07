@@ -67,13 +67,11 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
             reward_data: match value.reward_data {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
                     Some(RewardData::MobileRewardData {
-                        poc_bones_per_reward_share: reward_data
-                            .poc_bones_per_reward_share
-                            .ok_or(RewardManifestError::MissingField(
-                                "mobile_reward_data.poc_bones_per_reward_share",
-                            ))?
-                            .value
-                            .parse()?,
+                        // HIP-149: PoC is no longer rewarded, so producers write
+                        // None. Keep reading older protos that still carry a value.
+                        poc_bones_per_reward_share: deprecated_decimal(
+                            reward_data.poc_bones_per_reward_share,
+                        ),
                         boosted_poc_bones_per_reward_share: deprecated_decimal(
                             reward_data.boosted_poc_bones_per_reward_share,
                         ),
