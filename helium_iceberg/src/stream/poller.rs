@@ -40,7 +40,7 @@ const DEFAULT_QUEUE_SIZE: usize = 5;
 /// window. Kept well above `poll_duration` since it's pure housekeeping — the
 /// table only accrues rows between prunes, and the first tick fires
 /// immediately so a restart also trims any pre-existing bloat.
-const DEFAULT_PRUNE_DURATION: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+const DEFAULT_PRUNE_DURATION: std::time::Duration = std::time::Duration::from_mins(60);
 
 /// Env var supplying the default watermark-db directory when `db_dir` isn't set
 /// explicitly (and no `pool` is provided).
