@@ -36,6 +36,12 @@ use crate::{Error, Result};
 const DEFAULT_POLL_DURATION: std::time::Duration = std::time::Duration::from_secs(30);
 const DEFAULT_QUEUE_SIZE: usize = 5;
 
+/// How often the poller prunes the watermark db down to its retained history
+/// window. Kept well above `poll_duration` since it's pure housekeeping — the
+/// table only accrues rows between prunes, and the first tick fires
+/// immediately so a restart also trims any pre-existing bloat.
+const DEFAULT_PRUNE_DURATION: std::time::Duration = std::time::Duration::from_mins(60);
+
 /// Env var supplying the default watermark-db directory when `db_dir` isn't set
 /// explicitly (and no `pool` is provided).
 const DB_DIR_ENV: &str = "ICEBERG_STREAM_DB_DIR";
@@ -116,6 +122,10 @@ pub struct IcebergStreamPollerConfig<Message> {
     db_dir: PathBuf,
     #[builder(default = "DEFAULT_POLL_DURATION")]
     poll_duration: std::time::Duration,
+    /// How often to prune the watermark db to its retained history window.
+    /// Defaults to hourly; housekeeping only, so it needn't be frequent.
+    #[builder(default = "DEFAULT_PRUNE_DURATION")]
+    prune_duration: std::time::Duration,
     #[builder(default = "DEFAULT_QUEUE_SIZE")]
     queue_size: usize,
     #[builder(default = r#""default".to_string()"#)]
@@ -499,12 +509,29 @@ where
         );
 
         let sender = self.sender.clone();
+        // Housekeeping on a clone of the store (a cheap ref-counted pool handle),
+        // so the prune branch doesn't borrow `self` while the poll branch holds
+        // it mutably. The first tick fires immediately, trimming any pre-existing
+        // bloat on startup.
+        let store = self.store.clone();
+        let mut prune_interval = tokio::time::interval(self.config.prune_duration);
         loop {
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
                     tracing::info!(table = table_name, %process_name, "stopping IcebergStreamPoller");
                     break;
+                }
+                _ = prune_interval.tick() => {
+                    if let Err(err) = store.prune_history().await {
+                        tracing::warn!(
+                            table = table_name,
+                            %process_name,
+                            ?err,
+                            "failed to prune watermark history"
+                        );
+                    }
+                    continue;
                 }
                 result = futures::future::try_join(
                     sender.reserve().map_err(|_| Error::ConsumerDropped {
