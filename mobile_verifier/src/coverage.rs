@@ -1,14 +1,7 @@
-use crate::{cell_type::CellType, seniority::Seniority, IsAuthorized, Settings};
+use crate::{cell_type::CellType, seniority::Seniority, IsAuthorized};
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload, traits::TimestampEncode, BucketClient,
-};
-use file_store_oracles::{
-    mobile::coverage::CoverageObjectIngestReport,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileType,
-};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use file_store_oracles::mobile::coverage::CoverageObjectIngestReport;
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
     TryStreamExt,
@@ -21,17 +14,10 @@ use helium_proto::services::{
 };
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::client::AuthorizationClient;
 use retainer::{entry::CacheReadGuard, Cache};
 
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
-use std::{
-    pin::pin,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -64,143 +50,6 @@ impl From<SignalLevel> for coverage_map::SignalLevel {
             SignalLevel::High => coverage_map::SignalLevel::High,
         }
     }
-}
-
-pub struct CoverageDaemon {
-    pool: Pool<Postgres>,
-    auth_client: AuthorizationClient,
-    coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
-    new_coverage_object_notifier: NewCoverageObjectNotifier,
-}
-
-impl CoverageDaemon {
-    pub async fn create_managed_task(
-        pool: Pool<Postgres>,
-        settings: &Settings,
-        file_upload: FileUpload,
-        bucket_client: BucketClient,
-        auth_client: AuthorizationClient,
-        new_coverage_object_notifier: NewCoverageObjectNotifier,
-    ) -> anyhow::Result<impl ManagedTask> {
-        let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
-            settings.store_base_path(),
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
-        let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(bucket_client)
-            .lookback_start_after(settings.start_after)
-            .prefix(FileType::CoverageObjectIngestReport.to_string())
-            .create()
-            .await?;
-
-        let coverage_daemon = CoverageDaemon::new(
-            pool,
-            auth_client,
-            coverage_objs,
-            valid_coverage_objs,
-            new_coverage_object_notifier,
-        );
-
-        Ok(TaskManager::builder()
-            .add_task(valid_coverage_objs_server)
-            .add_task(coverage_objs_server)
-            .add_task(task_manager::channel_consumer(coverage_daemon))
-            .build())
-    }
-
-    pub fn new(
-        pool: PgPool,
-        auth_client: AuthorizationClient,
-        coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
-        new_coverage_object_notifier: NewCoverageObjectNotifier,
-    ) -> Self {
-        Self {
-            pool,
-            auth_client,
-            coverage_objs,
-            coverage_obj_sink,
-            new_coverage_object_notifier,
-        }
-    }
-
-    async fn process_file(
-        &self,
-        file: FileInfoStream<CoverageObjectIngestReport>,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Processing coverage object file {}", file.file_info.key);
-
-        let mut transaction = self.pool.begin().await?;
-        let reports = file.into_stream(&mut transaction).await?;
-
-        let mut validated_coverage_objects = pin!(CoverageObject::validate_coverage_objects(
-            &self.auth_client,
-            reports
-        ));
-
-        while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
-            coverage_object.write(&self.coverage_obj_sink).await?;
-            if coverage_object.is_valid() {
-                coverage_object.save(&mut transaction).await?;
-            }
-        }
-
-        self.coverage_obj_sink.commit().await?;
-        transaction.commit().await?;
-
-        // Tell the data set manager to update the assignments.
-        self.new_coverage_object_notifier.notify();
-
-        Ok(())
-    }
-}
-
-impl ChannelConsumer for CoverageDaemon {
-    type Item = FileInfoStream<CoverageObjectIngestReport>;
-    type Error = anyhow::Error;
-
-    async fn recv(&mut self) -> Option<Self::Item> {
-        self.coverage_objs.recv().await
-    }
-
-    async fn handle(&mut self, file: Self::Item) -> anyhow::Result<()> {
-        let start = Instant::now();
-        self.process_file(file).await?;
-        metrics::histogram!("coverage_object_processing_time").record(start.elapsed());
-        Ok(())
-    }
-}
-
-pub struct NewCoverageObjectNotifier(Sender<()>);
-
-impl NewCoverageObjectNotifier {
-    fn notify(&self) {
-        let _ = self.0.try_send(());
-    }
-}
-
-pub struct NewCoverageObjectNotification(Receiver<()>);
-
-impl NewCoverageObjectNotification {
-    pub async fn await_new_coverage_object(&mut self) {
-        let _ = self.0.recv().await;
-    }
-}
-
-pub fn new_coverage_object_notification_channel(
-) -> (NewCoverageObjectNotifier, NewCoverageObjectNotification) {
-    let (tx, rx) = channel(1);
-    (
-        NewCoverageObjectNotifier(tx),
-        NewCoverageObjectNotification(rx),
-    )
 }
 
 #[derive(Clone)]

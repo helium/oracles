@@ -6,7 +6,7 @@ use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use mobile_verifier::{
-    coverage::{CoverageObject, CoverageObjectCache},
+    coverage::CoverageObject,
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, ValidatedHeartbeat},
 };
@@ -35,7 +35,6 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
     let epoch_start = Utc::now() - Duration::days(1);
     let epoch_end = epoch_start + Duration::days(2);
 
-    let coverage_objects = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
 
     let mut transaction = pool.begin().await?;
@@ -47,9 +46,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
             .location_validation_timestamp(Utc::now())
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )
@@ -65,9 +62,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
             .latlng((0.0, 0.0))
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )
@@ -97,7 +92,6 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     let epoch_start = Utc::now() - Duration::days(1);
     let epoch_end = epoch_start + Duration::days(2);
 
-    let coverage_objects = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
 
     let mut transaction = pool.begin().await?;
@@ -109,9 +103,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
             .location_validation_timestamp(Utc::now())
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )
@@ -132,9 +124,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
             .latlng((0.0, 0.0))
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )
@@ -166,7 +156,6 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
     let epoch_start = Utc::now() - Duration::days(1);
     let epoch_end = epoch_start + Duration::days(2);
 
-    let coverage_objects = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
 
     let mut transaction = pool.begin().await?;
@@ -182,9 +171,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
             .timestamp(location_validation_timestamp - Duration::hours(24) + Duration::seconds(1))
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )
@@ -202,9 +189,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
             .latlng((0.0, 0.0))
             .build(),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
     )

@@ -17,10 +17,7 @@ use hex_assignments::{Assignment, HexBoostData};
 use mobile_verifier::{
     banning::BannedRadios,
     boosting_oracles::DataSetDownloaderDaemon,
-    coverage::{
-        new_coverage_object_notification_channel, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache,
-    },
+    coverage::{CoverageClaimTimeCache, CoverageObject},
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
@@ -140,7 +137,6 @@ async fn test_dataset_downloader(pool: PgPool) {
             .expect("failed to write file to aws");
     }
 
-    let (_, new_coverage_obj_notification) = new_coverage_object_notification_channel();
     let (sender, _receiver) = file_sink::message_channel(100);
     let file_sink_client = file_sink::FileSinkClient::new(sender, "fake");
     let tmpdir = tempfile::tempdir().expect("unable to create temporary directory");
@@ -151,7 +147,6 @@ async fn test_dataset_downloader(pool: PgPool) {
         awsl.bucket_client(),
         file_sink_client,
         tmpdir.path().to_path_buf(),
-        new_coverage_obj_notification,
         std::time::Duration::from_secs(4),
     );
 
@@ -426,7 +421,6 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     let hb_pubkey = pub_key.clone();
     let heartbeats = heartbeats(13, start, &hb_pubkey, -105.272404746, 40.019418356, uuid);
 
-    let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
     let location_cache = LocationCache::new(&pool);
 
@@ -434,9 +428,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        2000,
         &epoch,
         &MockGeofence,
     ));

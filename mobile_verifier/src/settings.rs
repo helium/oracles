@@ -39,10 +39,6 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
-    /// Max distance in meters between the heartbeat and all of the hexes in
-    /// its respective coverage object
-    #[serde(default = "default_max_distance_from_coverage")]
-    pub max_distance_from_coverage: u32,
     /// Directory in which new oracle boosting data sets are downloaded into
     #[serde(default = "default_data_sets_directory")]
     pub data_sets_directory: PathBuf,
@@ -65,11 +61,6 @@ pub struct Settings {
 
 fn default_fencing_resolution() -> u8 {
     7
-}
-
-fn default_max_distance_from_coverage() -> u32 {
-    // Default is 3 km
-    3000
 }
 
 fn default_log() -> String {

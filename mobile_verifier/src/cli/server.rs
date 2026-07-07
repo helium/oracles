@@ -1,23 +1,15 @@
 use std::time::Duration;
 
 use crate::{
-    banning::ingestor::BanIngestor,
-    boosting_oracles::DataSetDownloaderDaemon,
-    coverage::{new_coverage_object_notification_channel, CoverageDaemon},
-    data_session::DataSessionIngestor,
-    geofence::Geofence,
-    heartbeats::wifi::WifiHeartbeatDaemon,
-    iceberg,
-    rewarder::Rewarder,
-    speedtests::SpeedtestDaemon,
-    telemetry,
-    unique_connections::ingestor::UniqueConnectionsIngestor,
-    Settings,
+    banning::ingestor::BanIngestor, boosting_oracles::DataSetDownloaderDaemon,
+    data_session::DataSessionIngestor, geofence::Geofence, heartbeats::wifi::WifiHeartbeatDaemon,
+    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry,
+    unique_connections::ingestor::UniqueConnectionsIngestor, Settings,
 };
 use anyhow::Result;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
-use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate};
+use helium_proto::services::poc_mobile::Heartbeat;
 use mobile_config::client::{sub_dao_client::SubDaoClient, AuthorizationClient, GatewayClient};
 use task_manager::TaskManager;
 
@@ -51,16 +43,6 @@ impl Cmd {
         )
         .await?;
 
-        // Seniority updates
-        let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink(
-            &settings.cache,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
         tracing::info!(
             ?usa_and_mexico_region_paths,
@@ -71,9 +53,6 @@ impl Cmd {
             usa_and_mexico_region_paths,
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
-
-        let (new_coverage_obj_notifier, new_coverage_obj_notification) =
-            new_coverage_object_notification_channel();
 
         let ingest_bucket_client = settings.buckets.ingest.connect().await;
 
@@ -100,7 +79,6 @@ impl Cmd {
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
-            .add_task(seniority_updates_server)
             .add_task(
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
@@ -108,7 +86,6 @@ impl Cmd {
                     ingest_bucket_client.clone(),
                     gateway_client.clone(),
                     valid_heartbeats,
-                    seniority_updates,
                     usa_and_mexico_geofence,
                     poc_writers.heartbeat,
                 )
@@ -127,23 +104,11 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                CoverageDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    ingest_bucket_client.clone(),
-                    auth_client.clone(),
-                    new_coverage_obj_notifier,
-                )
-                .await?,
-            )
-            .add_task(
                 DataSetDownloaderDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     file_upload.clone(),
                     settings.buckets.data_sets.connect().await,
-                    new_coverage_obj_notification,
                 )
                 .await?,
             )
