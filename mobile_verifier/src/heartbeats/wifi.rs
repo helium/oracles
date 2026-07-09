@@ -1,9 +1,6 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
-    coverage::{CoverageClaimTimeCache, CoverageObjectCache},
-    geofence::GeofenceValidator,
-    heartbeats::LocationCache,
-    iceberg, GatewayResolver, Settings,
+    geofence::GeofenceValidator, heartbeats::LocationCache, iceberg, GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -25,9 +22,7 @@ pub struct WifiHeartbeatDaemon<GIR, GFV> {
     pool: PgPool,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-    max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
-    seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
     iceberg_writer: Option<iceberg::HeartbeatWriter>,
 }
@@ -44,7 +39,6 @@ where
         bucket_client: BucketClient,
         gateway_resolver: GIR,
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
-        seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
         iceberg_writer: Option<iceberg::HeartbeatWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -61,9 +55,7 @@ where
             pool,
             gateway_resolver,
             wifi_heartbeats,
-            settings.max_distance_from_coverage,
             valid_heartbeats,
-            seniority_updates,
             geofence,
             iceberg_writer,
         );
@@ -74,14 +66,11 @@ where
             .build())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-        max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
-        seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
         iceberg_writer: Option<iceberg::HeartbeatWriter>,
     ) -> Self {
@@ -89,9 +78,7 @@ where
             pool,
             gateway_info_resolver,
             heartbeats,
-            max_distance_to_coverage,
             heartbeat_sink,
-            seniority_sink,
             geofence,
             iceberg_writer,
         }
@@ -108,8 +95,6 @@ where
                 .await
         });
 
-        let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-        let coverage_object_cache = CoverageObjectCache::new(&self.pool);
         let location_cache = LocationCache::new(&self.pool);
 
         loop {
@@ -124,8 +109,6 @@ where
                     self.process_file(
                         file,
                         &heartbeat_cache,
-                        &coverage_claim_time_cache,
-                        &coverage_object_cache,
                         &location_cache
                     ).await?;
                     metrics::histogram!("wifi_heartbeat_processing_time")
@@ -141,8 +124,6 @@ where
         &self,
         file: FileInfoStream<WifiHeartbeatIngestReport>,
         heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
-        coverage_claim_time_cache: &CoverageClaimTimeCache,
-        coverage_object_cache: &CoverageObjectCache,
         location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
         tracing::info!(
@@ -162,22 +143,17 @@ where
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
                 &self.gateway_info_resolver,
-                coverage_object_cache,
                 location_cache,
-                self.max_distance_to_coverage,
                 &epoch,
                 &self.geofence,
             ),
             heartbeat_cache,
-            coverage_claim_time_cache,
             &self.heartbeat_sink,
-            &self.seniority_sink,
             &mut transaction,
             iceberg_ctx,
         )
         .await?;
         self.heartbeat_sink.commit().await?;
-        self.seniority_sink.commit().await?;
         transaction.commit().await?;
         Ok(())
     }

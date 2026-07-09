@@ -298,7 +298,6 @@ async fn process_wifi_input(
     coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
     heartbeats: impl Iterator<Item = WifiHeartbeatIngestReport>,
 ) -> anyhow::Result<()> {
-    let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
     let location_cache = LocationCache::new(pool);
 
@@ -322,9 +321,7 @@ async fn process_wifi_input(
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &GatewayClientAllOwnersValid,
-        &coverage_objects,
         &location_cache,
-        2000,
         epoch,
         &MockGeofence,
     ));
@@ -718,7 +715,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     transaction.commit().await?;
 
     let max_covered_distance = 5_000;
-    let coverage_object_cache = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
 
     let mk_heartbeat = |latlng: LatLng| WifiHeartbeatIngestReport {
@@ -739,9 +735,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         ValidatedHeartbeat::validate(
             mk_heartbeat(latlng).into(),
             &GatewayClientAllOwnersValid,
-            &coverage_object_cache,
             &location_cache,
-            max_covered_distance,
             &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
             &MockGeofence,
         )

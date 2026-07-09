@@ -57,17 +57,14 @@ impl GatewayResolver for mobile_config::GatewayClient {
         gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<GatewayResolution, ClientError> {
         use mobile_config::gateway::client::GatewayInfoResolver;
-        use mobile_config::gateway::service::info::{DeviceType, GatewayInfo};
+        use mobile_config::gateway::service::info::GatewayInfo;
 
         match self
             .resolve_gateway_info(address, gateway_query_timestamp)
             .await?
         {
             None => Ok(GatewayResolution::GatewayNotFound),
-            Some(GatewayInfo {
-                device_type: DeviceType::WifiDataOnly,
-                ..
-            }) => Ok(GatewayResolution::DataOnly),
+            Some(info) if info.is_data_only() => Ok(GatewayResolution::DataOnly),
             Some(GatewayInfo {
                 metadata: Some(metadata),
                 device_type,

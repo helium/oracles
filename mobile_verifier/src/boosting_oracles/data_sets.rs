@@ -24,10 +24,7 @@ use sqlx::{FromRow, PgPool, QueryBuilder};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{fs::File, io::AsyncWriteExt, time::Instant};
 
-use crate::{
-    coverage::{NewCoverageObjectNotification, SignalLevel},
-    Settings,
-};
+use crate::{coverage::SignalLevel, Settings};
 
 use hex_assignments::{
     assignment::HexAssignments, footfall::Footfall, landtype::Landtype,
@@ -200,7 +197,6 @@ pub struct DataSetDownloaderDaemon {
     bucket_client: BucketClient,
     data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
     data_set_directory: PathBuf,
-    new_coverage_object_notification: NewCoverageObjectNotification,
     poll_duration: Duration,
 }
 
@@ -256,7 +252,6 @@ impl DataSetDownloaderDaemon {
         settings: &Settings,
         file_upload: FileUpload,
         bucket_client: BucketClient,
-        new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         tracing::info!("Creating data set downloader task");
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
@@ -275,7 +270,6 @@ impl DataSetDownloaderDaemon {
             bucket_client,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
-            new_coverage_object_notification,
             settings.data_sets_poll_duration,
         );
 
@@ -294,7 +288,6 @@ impl DataSetDownloaderDaemon {
         bucket_client: BucketClient,
         data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
         data_set_directory: PathBuf,
-        new_coverage_object_notification: NewCoverageObjectNotification,
         poll_duration: Duration,
     ) -> Self {
         Self {
@@ -303,7 +296,6 @@ impl DataSetDownloaderDaemon {
             bucket_client,
             data_set_processor,
             data_set_directory,
-            new_coverage_object_notification,
             poll_duration,
         }
     }
@@ -434,23 +426,9 @@ impl DataSetDownloaderDaemon {
 
         let mut wakeup = Instant::now() + self.poll_duration;
         loop {
-            #[rustfmt::skip]
-            tokio::select! {
-                _ = self.new_coverage_object_notification.await_new_coverage_object() => {
-                    // If we see a new coverage object, we want to assign only those hexes
-                    // that don't have an assignment
-                    if is_hex_boost_data_ready(&self.data_sets) {
-                        self.data_set_processor.set_unassigned_oracle_boosting_assignments(
-                            &self.pool,
-                            &self.data_sets,
-                        ).await?;
-                    }
-                },
-                _ = tokio::time::sleep_until(wakeup) => {
-                    self.check_for_new_data_sets().await?;
-                    wakeup = Instant::now() + self.poll_duration;
-                }
-            }
+            tokio::time::sleep_until(wakeup).await;
+            self.check_for_new_data_sets().await?;
+            wakeup = Instant::now() + self.poll_duration;
         }
     }
 }

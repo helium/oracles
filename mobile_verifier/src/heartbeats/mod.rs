@@ -2,10 +2,7 @@ pub mod last_location;
 pub mod wifi;
 
 use crate::{
-    cell_type::CellType,
-    coverage::{self, CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
-    geofence::GeofenceValidator,
-    seniority::{Seniority, SeniorityUpdate},
+    cell_type::CellType, coverage::CoverageObjectMeta, geofence::GeofenceValidator,
     GatewayResolution, GatewayResolver,
 };
 use anyhow::{anyhow, Context};
@@ -160,7 +157,6 @@ impl ValidatedHeartbeat {
         distance_to_asserted: Option<i64>,
         asserted_location: Option<u64>,
         device_type: Option<DeviceType>,
-        coverage_meta: Option<CoverageObjectMeta>,
         validity: proto::HeartbeatValidity,
     ) -> Self {
         Self {
@@ -170,7 +166,7 @@ impl ValidatedHeartbeat {
             distance_to_asserted,
             asserted_location,
             device_type,
-            coverage_meta,
+            coverage_meta: None,
             validity,
         }
     }
@@ -178,25 +174,11 @@ impl ValidatedHeartbeat {
     fn new_invalid(
         heartbeat: Heartbeat,
         cell_type: CellType,
-        coverage_meta: CoverageObjectMeta,
         validity: proto::HeartbeatValidity,
     ) -> Self {
         Self {
             heartbeat,
             cell_type,
-            location_trust_score_multiplier: dec!(0),
-            distance_to_asserted: None,
-            asserted_location: None,
-            device_type: None,
-            coverage_meta: Some(coverage_meta),
-            validity,
-        }
-    }
-
-    fn new_no_coverage(heartbeat: Heartbeat, validity: proto::HeartbeatValidity) -> Self {
-        Self {
-            heartbeat,
-            cell_type: CellType::CellTypeNone,
             location_trust_score_multiplier: dec!(0),
             distance_to_asserted: None,
             asserted_location: None,
@@ -210,36 +192,66 @@ impl ValidatedHeartbeat {
     pub async fn validate(
         mut heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
-        coverage_object_cache: &CoverageObjectCache,
         last_location_cache: &LocationCache,
-        max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
     ) -> anyhow::Result<Self> {
-        let Some(coverage_object_uuid) = heartbeat.coverage_object else {
-            return Ok(Self::new_no_coverage(
-                heartbeat,
-                proto::HeartbeatValidity::BadCoverageObject,
-            ));
+        // The gateway's device type (from mobile-config) is the source of the
+        // cell/radio type; heartbeats are no longer validated against a coverage
+        // object.
+        //
+        let gw_info = gateway_info_resolver
+            .resolve_gateway(&heartbeat.hotspot_key, &heartbeat.timestamp)
+            .await?;
+
+        let (asserted_location, device_type) = match gw_info {
+            GatewayResolution::AssertedLocation(location, device_type) => (location, device_type),
+            GatewayResolution::GatewayNotFound => {
+                return Ok(Self::new_invalid(
+                    heartbeat,
+                    CellType::CellTypeNone,
+                    proto::HeartbeatValidity::GatewayNotFound,
+                ))
+            }
+            GatewayResolution::GatewayNotAsserted => {
+                return Ok(Self::new_invalid(
+                    heartbeat,
+                    CellType::CellTypeNone,
+                    proto::HeartbeatValidity::GatewayNotAsserted,
+                ))
+            }
+            GatewayResolution::DataOnly => {
+                return Ok(Self::new_invalid(
+                    heartbeat,
+                    CellType::CellTypeNone,
+                    proto::HeartbeatValidity::InvalidDeviceType,
+                ))
+            }
         };
 
-        let Some(coverage_object) = coverage_object_cache
-            .fetch_coverage_object(&coverage_object_uuid, heartbeat.key())
-            .await?
-        else {
-            return Ok(Self::new_no_coverage(
-                heartbeat,
-                proto::HeartbeatValidity::NoSuchCoverageObject,
-            ));
+        let (cell_type, radio_type) = match device_type {
+            DeviceType::WifiIndoor => (
+                CellType::NovaGenericWifiIndoor,
+                coverage_point_calculator::RadioType::IndoorWifi,
+            ),
+            DeviceType::WifiOutdoor => (
+                CellType::NovaGenericWifiOutdoor,
+                coverage_point_calculator::RadioType::OutdoorWifi,
+            ),
+            // Data-only gateways are rejected above; CBRS is deprecated.
+            DeviceType::WifiDataOnly | DeviceType::Cbrs => {
+                return Ok(Self::new_invalid(
+                    heartbeat,
+                    CellType::CellTypeNone,
+                    proto::HeartbeatValidity::InvalidDeviceType,
+                ))
+            }
         };
-
-        let cell_type = coverage_object.to_cell_type();
 
         if !heartbeat.operation_mode {
             return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                coverage_object.meta,
                 proto::HeartbeatValidity::NotOperational,
             ));
         }
@@ -248,7 +260,6 @@ impl ValidatedHeartbeat {
             return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                coverage_object.meta,
                 proto::HeartbeatValidity::HeartbeatOutsideRange,
             ));
         }
@@ -257,7 +268,6 @@ impl ValidatedHeartbeat {
             return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                coverage_object.meta,
                 proto::HeartbeatValidity::InvalidLatLon,
             ));
         };
@@ -266,103 +276,66 @@ impl ValidatedHeartbeat {
             return Ok(Self::new_invalid(
                 heartbeat,
                 cell_type,
-                coverage_object.meta,
                 proto::HeartbeatValidity::UnsupportedLocation,
             ));
         }
 
-        match gateway_info_resolver
-            .resolve_gateway(&heartbeat.hotspot_key, &heartbeat.timestamp)
-            .await?
-        {
-            GatewayResolution::DataOnly => Ok(Self::new_invalid(
-                heartbeat,
-                cell_type,
-                coverage_object.meta,
-                proto::HeartbeatValidity::InvalidDeviceType,
-            )),
-            GatewayResolution::GatewayNotFound => Ok(Self::new_invalid(
-                heartbeat,
-                cell_type,
-                coverage_object.meta,
-                proto::HeartbeatValidity::GatewayNotFound,
-            )),
-            GatewayResolution::GatewayNotAsserted => Ok(Self::new_invalid(
-                heartbeat,
-                cell_type,
-                coverage_object.meta,
-                proto::HeartbeatValidity::GatewayNotAsserted,
-            )),
-            GatewayResolution::AssertedLocation(location, device_type) => {
-                let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
-                let is_valid = match heartbeat.location_validation_timestamp {
-                    None => {
-                        if let Some(last_location) = last_location_cache
-                            .get(&heartbeat.hotspot_key, heartbeat.timestamp)
-                            .await?
-                        {
-                            heartbeat.lat = last_location.lat;
-                            heartbeat.lon = last_location.lon;
-                            heartbeat.location_validation_timestamp =
-                                Some(last_location.location_validation_timestamp);
-                            // Can't panic, previous lat and lon must be valid.
-                            hb_latlng = heartbeat.centered_latlng().unwrap();
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    Some(location_validation_timestamp) => {
-                        last_location_cache
-                            .set(
-                                &heartbeat.hotspot_key,
-                                LastLocation::from_heartbeat(
-                                    &heartbeat,
-                                    location_validation_timestamp,
-                                ),
-                            )
-                            .await;
-                        true
-                    }
-                };
-
-                let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
-                let max_distance = coverage_object.max_distance_m(hb_latlng).round() as u32;
-
-                let location_trust_score_multiplier = if !is_valid {
-                    dec!(0)
-                } else if max_distance >= max_distance_to_coverage {
-                    // Furthest hex in Heartbeat exceeds allowed coverage distance
-                    dec!(0)
+        let asserted_latlng: LatLng = CellIndex::try_from(asserted_location)?.into();
+        let is_valid = match heartbeat.location_validation_timestamp {
+            None => {
+                if let Some(last_location) = last_location_cache
+                    .get(&heartbeat.hotspot_key, heartbeat.timestamp)
+                    .await?
+                {
+                    heartbeat.lat = last_location.lat;
+                    heartbeat.lon = last_location.lon;
+                    heartbeat.location_validation_timestamp =
+                        Some(last_location.location_validation_timestamp);
+                    // Can't panic, previous lat and lon must be valid.
+                    hb_latlng = heartbeat.centered_latlng().unwrap();
+                    true
                 } else {
-                    // HIP-119 maximum asserted distance check
-                    coverage_point_calculator::asserted_distance_to_trust_multiplier(
-                        coverage_object.to_radio_type(),
-                        distance_to_asserted as u32,
-                    )
-                };
-
-                Ok(Self::new(
-                    heartbeat,
-                    cell_type,
-                    location_trust_score_multiplier,
-                    Some(distance_to_asserted),
-                    Some(location),
-                    Some(device_type),
-                    Some(coverage_object.meta),
-                    proto::HeartbeatValidity::Valid,
-                ))
+                    false
+                }
             }
-        }
+            Some(validation_ts) => {
+                last_location_cache
+                    .set(
+                        &heartbeat.hotspot_key,
+                        LastLocation::from_heartbeat(&heartbeat, validation_ts),
+                    )
+                    .await;
+                true
+            }
+        };
+
+        let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
+
+        let location_trust_score_multiplier = if !is_valid {
+            dec!(0)
+        } else {
+            // HIP-119 maximum asserted distance check
+            coverage_point_calculator::asserted_distance_to_trust_multiplier(
+                radio_type,
+                distance_to_asserted as u32,
+            )
+        };
+
+        Ok(Self::new(
+            heartbeat,
+            cell_type,
+            location_trust_score_multiplier,
+            Some(distance_to_asserted),
+            Some(asserted_location),
+            Some(device_type),
+            proto::HeartbeatValidity::Valid,
+        ))
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_info_resolver: &'a impl GatewayResolver,
-        coverage_object_cache: &'a CoverageObjectCache,
         last_location_cache: &'a LocationCache,
-        max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
         geofence: &'a impl GeofenceValidator,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
@@ -370,9 +343,7 @@ impl ValidatedHeartbeat {
             Self::validate(
                 heartbeat,
                 gateway_info_resolver,
-                coverage_object_cache,
                 last_location_cache,
-                max_distance_to_coverage,
                 epoch,
                 geofence,
             )
@@ -415,14 +386,6 @@ impl ValidatedHeartbeat {
     }
 
     pub async fn save(self, exec: &mut PgTransaction<'_>) -> anyhow::Result<()> {
-        coverage::set_invalidated_at(
-            exec,
-            self.heartbeat.timestamp,
-            self.coverage_meta.as_ref().map(|x| x.inserted_at),
-            self.heartbeat.key(),
-            self.heartbeat.coverage_object,
-        )
-        .await?;
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
@@ -452,9 +415,7 @@ impl ValidatedHeartbeat {
 pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
-    coverage_claim_time_cache: &CoverageClaimTimeCache,
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
-    seniority_sink: &FileSinkClient<proto::SeniorityUpdate>,
     transaction: &mut PgTransaction<'_>,
     iceberg_ctx: Option<(&crate::iceberg::HeartbeatWriter, &str)>,
 ) -> anyhow::Result<()> {
@@ -478,26 +439,6 @@ pub(crate) async fn process_validated_heartbeats(
 
         if !validated_heartbeat.is_valid() {
             continue;
-        }
-
-        if let Some(coverage_claim_time) = coverage_claim_time_cache
-            .fetch_coverage_claim_time(
-                validated_heartbeat.heartbeat.key(),
-                &validated_heartbeat.heartbeat.coverage_object,
-                &mut *transaction,
-            )
-            .await?
-        {
-            let latest_seniority =
-                Seniority::fetch_latest(validated_heartbeat.heartbeat.key(), &mut *transaction)
-                    .await?;
-            let seniority_update = SeniorityUpdate::determine_update_action(
-                &validated_heartbeat,
-                coverage_claim_time,
-                latest_seniority,
-            )?;
-            seniority_update.write(seniority_sink).await?;
-            seniority_update.execute(&mut *transaction).await?;
         }
 
         let key = validated_heartbeat.heartbeat.id()?;
@@ -533,7 +474,7 @@ pub async fn clear_heartbeats(
 
 #[cfg(test)]
 mod test {
-    use crate::seniority::SeniorityUpdateAction;
+    use crate::seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction};
 
     use super::*;
     use file_store_oracles::wifi_heartbeat::WifiHeartbeat;
