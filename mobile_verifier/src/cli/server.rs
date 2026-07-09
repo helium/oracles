@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use crate::{
-    banning::ingestor::BanIngestor, boosting_oracles::DataSetDownloaderDaemon,
-    data_session::DataSessionIngestor, geofence::Geofence, heartbeats::wifi::WifiHeartbeatDaemon,
-    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry,
+    banning::ingestor::BanIngestor, data_session::DataSessionIngestor, geofence::Geofence,
+    heartbeats::wifi::WifiHeartbeatDaemon, iceberg, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor, Settings,
 };
 use anyhow::Result;
@@ -100,15 +100,6 @@ impl Cmd {
                     gateway_client.clone(),
                     poc_writers.speedtest,
                     poc_writers.speedtest_avg,
-                )
-                .await?,
-            )
-            .add_task(
-                DataSetDownloaderDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    settings.buckets.data_sets.connect().await,
                 )
                 .await?,
             )
