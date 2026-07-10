@@ -1,4 +1,4 @@
-//! Integration tests for the HIP-149 reward path (`reward_dc_hip_149`): data
+//! Integration tests for the data-transfer reward path (`reward_dc`): data
 //! transfer consumes the entire emissions pool and Proof-of-Coverage is not
 //! rewarded. Each hotspot with burned data-transfer sessions splits the pool in
 //! proportion to its data credits, with rounding dust emitted as a single
@@ -40,7 +40,7 @@ async fn test_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
 
     // run rewards for poc and dc (Compare: rewards from Postgres, validates Trino)
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -99,7 +99,7 @@ async fn test_no_data_sessions_unallocate_whole_pool(pool: PgPool) -> anyhow::Re
     let harness = common::setup_iceberg().await?;
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
 
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -143,7 +143,7 @@ async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<
     txn.commit().await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -206,7 +206,7 @@ async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Res
 
     let price_info = default_price_info();
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -255,7 +255,7 @@ async fn test_single_hotspot_takes_whole_pool(pool: PgPool) -> anyhow::Result<()
     txn.commit().await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -334,7 +334,7 @@ async fn test_cap_shrinks_data_transfer_pool(pool: PgPool) -> anyhow::Result<()>
     txn.commit().await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,
@@ -376,7 +376,7 @@ async fn test_backstop_grows_data_transfer_pool(pool: PgPool) -> anyhow::Result<
     txn.commit().await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
-    rewarder::reward_dc_hip_149(
+    rewarder::reward_dc(
         &DataSessionSource::new(pool.clone(), Some(trino)),
         mobile_rewards_client,
         &reward_info,

@@ -1,17 +1,14 @@
 extern crate tls_init;
 
 pub mod banning;
-pub mod boosting_oracles;
 pub mod cell_type;
 pub mod cli;
-pub mod coverage;
 pub mod data_session;
 pub mod geofence;
 pub mod heartbeats;
 pub mod iceberg;
 pub mod reward_shares;
 pub mod rewarder;
-pub mod seniority;
 mod settings;
 pub mod speedtests;
 pub mod speedtests_average;

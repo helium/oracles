@@ -1,11 +1,8 @@
 pub mod last_location;
 pub mod wifi;
 
-use crate::{
-    cell_type::CellType, coverage::CoverageObjectMeta, geofence::GeofenceValidator,
-    GatewayResolution, GatewayResolver,
-};
-use anyhow::{anyhow, Context};
+use crate::{cell_type::CellType, geofence::GeofenceValidator, GatewayResolution, GatewayResolver};
+use anyhow::Context;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store_oracles::wifi_heartbeat::WifiHeartbeatIngestReport;
@@ -22,9 +19,6 @@ use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
 use self::last_location::{LastLocation, LocationCache};
-
-/// Minimum number of heartbeats required to give a reward to the hotspot.
-const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone)]
 pub struct Heartbeat {
@@ -82,52 +76,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
-pub struct HeartbeatReward {
-    pub hotspot_key: PublicKeyBinary,
-    pub distances_to_asserted: Vec<i64>,
-    pub trust_score_multipliers: Vec<Decimal>,
-    pub coverage_object: Uuid,
-}
-
-impl HeartbeatReward {
-    pub fn key(&self) -> &PublicKeyBinary {
-        &self.hotspot_key
-    }
-
-    pub fn id(&self) -> String {
-        self.hotspot_key.to_string()
-    }
-
-    pub fn validated<'a>(
-        exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
-        epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
-        sqlx::query_as::<_, HeartbeatReward>(include_str!("valid_radios.sql"))
-            .bind(epoch.start)
-            .bind(epoch.end)
-            .bind(MINIMUM_HEARTBEAT_COUNT)
-            .fetch(exec)
-    }
-
-    pub fn iter_distances_and_scores(
-        &self,
-    ) -> anyhow::Result<impl Iterator<Item = (i64, Decimal)>> {
-        // This should never happen if valid_radio.sql is not touched
-        if self.trust_score_multipliers.len() != self.distances_to_asserted.len() {
-            return Err(anyhow!(
-                "Mismatched lengths between distances_to_asserted and trust_score_multipliers"
-            ));
-        }
-
-        Ok(self
-            .distances_to_asserted
-            .clone()
-            .into_iter()
-            .zip(self.trust_score_multipliers.clone()))
-    }
-}
-
 #[derive(Clone)]
 pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
@@ -136,7 +84,6 @@ pub struct ValidatedHeartbeat {
     pub distance_to_asserted: Option<i64>,
     pub asserted_location: Option<u64>,
     pub device_type: Option<DeviceType>,
-    pub coverage_meta: Option<CoverageObjectMeta>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -166,7 +113,6 @@ impl ValidatedHeartbeat {
             distance_to_asserted,
             asserted_location,
             device_type,
-            coverage_meta: None,
             validity,
         }
     }
@@ -183,7 +129,6 @@ impl ValidatedHeartbeat {
             distance_to_asserted: None,
             asserted_location: None,
             device_type: None,
-            coverage_meta: None,
             validity,
         }
     }
@@ -474,228 +419,8 @@ pub async fn clear_heartbeats(
 
 #[cfg(test)]
 mod test {
-    use crate::seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction};
-
     use super::*;
     use file_store_oracles::wifi_heartbeat::WifiHeartbeat;
-    use proto::SeniorityUpdateReason::*;
-
-    #[test]
-    fn test_iter_distances_and_scores_with_matching_lengths() {
-        let reward = HeartbeatReward {
-            hotspot_key: PublicKeyBinary::from(vec![1, 2, 3]),
-            distances_to_asserted: vec![10, 20, 30],
-            trust_score_multipliers: vec![dec!(0.25), dec!(0.5), dec!(1.0)],
-            coverage_object: uuid::Uuid::new_v4(),
-        };
-
-        let result = reward.iter_distances_and_scores();
-        assert!(result.is_ok(), "Expected successful iteration");
-
-        let pairs: Vec<(i64, Decimal)> = result.unwrap().collect();
-        assert_eq!(pairs.len(), 3, "Expected 3 pairs in the iterator");
-        assert_eq!(pairs[0], (10, dec!(0.25)));
-        assert_eq!(pairs[1], (20, dec!(0.5)));
-        assert_eq!(pairs[2], (30, dec!(1.0)));
-    }
-
-    #[test]
-    fn test_iter_distances_and_scores_with_mismatched_lengths() {
-        let reward = HeartbeatReward {
-            hotspot_key: PublicKeyBinary::from(vec![1, 2, 3]),
-            distances_to_asserted: vec![10, 20], // Only 2 elements
-            trust_score_multipliers: vec![dec!(0.25), dec!(0.5), dec!(1.0)], // 3 elements
-            coverage_object: uuid::Uuid::new_v4(),
-        };
-
-        let result = reward.iter_distances_and_scores();
-        assert!(result.is_err(), "Expected error due to mismatched lengths");
-    }
-
-    fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> ValidatedHeartbeat {
-        ValidatedHeartbeat {
-            cell_type: CellType::CellTypeNone,
-            heartbeat: Heartbeat {
-                hotspot_key: PublicKeyBinary::from(Vec::new()),
-                timestamp,
-                lon: 0.0,
-                lat: 0.0,
-                operation_mode: false,
-                coverage_object: Some(coverage_object),
-                location_validation_timestamp: None,
-                location_source: LocationSource::Skyhook,
-                heartbeat_timestamp: timestamp,
-            },
-            validity: Default::default(),
-            location_trust_score_multiplier: dec!(1.0),
-            distance_to_asserted: None,
-            asserted_location: None,
-            device_type: None,
-            coverage_meta: None,
-        }
-    }
-
-    #[test]
-    fn ensure_first_seniority_causes_update() -> anyhow::Result<()> {
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
-        let seniority_action =
-            SeniorityUpdate::determine_update_action(&new_heartbeat, coverage_claim_time, None)?;
-
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Insert {
-                new_seniority: coverage_claim_time,
-                update_reason: NewCoverageClaimTime,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_seniority_updates_on_new_coverage_object() -> anyhow::Result<()> {
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-        let latest_seniority = Seniority {
-            uuid: coverage_object,
-            seniority_ts: coverage_claim_time,
-            last_heartbeat: coverage_claim_time,
-            inserted_at: coverage_claim_time,
-            update_reason: NewCoverageClaimTime as i32,
-        };
-
-        let new_coverage_object = Uuid::new_v4();
-        let new_coverage_claim_time = "2023-08-25 00:00:00.000000000 UTC".parse().unwrap();
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, new_coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            new_coverage_claim_time,
-            Some(latest_seniority.clone()),
-        )?;
-
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Insert {
-                new_seniority: new_coverage_claim_time,
-                update_reason: NewCoverageClaimTime,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_last_heartbeat_updates_on_same_coverage_object() -> anyhow::Result<()> {
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-        let latest_seniority = Seniority {
-            uuid: coverage_object,
-            seniority_ts: coverage_claim_time,
-            last_heartbeat: coverage_claim_time,
-            inserted_at: coverage_claim_time,
-            update_reason: NewCoverageClaimTime as i32,
-        };
-
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            coverage_claim_time,
-            Some(latest_seniority.clone()),
-        )?;
-
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Update {
-                curr_seniority: coverage_claim_time,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_seniority_updates_after_72_hours() -> anyhow::Result<()> {
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let last_heartbeat: DateTime<Utc> = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-        let latest_seniority = Seniority {
-            uuid: coverage_object,
-            seniority_ts: coverage_claim_time,
-            last_heartbeat,
-            inserted_at: last_heartbeat,
-            update_reason: NewCoverageClaimTime as i32,
-        };
-        let received_timestamp = "2023-08-26 00:00:01.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            coverage_claim_time,
-            Some(latest_seniority),
-        )?;
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Insert {
-                new_seniority: received_timestamp,
-                update_reason: HeartbeatNotSeen,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn ensure_seniority_updates_after_not_seen_if_in_future() -> anyhow::Result<()> {
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-        let latest_seniority = Seniority {
-            uuid: coverage_object,
-            seniority_ts: coverage_claim_time,
-            last_heartbeat: coverage_claim_time,
-            inserted_at: coverage_claim_time,
-            update_reason: HeartbeatNotSeen as i32,
-        };
-
-        let new_coverage_object = Uuid::new_v4();
-        let new_coverage_claim_time = "2023-08-25 00:00:00.000000000 UTC".parse().unwrap();
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, new_coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            new_coverage_claim_time,
-            Some(latest_seniority.clone()),
-        )?;
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Insert {
-                new_seniority: new_coverage_claim_time,
-                update_reason: NewCoverageClaimTime,
-            }
-        );
-
-        // If the new coverage claim time is in the past, we do not want to update
-        let new_coverage_claim_time = "2023-08-21 00:00:00.000000000 UTC".parse().unwrap();
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, new_coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            new_coverage_claim_time,
-            Some(latest_seniority),
-        )?;
-        assert_eq!(seniority_action.action, SeniorityUpdateAction::NoAction);
-        Ok(())
-    }
 
     #[test]
     fn wifi_heartbeat_cannot_contain_validation_timestamp() {

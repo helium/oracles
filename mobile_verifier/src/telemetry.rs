@@ -7,7 +7,6 @@ const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";
 const DATA_TRANSFER_REWARDS_SCALE: &str = "data_transfer_rewards_scale";
 const DATA_TRANSFER_TARGET_PRICE_PER_GB: &str = "data_transfer_target_price_per_gb";
 const DATA_TRANSFER_ACTUAL_PRICE_PER_GB: &str = "data_transfer_actual_price_per_gb";
-const POC_REWARDED_RADIOS: &str = "poc_rewarded_radios";
 const DATA_TRANSFER_REWARDED_GATEWAYS: &str = "data_transfer_rewarded_gateways";
 const MAPPERS_REWARDED: &str = "mappers_rewarded";
 
@@ -32,10 +31,6 @@ pub fn data_transfer_target_price_per_gb(price: f64) {
 
 pub fn data_transfer_actual_price_per_gb(price: f64) {
     metrics::gauge!(DATA_TRANSFER_ACTUAL_PRICE_PER_GB).set(price);
-}
-
-pub fn poc_rewarded_radios(count: u64) {
-    metrics::gauge!(POC_REWARDED_RADIOS).set(count as f64);
 }
 
 pub fn data_transfer_rewarded_gateways(count: u64) {
