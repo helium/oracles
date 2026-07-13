@@ -11,7 +11,6 @@ use tonic::{Response, Status};
 
 pub mod admin_service;
 pub mod authorization_service;
-pub mod carrier_service;
 pub mod cli;
 pub mod client;
 pub mod entity_service;

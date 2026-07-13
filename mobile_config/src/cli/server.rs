@@ -1,7 +1,6 @@
 use crate::{
     admin_service::AdminService,
     authorization_service::AuthorizationService,
-    carrier_service::CarrierService,
     entity_service::EntityService,
     gateway::{
         hotspot_change_stream::{self, HotspotChangeDaemon},
@@ -53,12 +52,6 @@ impl Server {
             metadata_pool.clone(),
             settings.signing_keypair.clone(),
         );
-        let carrier_svc = CarrierService::new(
-            key_cache.clone(),
-            pool.clone(),
-            metadata_pool.clone(),
-            settings.signing_keypair.clone(),
-        );
 
         let sub_dao_svc = SubDaoService::new(
             key_cache.clone(),
@@ -73,7 +66,6 @@ impl Server {
             gateway_svc,
             auth_svc,
             entity_svc,
-            carrier_svc,
             sub_dao_svc,
         );
 
