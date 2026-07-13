@@ -11,7 +11,6 @@ use std::{
 pub struct Buckets {
     pub ingest: file_store::BucketSettings,
     pub data_transfer: file_store::BucketSettings,
-    pub data_sets: file_store::BucketSettings,
     pub output: file_store::BucketSettings,
 }
 
@@ -39,12 +38,6 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
-    /// Directory in which new oracle boosting data sets are downloaded into
-    #[serde(default = "default_data_sets_directory")]
-    pub data_sets_directory: PathBuf,
-    /// Poll duration for new data sets
-    #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
-    pub data_sets_poll_duration: Duration,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
     /// Optional Trino query client. When configured, the reward pipeline reads
     /// data-transfer sessions from both Postgres and Trino each epoch and emits
@@ -79,16 +72,8 @@ fn default_reward_period_offset() -> Duration {
     humantime::parse_duration("60 minutes").unwrap()
 }
 
-fn default_data_sets_poll_duration() -> Duration {
-    humantime::parse_duration("30 minutes").unwrap()
-}
-
 fn default_cache() -> PathBuf {
     PathBuf::from("/opt/mobile-verifier/data")
-}
-
-fn default_data_sets_directory() -> PathBuf {
-    PathBuf::from("/opt/mobile-verifier/data_sets")
 }
 
 fn default_usa_and_mexico_geofence_regions() -> PathBuf {

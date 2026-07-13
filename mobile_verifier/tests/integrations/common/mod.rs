@@ -10,7 +10,7 @@ use helium_proto::services::poc_mobile::{
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
     RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
 };
-use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
+use hex_assignments::{Assignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
 use mobile_config::gateway::service::info::DeviceType;
 use mobile_config::{client::ClientError, sub_dao_epoch_reward_info::EpochRewardInfo};
@@ -21,10 +21,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use solana::Token;
 use sqlx::PgPool;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::sync::Arc;
 use tokio::{sync::RwLock, time::Timeout};
 use tonic::async_trait;
 
@@ -83,32 +80,6 @@ impl HexBoostDataAssignmentsExt for MockHexBoostDataAssignment {
 
     fn service_provider_override_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
         Ok(self.service_provider_override)
-    }
-}
-
-#[derive(Default)]
-pub struct MockHexBoostDataColl {
-    pub footfall: HashMap<Cell, Assignment>,
-    pub urbanized: HashMap<Cell, Assignment>,
-    pub landtype: HashMap<Cell, Assignment>,
-    pub service_provider_override: HashSet<Cell>,
-}
-
-impl HexBoostDataAssignmentsExt for MockHexBoostDataColl {
-    fn footfall_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
-        self.footfall.assignment(cell)
-    }
-
-    fn landtype_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
-        self.landtype.assignment(cell)
-    }
-
-    fn urbanization_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
-        self.urbanized.assignment(cell)
-    }
-
-    fn service_provider_override_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
-        self.service_provider_override.assignment(cell)
     }
 }
 

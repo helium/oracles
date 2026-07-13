@@ -5603,7 +5603,6 @@ name = "mobile-verifier"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-compression",
  "async-trait",
  "base64 0.21.7",
  "chrono",
@@ -5638,7 +5637,6 @@ dependencies = [
  "proptest",
  "prost",
  "rand 0.8.5",
- "regex",
  "retainer",
  "reward-scheduler",
  "rust_decimal",
@@ -5651,12 +5649,10 @@ dependencies = [
  "strum",
  "strum_macros",
  "task-manager",
- "tempfile",
  "thiserror 1.0.69",
  "tls-init",
  "tokio",
  "tokio-stream",
- "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",
