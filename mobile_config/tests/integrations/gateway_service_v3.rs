@@ -1,4 +1,7 @@
-use crate::common::{gateway_db::TestGatewayBuilder, make_keypair, spawn_gateway_service};
+use crate::common::{
+    gateway_db::{GatewayTestExt, TestGatewayBuilder},
+    make_keypair, spawn_gateway_service,
+};
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, Sign};

@@ -183,7 +183,7 @@ impl mobile_config::Gateway for GatewayService {
             .single()
             .ok_or(Status::invalid_argument("Invalid query_time argument"))?;
 
-        info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
+        info::get_by_address_as_of(&self.pool, &pubkey, &query_time)
             .await
             .map_err(|_| Status::internal("error fetching gateway info at timestamp"))?
             .map_or_else(

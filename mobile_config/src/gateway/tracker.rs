@@ -1,33 +1,32 @@
-//! Reconciliation pass that fixes `antenna`/`elevation` drift in the
-//! `gateways` table from `mobile_hotspot_infos.deployment_info`.
+//! Periodic job that refreshes the local `deployment_info` cache from the
+//! on-chain metadata DB.
 //!
-//! Everything else on a gateway row comes from the
-//! `chain_rewardable_entities` S3 change streams. The stream daemon does a
-//! best-effort `(antenna, elevation)` lookup at event time
-//! ([`crate::gateway::hotspot_change_stream`]); this tracker is the daily
-//! safety net for the case where the metadata DB hadn't caught up yet —
-//! and the only metadata-DB consumer that walks the full gateways table.
+//! The dbt chain tables supply every gateway field except WiFi
+//! `(antenna, elevation)`, which only exists in
+//! `mobile_hotspot_infos.deployment_info`. Rather than hit the metadata DB on
+//! every request, this tracker bulk-copies that pair into the local
+//! `deployment_info` table on an interval; gateway reads join against it.
 
-use crate::gateway::{db::Gateway, metadata_db};
-use chrono::Utc;
-use futures::stream::TryChunksError;
-use futures_util::TryStreamExt;
-use sqlx::{PgPool, Pool, Postgres};
+use crate::gateway::metadata_db::{self, DeploymentInfoRecord};
+use sqlx::{PgPool, Pool, Postgres, QueryBuilder};
 use std::time::{Duration, Instant};
 use task_manager::Periodic;
 
-const EXECUTE_DURATION_METRIC: &str =
-    concat!(env!("CARGO_PKG_NAME"), "-", "tracker-execute-duration");
+const EXECUTE_DURATION_METRIC: &str = concat!(
+    env!("CARGO_PKG_NAME"),
+    "-",
+    "deployment-info-tracker-execute-duration"
+);
 
-const BATCH_SIZE: usize = 500;
+const UPSERT_CHUNK: usize = 5000;
 
-pub struct Tracker {
+pub struct DeploymentInfoTracker {
     pool: PgPool,
     metadata: Pool<Postgres>,
     interval: Duration,
 }
 
-impl Periodic for Tracker {
+impl Periodic for DeploymentInfoTracker {
     type Error = anyhow::Error;
 
     fn interval(&self) -> Duration {
@@ -36,13 +35,13 @@ impl Periodic for Tracker {
 
     async fn tick(&mut self) -> anyhow::Result<()> {
         if let Err(err) = execute(&self.pool, &self.metadata).await {
-            tracing::error!(?err, "error reconciling antenna/elevation");
+            tracing::error!(?err, "error refreshing deployment_info");
         }
         Ok(())
     }
 }
 
-impl Tracker {
+impl DeploymentInfoTracker {
     pub fn new(pool: PgPool, metadata: Pool<Postgres>, interval: Duration) -> Self {
         Self {
             pool,
@@ -53,57 +52,46 @@ impl Tracker {
 }
 
 pub async fn execute(pool: &PgPool, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
-    tracing::info!("starting antenna/elevation reconciliation");
+    tracing::info!("starting deployment_info refresh");
     let start = Instant::now();
 
-    let updated = Gateway::stream_latest_per_address(pool)
-        .map_err(anyhow::Error::from)
-        .try_chunks(BATCH_SIZE)
-        .map_err(|TryChunksError(_, err)| err)
-        .try_fold(0u64, |total, batch| async move {
-            Ok(total + reconcile_batch(pool, metadata, batch).await?)
-        })
-        .await?;
+    let records = metadata_db::fetch_all_deployment_info(metadata).await?;
+    let mut upserted = 0u64;
+    for chunk in records.chunks(UPSERT_CHUNK) {
+        upserted += upsert_chunk(pool, chunk).await?;
+    }
 
     let elapsed = start.elapsed();
-    tracing::info!(?elapsed, updated, "reconciliation complete");
+    tracing::info!(?elapsed, upserted, "deployment_info refresh complete");
     metrics::histogram!(EXECUTE_DURATION_METRIC).record(elapsed);
     Ok(())
 }
 
-async fn reconcile_batch(
-    pool: &PgPool,
-    metadata: &Pool<Postgres>,
-    batch: Vec<Gateway>,
-) -> anyhow::Result<u64> {
-    let addresses: Vec<_> = batch.iter().map(|g| g.address.clone()).collect();
-    let lookups = metadata_db::fetch_antenna_and_elevation_batch(metadata, &addresses).await?;
-
-    let now = Utc::now();
-    let mut updated = 0u64;
-    for gw in batch {
-        let Some(&(meta_antenna, meta_elevation)) = lookups.get(&gw.address) else {
-            continue;
-        };
-
-        // Only adopt non-null metadata values; never regress to null. This
-        // avoids clobbering a value the stream daemon's per-event lookup
-        // already captured if the metadata DB later loses it.
-        let next_antenna = meta_antenna.or(gw.antenna);
-        let next_elevation = meta_elevation.or(gw.elevation);
-        if next_antenna == gw.antenna && next_elevation == gw.elevation {
-            continue;
-        }
-
-        let next = Gateway {
-            antenna: next_antenna,
-            elevation: next_elevation,
-            last_changed_at: now,
-            ..gw
-        };
-        next.insert(pool).await?;
-        updated += 1;
+async fn upsert_chunk(pool: &PgPool, chunk: &[DeploymentInfoRecord]) -> anyhow::Result<u64> {
+    if chunk.is_empty() {
+        return Ok(0);
     }
 
-    Ok(updated)
+    let mut qb = QueryBuilder::<Postgres>::new(
+        "INSERT INTO deployment_info (address, antenna, elevation, refreshed_at) ",
+    );
+
+    qb.push_values(chunk, |mut b, rec| {
+        b.push_bind(rec.address.to_string())
+            .push_bind(rec.antenna as i32)
+            .push_bind(rec.elevation as i32)
+            .push("now()");
+    });
+
+    qb.push(
+        r#"
+        ON CONFLICT (address) DO UPDATE SET
+            antenna = EXCLUDED.antenna,
+            elevation = EXCLUDED.elevation,
+            refreshed_at = now()
+        "#,
+    );
+
+    let res = qb.build().execute(pool).await?;
+    Ok(res.rows_affected())
 }

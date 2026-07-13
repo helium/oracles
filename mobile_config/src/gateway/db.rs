@@ -2,20 +2,56 @@ use crate::gateway::service::{info::DeviceType, info_v3::DeviceTypeV2};
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Postgres, QueryBuilder, Row};
-use std::convert::TryFrom;
+use sqlx::{postgres::PgRow, FromRow, PgExecutor, Row};
+use std::{convert::TryFrom, str::FromStr};
 use strum::EnumIter;
 
-// Postgres enum: gateway_type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, EnumIter)]
-#[sqlx(type_name = "gateway_type")]
+/// Builds a current-state read query with the given WHERE clause.
+/// `dbt.mobile_gateway_inventory` is already one row per gateway;
+/// `antenna`/`elevation` are joined from the local `deployment_info` cache
+/// (they are not carried by the dbt chain tables). Expands to a `&'static str`
+/// so the streaming queries can return borrowing the query safely.
+macro_rules! gateway_query {
+    ($where:literal) => {
+        concat!(
+            "SELECT ",
+            "g.address, g.device_type, g.created_at, g.updated_at, ",
+            "g.location_hex, g.azimuth, g.location_changed_at, g.location_asserts, ",
+            "g.owner, g.owner_changed_at, d.antenna, d.elevation ",
+            "FROM dbt.mobile_gateway_inventory g ",
+            "LEFT JOIN deployment_info d ON d.address = g.address ",
+            "WHERE ",
+            $where
+        )
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 pub enum GatewayType {
-    #[sqlx(rename = "wifiIndoor")]
     WifiIndoor,
-    #[sqlx(rename = "wifiOutdoor")]
     WifiOutdoor,
-    #[sqlx(rename = "wifiDataOnly")]
     WifiDataOnly,
+}
+
+impl GatewayType {
+    /// String form stored in `dbt.mobile_gateway_inventory.device_type` and
+    /// `dbt.mobile_hotspot_history.device_type` (screaming snake case).
+    pub fn as_dbt_str(&self) -> &'static str {
+        match self {
+            GatewayType::WifiIndoor => "WIFI_INDOOR",
+            GatewayType::WifiOutdoor => "WIFI_OUTDOOR",
+            GatewayType::WifiDataOnly => "WIFI_DATA_ONLY",
+        }
+    }
+
+    pub fn from_dbt_str(s: &str) -> Result<Self, GatewayTypeParseError> {
+        match s {
+            "WIFI_INDOOR" => Ok(GatewayType::WifiIndoor),
+            "WIFI_OUTDOOR" => Ok(GatewayType::WifiOutdoor),
+            "WIFI_DATA_ONLY" => Ok(GatewayType::WifiDataOnly),
+            _ => Err(GatewayTypeParseError),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -75,207 +111,37 @@ impl From<DeviceTypeV2> for GatewayType {
     }
 }
 
+/// Read model shared by all gateway RPCs. Current-state reads come from
+/// `dbt.mobile_gateway_inventory` (joined to `deployment_info`); the
+/// point-in-time `get_by_address_as_of` read comes from
+/// `dbt.mobile_hotspot_history`.
 #[derive(Debug, Clone)]
 pub struct Gateway {
     pub address: PublicKeyBinary,
     pub gateway_type: GatewayType,
-    // When the record was first created from metadata DB
+    // First time the entity was seen (min history timestamp).
     pub created_at: DateTime<Utc>,
-    // When record was inserted
-    pub inserted_at: DateTime<Utc>,
-    // When location or hash last changed
+    // Last time any observable field changed (dbt `updated_at`).
     pub last_changed_at: DateTime<Utc>,
-    pub hash: String,
     pub antenna: Option<u32>,
     pub elevation: Option<u32>,
     pub azimuth: Option<u32>,
     pub location: Option<u64>,
-    // When location last changed
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
     pub owner: Option<String>,
     pub owner_changed_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug)]
-pub struct LocationChangedAtUpdate {
-    pub address: PublicKeyBinary,
-    pub location_changed_at: DateTime<Utc>,
-    pub location: u64,
-}
-
 impl Gateway {
-    /// Stable change-detection hash over the fields both the periodic
-    /// metadata-DB tracker and the S3 change-stream consumers can populate.
-    /// Excludes fields the stream does not carry (is_active, is_full_hotspot,
-    /// dc_onboarding_fee_paid) so the two paths agree on whether anything
-    /// observable changed.
-    pub fn compute_hash(&self) -> String {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(
-            self.location
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 8])
-                .as_ref(),
-        );
-        hasher.update(
-            self.location_asserts
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-        hasher.update(self.gateway_type.to_string().as_ref());
-        hasher.update(
-            self.antenna
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-        hasher.update(
-            self.elevation
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-        hasher.update(
-            self.azimuth
-                .map(|l| l.to_le_bytes())
-                .unwrap_or([0_u8; 4])
-                .as_ref(),
-        );
-        hasher.finalize().to_string()
-    }
-
-    pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
-        if rows.is_empty() {
-            return Ok(0);
-        }
-        // See `Gateway::insert` for why we use `clock_timestamp()` rather
-        // than the column default `now()` for `inserted_at`.
-        let mut qb = QueryBuilder::<Postgres>::new(
-            "INSERT INTO gateways (
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            ) ",
-        );
-
-        qb.push_values(rows, |mut b, g| {
-            b.push_bind(g.address.as_ref())
-                .push_bind(g.gateway_type)
-                .push_bind(g.created_at)
-                .push("clock_timestamp()")
-                .push_bind(g.last_changed_at)
-                // Always derived from row contents — the struct's `hash`
-                // field is read-side only and ignored here.
-                .push_bind(g.compute_hash())
-                .push_bind(g.antenna.map(|v| v as i64))
-                .push_bind(g.elevation.map(|v| v as i64))
-                .push_bind(g.azimuth.map(|v| v as i64))
-                .push_bind(g.location.map(|v| v as i64))
-                .push_bind(g.location_changed_at)
-                .push_bind(g.location_asserts.map(|v| v as i64))
-                .push_bind(g.owner.as_deref())
-                .push_bind(g.owner_changed_at);
-        });
-
-        let res = qb.build().execute(pool).await?;
-        Ok(res.rows_affected())
-    }
-
-    pub async fn insert(&self, db: impl PgExecutor<'_>) -> anyhow::Result<()> {
-        // `inserted_at` is set via `clock_timestamp()` instead of the column
-        // default `now()` because `now()` returns the *transaction* start
-        // time — multiple inserts for the same gateway in one transaction
-        // (e.g. several change events in one S3 file) would collide on the
-        // composite PK `(address, inserted_at)`. `clock_timestamp()` returns
-        // the actual wall clock per call.
-        sqlx::query(
-            r#"
-            INSERT INTO gateways (
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            )
-            VALUES (
-                $1, $2, $3, clock_timestamp(), $4, $5, $6,
-                $7, $8, $9, $10, $11, $12, $13
-            )
-            "#,
-        )
-        .bind(self.address.as_ref())
-        .bind(self.gateway_type)
-        .bind(self.created_at)
-        .bind(self.last_changed_at)
-        // Always derived from row contents — the struct's `hash` field is
-        // read-side only and ignored here.
-        .bind(self.compute_hash())
-        .bind(self.antenna.map(|v| v as i64))
-        .bind(self.elevation.map(|v| v as i64))
-        .bind(self.azimuth.map(|v| v as i64))
-        .bind(self.location.map(|v| v as i64))
-        .bind(self.location_changed_at)
-        .bind(self.location_asserts.map(|v| v as i64))
-        .bind(self.owner.as_deref())
-        .bind(self.owner_changed_at)
-        .execute(db)
-        .await?;
-
-        Ok(())
-    }
-
     pub async fn get_by_address<'a>(
         db: impl PgExecutor<'a>,
         address: &PublicKeyBinary,
     ) -> anyhow::Result<Option<Self>> {
-        let gateway = sqlx::query_as::<_, Self>(
-            r#"
-            SELECT
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            FROM gateways
-            WHERE address = $1
-            ORDER BY inserted_at DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(address.as_ref())
-        .fetch_optional(db)
-        .await?;
+        let gateway = sqlx::query_as::<_, Self>(gateway_query!("g.address = $1"))
+            .bind(address.to_string())
+            .fetch_optional(db)
+            .await?;
 
         Ok(gateway)
     }
@@ -284,101 +150,59 @@ impl Gateway {
         db: impl PgExecutor<'a>,
         addresses: Vec<PublicKeyBinary>,
     ) -> anyhow::Result<Vec<Self>> {
-        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+        let addr_array: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
 
-        let rows = sqlx::query_as::<_, Self>(
-            r#"
-            SELECT DISTINCT ON (address)
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            FROM gateways
-            WHERE address = ANY($1)
-            ORDER BY address, inserted_at DESC
-            "#,
-        )
-        .bind(addr_array)
-        .fetch_all(db)
-        .await?;
+        let rows = sqlx::query_as::<_, Self>(gateway_query!("g.address = ANY($1)"))
+            .bind(addr_array)
+            .fetch_all(db)
+            .await?;
 
         Ok(rows)
     }
 
-    pub async fn get_by_address_and_inserted_at<'a>(
+    /// Point-in-time read: the latest history version at or before
+    /// `as_of`. Serves `info_at_timestamp`. `antenna`/`elevation` reflect the
+    /// current deployment (the metadata DB has no history for them), matching
+    /// prior behavior.
+    pub async fn get_by_address_as_of<'a>(
         db: impl PgExecutor<'a>,
         address: &PublicKeyBinary,
-        inserted_at_max: &DateTime<Utc>,
+        as_of: &DateTime<Utc>,
     ) -> anyhow::Result<Option<Self>> {
         let gateway = sqlx::query_as::<_, Self>(
             r#"
             SELECT
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            FROM gateways
-            WHERE address = $1
-            AND inserted_at <= $2
-            ORDER BY inserted_at DESC
+                h.pub_key           AS address,
+                h.device_type       AS device_type,
+                lt.created_at       AS created_at,
+                h."timestamp"       AS updated_at,
+                h.asserted_hex      AS location_hex,
+                h.azimuth           AS azimuth,
+                NULL::timestamptz   AS location_changed_at,
+                NULL::bigint        AS location_asserts,
+                NULL::text          AS owner,
+                NULL::timestamptz   AS owner_changed_at,
+                d.antenna           AS antenna,
+                d.elevation         AS elevation
+            FROM dbt.mobile_hotspot_history h
+            CROSS JOIN (
+                SELECT min("timestamp") AS created_at
+                FROM dbt.mobile_hotspot_history
+                WHERE pub_key = $1
+            ) lt
+            LEFT JOIN deployment_info d ON d.address = h.pub_key
+            WHERE h.pub_key = $1
+                AND h."timestamp" <= $2
+            ORDER BY h."timestamp" DESC, h.block DESC, h.record_index DESC
             LIMIT 1
             "#,
         )
-        .bind(address.as_ref())
-        .bind(inserted_at_max)
+        .bind(address.to_string())
+        .bind(as_of)
         .fetch_optional(db)
         .await?;
 
         Ok(gateway)
-    }
-
-    /// Stream the latest history row per gateway address. Used by the
-    /// reconciliation tracker to walk every known gateway exactly once.
-    pub fn stream_latest_per_address(
-        pool: &PgPool,
-    ) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
-        sqlx::query_as::<_, Self>(
-            r#"
-            SELECT DISTINCT ON (address)
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            FROM gateways
-            ORDER BY address, inserted_at DESC
-            "#,
-        )
-        .fetch(pool)
     }
 
     pub fn stream_by_addresses<'a>(
@@ -386,36 +210,14 @@ impl Gateway {
         addresses: Vec<PublicKeyBinary>,
         min_last_changed_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
-        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+        let addr_array: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
 
-        sqlx::query_as::<_, Self>(
-            r#"
-            SELECT DISTINCT ON (address)
-                address,
-                gateway_type,
-                created_at,
-                inserted_at,
-                last_changed_at,
-                hash,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts,
-                owner,
-                owner_changed_at
-            FROM gateways
-            WHERE address = ANY($1)
-                AND last_changed_at >= $2
-            ORDER BY address, inserted_at DESC
-            "#,
-        )
-        .bind(addr_array)
-        .bind(min_last_changed_at)
-        .fetch(db)
-        .map_err(anyhow::Error::from)
-        .filter_map(|res| async move { res.ok() })
+        sqlx::query_as::<_, Self>(gateway_query!("g.address = ANY($1) AND g.updated_at >= $2"))
+            .bind(addr_array)
+            .bind(min_last_changed_at)
+            .fetch(db)
+            .map_err(anyhow::Error::from)
+            .filter_map(|res| async move { res.ok() })
     }
 
     pub fn stream_by_types<'a>(
@@ -424,34 +226,17 @@ impl Gateway {
         min_last_changed_at: DateTime<Utc>,
         min_location_changed_at: Option<DateTime<Utc>>,
     ) -> impl Stream<Item = Self> + 'a {
-        sqlx::query_as::<_, Self>(
-            r#"
-                SELECT DISTINCT ON (address)
-                    address,
-                    gateway_type,
-                    created_at,
-                    inserted_at,
-                    last_changed_at,
-                    hash,
-                    antenna,
-                    elevation,
-                    azimuth,
-                    location,
-                    location_changed_at,
-                    location_asserts,
-                    owner,
-                    owner_changed_at
-                FROM gateways
-                WHERE gateway_type = ANY($1)
-                AND last_changed_at >= $2
-                AND (
-                    $3::timestamptz IS NULL
-                    OR (location IS NOT NULL AND location_changed_at >= $3)
-                )
-                ORDER BY address, inserted_at DESC
-            "#,
-        )
-        .bind(types)
+        let type_array: Vec<String> = types.iter().map(|t| t.as_dbt_str().to_string()).collect();
+
+        sqlx::query_as::<_, Self>(gateway_query!(
+            "g.device_type = ANY($1) \
+             AND g.updated_at >= $2 \
+             AND ( \
+                 $3::timestamptz IS NULL \
+                 OR (g.location_hex IS NOT NULL AND g.location_changed_at >= $3) \
+             )"
+        ))
+        .bind(type_array)
         .bind(min_last_changed_at)
         .bind(min_location_changed_at)
         .fetch(db)
@@ -466,36 +251,19 @@ impl Gateway {
         min_location_changed_at: Option<DateTime<Utc>>,
         min_owner_changed_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
-        sqlx::query_as::<_, Self>(
-            r#"
-                SELECT DISTINCT ON (address)
-                    address,
-                    gateway_type,
-                    created_at,
-                    inserted_at,
-                    last_changed_at,
-                    hash,
-                    antenna,
-                    elevation,
-                    azimuth,
-                    location,
-                    location_changed_at,
-                    location_asserts,
-                    owner,
-                    owner_changed_at
-                FROM gateways
-                WHERE gateway_type = ANY($1)
-                AND last_changed_at >= $2
-                AND (
-                    $3::timestamptz IS NULL
-                    OR (location IS NOT NULL AND location_changed_at >= $3)
-                )
-                AND owner_changed_at >= $4
-                AND owner IS NOT NULL
-                ORDER BY address, inserted_at DESC
-            "#,
-        )
-        .bind(types)
+        let type_array: Vec<String> = types.iter().map(|t| t.as_dbt_str().to_string()).collect();
+
+        sqlx::query_as::<_, Self>(gateway_query!(
+            "g.device_type = ANY($1) \
+             AND g.updated_at >= $2 \
+             AND ( \
+                 $3::timestamptz IS NULL \
+                 OR (g.location_hex IS NOT NULL AND g.location_changed_at >= $3) \
+             ) \
+             AND g.owner_changed_at >= $4 \
+             AND g.owner IS NOT NULL"
+        ))
+        .bind(type_array)
         .bind(min_last_changed_at)
         .bind(min_location_changed_at)
         .bind(min_owner_changed_at)
@@ -503,71 +271,113 @@ impl Gateway {
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
     }
+}
 
-    pub async fn update_bulk_location_changed_at(
-        pool: &PgPool,
-        updates: &[LocationChangedAtUpdate],
-    ) -> anyhow::Result<u64> {
-        if updates.is_empty() {
-            return Ok(0);
-        }
-
-        const MAX_ROWS: usize = 20000;
-        let mut total = 0;
-
-        for chunk in updates.chunks(MAX_ROWS) {
-            let mut qb = QueryBuilder::<Postgres>::new(
-                r#"
-                    UPDATE gateways AS g
-                    SET location_changed_at = v.location_changed_at
-                    FROM (
-                "#,
-            );
-
-            qb.push_values(chunk, |mut b, update| {
-                b.push_bind(update.address.as_ref())
-                    .push_bind(update.location_changed_at)
-                    .push_bind(update.location as i64);
-            });
-
-            qb.push(
-                r#"
-                    ) AS v(address, location_changed_at, location)
-                    WHERE g.address = v.address
-                        AND g.location_changed_at IS NULL
-                        AND g.location = v.location
-                "#,
-            );
-
-            let res = qb.build().execute(pool).await?;
-            total += res.rows_affected();
-        }
-
-        Ok(total)
+/// Parse an H3 cell from the stored hex string. `None` for an empty/`0x`-only
+/// or unparseable value.
+fn parse_location_hex(hex: &str) -> Option<u64> {
+    let trimmed = hex.trim_start_matches("0x");
+    if trimmed.is_empty() {
+        return None;
     }
+    u64::from_str_radix(trimmed, 16).ok()
 }
 
 impl FromRow<'_, PgRow> for Gateway {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        // helpers to map Option<i64> -> Option<u32/u64>
         let to_u32 = |v: Option<i64>| -> Option<u32> { v.map(|x| x as u32) };
-        let to_u64 = |v: Option<i64>| -> Option<u64> { v.map(|x| x as u64) };
+
+        let address = PublicKeyBinary::from_str(&row.try_get::<String, _>("address")?)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let gateway_type = GatewayType::from_dbt_str(&row.try_get::<String, _>("device_type")?)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let location = row
+            .try_get::<Option<String>, _>("location_hex")?
+            .as_deref()
+            .and_then(parse_location_hex);
 
         Ok(Self {
-            address: PublicKeyBinary::from(row.try_get::<Vec<u8>, _>("address")?),
-            gateway_type: row.try_get("gateway_type")?,
+            address,
+            gateway_type,
             created_at: row.try_get("created_at")?,
-            inserted_at: row.try_get("inserted_at")?,
-            last_changed_at: row.try_get("last_changed_at")?,
-            hash: row.try_get("hash")?,
-            antenna: to_u32(row.try_get("antenna")?),
-            elevation: to_u32(row.try_get("elevation")?),
-            azimuth: to_u32(row.try_get("azimuth")?),
-            location: to_u64(row.try_get("location")?),
+            last_changed_at: row.try_get("updated_at")?,
+            antenna: to_u32(row.try_get::<Option<i32>, _>("antenna")?.map(|v| v as i64)),
+            elevation: to_u32(
+                row.try_get::<Option<i32>, _>("elevation")?
+                    .map(|v| v as i64),
+            ),
+            azimuth: to_u32(row.try_get::<Option<i32>, _>("azimuth")?.map(|v| v as i64)),
+            location,
             location_changed_at: row.try_get("location_changed_at")?,
             location_asserts: to_u32(row.try_get("location_asserts")?),
             owner: row.try_get("owner")?,
             owner_changed_at: row.try_get("owner_changed_at")?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_location_hex_plain() {
+        assert_eq!(
+            parse_location_hex("8528347ffffffff"),
+            Some(0x8528347ffffffff)
+        );
+    }
+
+    #[test]
+    fn parse_location_hex_with_0x_prefix() {
+        assert_eq!(
+            parse_location_hex("0x8528347ffffffff"),
+            Some(0x8528347ffffffff)
+        );
+    }
+
+    #[test]
+    fn parse_location_hex_rejects_empty() {
+        assert_eq!(parse_location_hex(""), None);
+        assert_eq!(parse_location_hex("0x"), None);
+    }
+
+    #[test]
+    fn parse_location_hex_rejects_malformed() {
+        assert_eq!(parse_location_hex("not-hex"), None);
+    }
+
+    #[test]
+    fn gateway_type_dbt_str_round_trip() {
+        for gt in [
+            GatewayType::WifiIndoor,
+            GatewayType::WifiOutdoor,
+            GatewayType::WifiDataOnly,
+        ] {
+            assert_eq!(GatewayType::from_dbt_str(gt.as_dbt_str()).unwrap(), gt);
+        }
+    }
+
+    #[test]
+    fn gateway_type_from_dbt_str_matches_table_values() {
+        assert_eq!(
+            GatewayType::from_dbt_str("WIFI_INDOOR").unwrap(),
+            GatewayType::WifiIndoor
+        );
+        assert_eq!(
+            GatewayType::from_dbt_str("WIFI_OUTDOOR").unwrap(),
+            GatewayType::WifiOutdoor
+        );
+        assert_eq!(
+            GatewayType::from_dbt_str("WIFI_DATA_ONLY").unwrap(),
+            GatewayType::WifiDataOnly
+        );
+    }
+
+    #[test]
+    fn gateway_type_from_dbt_str_rejects_unknown() {
+        // CBRS is excluded from the inventory; lowercase legacy forms must not match.
+        assert!(GatewayType::from_dbt_str("CBRS").is_err());
+        assert!(GatewayType::from_dbt_str("wifiIndoor").is_err());
     }
 }

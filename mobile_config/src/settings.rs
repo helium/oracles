@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use helium_crypto::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -29,29 +28,17 @@ pub struct Settings {
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data
     pub metadata: db_store::Settings,
-    /// S3 bucket holding chain_rewardable_entities change reports
-    /// (mobile_hotspot_change_report and entity_ownership_change_report).
-    pub ingest: file_store::BucketSettings,
-    /// Cold-start timestamp for both change-report pollers. Once
-    /// `files_processed` is populated, that table drives the offset
-    /// and this field is only consulted on a fresh DB.
-    #[serde(default = "default_gateway_stream_start_after")]
-    pub gateway_stream_start_after: DateTime<Utc>,
-    #[serde(with = "humantime_serde", default = "default_gateway_tracker_interval")]
-    pub gateway_tracker_interval: std::time::Duration,
+    /// How often DeploymentInfoTracker refreshes the local `deployment_info`
+    /// cache (antenna/elevation) from the metadata DB. Deployment info changes
+    /// rarely, so this can be infrequent.
+    #[serde(with = "humantime_serde", default = "default_deployment_info_interval")]
+    pub deployment_info_interval: std::time::Duration,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
 }
 
-fn default_gateway_tracker_interval() -> std::time::Duration {
-    // Tracker runs as a daily reconciliation pass; the per-event S3 change
-    // streams in mobile_config/src/gateway/{hotspot,ownership}_change_stream.rs
-    // are the primary update path.
-    humantime::parse_duration("1 day").unwrap()
-}
-
-fn default_gateway_stream_start_after() -> DateTime<Utc> {
-    DateTime::UNIX_EPOCH
+fn default_deployment_info_interval() -> std::time::Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
 fn default_log() -> String {
