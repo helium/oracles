@@ -1,7 +1,9 @@
 -- Cut the gateway service over to the dbt-maintained chain tables
 -- (dbt.mobile_gateway_inventory + dbt.mobile_hotspot_history). The S3
--- change-report ingestion and the local `gateways` history table are retired.
-DROP TABLE IF EXISTS gateways;
+-- change-report ingestion and the local `gateways` history table are retired
+-- in the code, but the `gateways` table is intentionally left in place so we
+-- can roll back to the old code path without data loss. A follow-up migration
+-- can drop it once the dbt-backed path has soaked.
 
 -- Local cache of WiFi deployment info (antenna, elevation), pulled periodically
 -- from the on-chain metadata DB by DeploymentInfoTracker. These two fields are
