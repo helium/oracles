@@ -5559,7 +5559,6 @@ name = "mobile-packet-verifier"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chrono",
  "clap",
  "config",
@@ -5577,10 +5576,10 @@ dependencies = [
  "http-serde",
  "humantime-serde",
  "metrics",
- "mobile-config",
  "poc-metrics",
  "prost",
  "reqwest 0.13.1",
+ "retainer",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5595,6 +5594,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "trino-client",
  "trino-rust-client",
 ]
 

@@ -4,7 +4,6 @@ use file_store_oracles::mobile_ban::{
     VerifiedBanIngestReportStatus, VerifiedBanReport,
 };
 use helium_crypto::PublicKeyBinary;
-use mobile_config::EpochInfo;
 use mobile_packet_verifier::banning::{get_banned_radios, handle_verified_ban_report};
 use sqlx::PgPool;
 
@@ -12,7 +11,6 @@ use sqlx::PgPool;
 async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
     const EPOCH_LENGTH: i64 = 60 * 60 * 24;
     let epoch = chrono::Utc::now().timestamp() / EPOCH_LENGTH;
-    let epoch_info = EpochInfo::from(epoch as u64);
 
     let banned_before = PublicKeyBinary::from(vec![1]); // banned
     let banned_on_start = PublicKeyBinary::from(vec![2]); // banned
@@ -56,8 +54,9 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
     fn hours(h: i64) -> Duration {
         Duration::hours(h)
     }
-    let start = epoch_info.period.start;
-    let end = epoch_info.period.end;
+    // Inlined from the former `mobile_config::EpochInfo`: epoch N spans day N.
+    let start = DateTime::<Utc>::UNIX_EPOCH + Duration::days(epoch);
+    let end = start + Duration::days(1);
 
     #[rustfmt::skip]
     let reports = vec![

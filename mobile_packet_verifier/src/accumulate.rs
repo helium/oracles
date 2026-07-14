@@ -14,11 +14,12 @@ use sqlx::{Postgres, Transaction};
 use crate::{
     banning::BannedRadios,
     bytes_to_dc, event_ids,
+    gateway::GatewayResolver,
     iceberg::{
         invalid_session::IcebergInvalidDataTransferSession, session::IcebergDataTransferSession,
     },
     pending_burns::{self, DataTransferSession},
-    MobileConfigResolverExt,
+    routing::RoutingKeys,
 };
 
 #[derive(Default)]
@@ -30,7 +31,8 @@ pub struct AccumulatedSessions {
 }
 
 pub async fn accumulate_sessions(
-    mobile_config: &impl MobileConfigResolverExt,
+    resolver: &GatewayResolver,
+    routing_keys: &RoutingKeys,
     banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
@@ -48,7 +50,7 @@ pub async fn accumulate_sessions(
         }
 
         let report_validity = report
-            .report_status(txn, mobile_config, &banned_radios)
+            .report_status(txn, resolver, routing_keys, &banned_radios)
             .await?;
         result
             .proto_sessions
@@ -100,7 +102,8 @@ trait DataTransferIngestReportExt {
     async fn report_status(
         &self,
         txn: &mut Transaction<'_, Postgres>,
-        mobile_config: &impl MobileConfigResolverExt,
+        resolver: &GatewayResolver,
+        routing_keys: &RoutingKeys,
         banned_radios: &BannedRadios,
     ) -> anyhow::Result<ReportStatus>;
 
@@ -150,7 +153,8 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
     async fn report_status(
         &self,
         txn: &mut Transaction<'_, Postgres>,
-        mobile_config: &impl MobileConfigResolverExt,
+        resolver: &GatewayResolver,
+        routing_keys: &RoutingKeys,
         banned_radios: &BannedRadios,
     ) -> anyhow::Result<ReportStatus> {
         if self.is_duplicate(txn).await? {
@@ -164,14 +168,14 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
             return Ok(ReportStatus::Banned);
         }
 
-        if !mobile_config
+        if !resolver
             .is_gateway_known(gw_pub_key, &self.received_timestamp)
             .await
         {
             return Ok(ReportStatus::InvalidGatewayKey);
         }
 
-        if !mobile_config.is_routing_key_known(routing_pub_key).await {
+        if !routing_keys.contains(routing_pub_key) {
             return Ok(ReportStatus::InvalidRoutingKey);
         }
 

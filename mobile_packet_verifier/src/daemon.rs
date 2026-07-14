@@ -3,10 +3,11 @@ use crate::{
     banning::{self, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
+    gateway::GatewayResolver,
     iceberg::{self, DataTransferWriter, InvalidDataTransferWriter},
     pending_burns,
+    routing::RoutingKeys,
     settings::Settings,
-    MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -46,18 +47,17 @@ pub enum DaemonEvent {
     ReportHandle,
 }
 
-pub struct Daemon<S, MCR> {
+pub struct Daemon<S> {
     pool: Pool<Postgres>,
     burner: Burner<S>,
     burn_period: Duration,
     min_burn_period: Duration,
     initial_burn_delay: Duration,
-    mobile_config_resolver: MCR,
     ingest_reports: IngestReports,
     event_tx: tokio::sync::broadcast::Sender<DaemonEvent>,
 }
 
-impl<S, MCR> Daemon<S, MCR> {
+impl<S> Daemon<S> {
     pub fn new(
         pool: Pool<Postgres>,
         burn_period: Duration,
@@ -65,7 +65,6 @@ impl<S, MCR> Daemon<S, MCR> {
         initial_burn_delay: Duration,
         ingest_reports: IngestReports,
         burner: Burner<S>,
-        mobile_config_resolver: MCR,
     ) -> Self {
         let (event_tx, _event_rx) = tokio::sync::broadcast::channel(100);
         Self {
@@ -74,27 +73,24 @@ impl<S, MCR> Daemon<S, MCR> {
             burn_period,
             min_burn_period,
             initial_burn_delay,
-            mobile_config_resolver,
             ingest_reports,
             event_tx,
         }
     }
 }
 
-impl<S, MCR> ManagedTask for Daemon<S, MCR>
+impl<S> ManagedTask for Daemon<S>
 where
     S: SolanaNetwork,
-    MCR: MobileConfigResolverExt + 'static,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
 
-impl<S, MCR> Daemon<S, MCR>
+impl<S> Daemon<S>
 where
     S: SolanaNetwork,
-    MCR: MobileConfigResolverExt,
 {
     pub fn event_rx(&self) -> tokio::sync::broadcast::Receiver<DaemonEvent> {
         self.event_tx.subscribe()
@@ -120,7 +116,7 @@ where
                     }
                 }
                 file = self.ingest_reports.recv() => {
-                    self.ingest_reports.handle(file, &self.mobile_config_resolver).await?;
+                    self.ingest_reports.handle(file).await?;
                     let _ = self.event_tx.send(DaemonEvent::ReportHandle);
                 }
             }
@@ -135,14 +131,22 @@ pub async fn handle_data_transfer_session_file(
     invalid_iceberg_writer: Option<&iceberg::InvalidDataTransferWriter>,
     write_id: &str,
     banned_radios: BannedRadios,
-    mobile_config: &impl MobileConfigResolverExt,
+    resolver: &GatewayResolver,
+    routing_keys: &RoutingKeys,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
-    let sessions = accumulate_sessions(mobile_config, banned_radios, txn, reports, curr_file_ts)
-        .await
-        .context("accumulating sessions")?;
+    let sessions = accumulate_sessions(
+        resolver,
+        routing_keys,
+        banned_radios,
+        txn,
+        reports,
+        curr_file_ts,
+    )
+    .await
+    .context("accumulating sessions")?;
 
     let AccumulatedSessions {
         iceberg_sessions,
@@ -172,18 +176,21 @@ pub async fn handle_data_transfer_session_file(
 
 /// Handles the real-time `DataTransferSessionIngestReport` stream for the daemon.
 ///
-/// The Daemon holds one of these, calls `recv()` in its `select!`, and forwards the
-/// result to `handle(file, mobile_config)`. The channel is never expected to close
-/// while the daemon is running — a dropped sender is an error.
+/// The Daemon holds one of these, calls `recv()` in its `select!`, and forwards
+/// each file to `handle`. The channel is never expected to close while the daemon
+/// is running — a dropped sender is an error.
 ///
-/// The `mobile_config_resolver` is intentionally **not** stored here; the Daemon
-/// passes `&self.mobile_config_resolver` at each call site so ownership stays in one place.
+/// Holds the inputs used to verify each report: the `gateway_resolver` (whose
+/// snapshot is refreshed by a separate `GatewaySnapshotRefresher` task on the
+/// top-level `TaskManager`) and the static `routing_keys` allow-list.
 pub struct IngestReports {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     iceberg_writer: Option<DataTransferWriter>,
     invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
+    gateway_resolver: GatewayResolver,
+    routing_keys: RoutingKeys,
 }
 
 impl IngestReports {
@@ -193,6 +200,8 @@ impl IngestReports {
         verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
         iceberg_writer: Option<DataTransferWriter>,
         invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
+        gateway_resolver: GatewayResolver,
+        routing_keys: RoutingKeys,
     ) -> Self {
         Self {
             pool,
@@ -200,6 +209,8 @@ impl IngestReports {
             verified_sink,
             iceberg_writer,
             invalid_iceberg_writer,
+            gateway_resolver,
+            routing_keys,
         }
     }
 
@@ -214,18 +225,16 @@ impl IngestReports {
     pub async fn handle(
         &self,
         file: Option<FileInfoStream<DataTransferSessionIngestReport>>,
-        mobile_config: &impl MobileConfigResolverExt,
     ) -> anyhow::Result<()> {
         let Some(file_info_stream) = file else {
             anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
         };
-        self.handle_file(file_info_stream, mobile_config).await
+        self.handle_file(file_info_stream).await
     }
 
     async fn handle_file(
         &self,
         file: FileInfoStream<DataTransferSessionIngestReport>,
-        mobile_config: &impl MobileConfigResolverExt,
     ) -> anyhow::Result<()> {
         tracing::info!("Verifying file: {}", file.file_info);
         let ts = file.file_info.timestamp;
@@ -241,7 +250,8 @@ impl IngestReports {
             self.invalid_iceberg_writer.as_ref(),
             &write_id,
             banned_radios,
-            mobile_config,
+            &self.gateway_resolver,
+            &self.routing_keys,
             &self.verified_sink,
             ts,
             reports,
@@ -329,7 +339,12 @@ impl Cmd {
             .create()
             .await?;
 
-        let resolver = MobileConfigClients::new(&settings.config_client)?;
+        let gw_resolver = GatewayResolver::new(
+            trino_client::Client::from_settings(&settings.trino)?,
+            settings.gateway_refresh_interval,
+        )
+        .await;
+        let gw_refresher = gw_resolver.refresher();
 
         let ingest_reports = IngestReports::new(
             pool.clone(),
@@ -337,6 +352,8 @@ impl Cmd {
             verified_sessions,
             session_writer,
             invalid_session_writer,
+            gw_resolver,
+            settings.routing_keys()?,
         );
 
         let daemon = Daemon::new(
@@ -346,7 +363,6 @@ impl Cmd {
             Duration::from_secs(60),
             ingest_reports,
             burner,
-            resolver,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
@@ -359,6 +375,7 @@ impl Cmd {
             .add_task(reports_server)
             .add_task(banning)
             .add_task(task_manager::periodic(event_id_purger))
+            .add_task(task_manager::periodic(gw_refresher))
             .add_task(daemon)
             .build()
             .start()

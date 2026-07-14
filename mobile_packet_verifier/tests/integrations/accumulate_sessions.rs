@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::file_sink::{FileSinkClient, MessageReceiver};
 use file_store_oracles::{
     mobile_ban::{
@@ -8,15 +8,17 @@ use file_store_oracles::{
     mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
 };
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
     banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
+    routing::RoutingKeys,
 };
 use sqlx::PgPool;
 
-use crate::common::{self, TestChannelExt, TestMobileConfig};
+use crate::common::{self, hotspot_inventory::MobileHotspotInventory, TestChannelExt};
 
 #[sqlx::test]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
@@ -26,7 +28,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
         .await?;
 
     let mut report_rx =
-        run_accumulate_sessions(&pool, vec![], TestMobileConfig::all_valid(), Some(writer)).await?;
+        run_accumulate_sessions(&pool, &harness, vec![], vec![], vec![], Some(writer)).await?;
 
     report_rx.assert_is_empty()?;
 
@@ -88,9 +90,15 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
         },
     ];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     report_rx.assert_num_msgs(2)?;
 
@@ -110,10 +118,12 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
 
+    let key = PublicKeyBinary::from(vec![0]);
+
     let reports = vec![DataTransferSessionIngestReport {
         report: DataTransferSessionReq {
             data_transfer_usage: DataTransferEvent {
-                pub_key: vec![0].into(),
+                pub_key: key.clone(),
                 upload_bytes: 1,
                 download_bytes: 2,
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -123,7 +133,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
                 signature: vec![],
             },
             rewardable_bytes: 0,
-            pub_key: vec![0].into(),
+            pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
             sampling: false,
@@ -131,9 +141,15 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
         received_timestamp: Utc::now(),
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     report_rx.assert_not_empty()?;
 
@@ -150,16 +166,18 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
 
+    let key = PublicKeyBinary::from(vec![0]);
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
             rewardable_bytes: 1_000,
-            pub_key: PublicKeyBinary::from(vec![0]),
+            pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
             sampling: false,
             data_transfer_usage: DataTransferEvent {
-                pub_key: PublicKeyBinary::from(vec![0]),
+                pub_key: key.clone(),
                 upload_bytes: 1_000,
                 download_bytes: 1_000,
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -171,9 +189,15 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     report_rx.assert_not_empty()?;
 
@@ -212,9 +236,10 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
+    // CBRS reports are dropped before the gateway/routing checks run, so no
+    // gateway needs to be seeded and no routing key allow-listed.
     let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+        run_accumulate_sessions(&pool, &harness, reports, vec![], vec![], Some(writer)).await?;
 
     // record not written to file or db
     report_rx.assert_is_empty()?;
@@ -232,16 +257,18 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
 
+    let key = PublicKeyBinary::from(vec![0]);
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
             rewardable_bytes: 1_000,
-            pub_key: PublicKeyBinary::from(vec![0]),
+            pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
             sampling: false,
             data_transfer_usage: DataTransferEvent {
-                pub_key: PublicKeyBinary::from(vec![0]),
+                pub_key: key.clone(),
                 upload_bytes: 1_000,
                 download_bytes: 1_000,
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -253,10 +280,14 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
+    // Gateway is NOT seeded into the inventory -> InvalidGatewayKey. The routing
+    // key is allow-listed so the gateway check is unambiguously the cause.
     let mut report_rx = run_accumulate_sessions(
         &pool,
+        &harness,
         reports,
-        TestMobileConfig::valid_gateways(vec![]),
+        vec![],
+        vec![key.clone()],
         Some(writer),
     )
     .await?;
@@ -277,16 +308,18 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
 
+    let key = PublicKeyBinary::from(vec![0]);
+
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
         report: DataTransferSessionReq {
             rewardable_bytes: 1_000,
-            pub_key: PublicKeyBinary::from(vec![0]),
+            pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
             sampling: false,
             data_transfer_usage: DataTransferEvent {
-                pub_key: PublicKeyBinary::from(vec![0]),
+                pub_key: key.clone(),
                 upload_bytes: 1_000,
                 download_bytes: 1_000,
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -298,10 +331,14 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
+    // Gateway is seeded (known) but the routing key is NOT allow-listed ->
+    // InvalidRoutingKey.
     let mut report_rx = run_accumulate_sessions(
         &pool,
+        &harness,
         reports,
-        TestMobileConfig::valid_routing_keys(vec![]),
+        vec![key.clone()],
+        vec![],
         Some(writer),
     )
     .await?;
@@ -346,11 +383,18 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key, BanType::All).await?;
+    ban_hotspot(&pool, key.clone(), BanType::All).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    // Otherwise-valid gateway/routing so the ban is the reason for rejection.
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -392,11 +436,17 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key, BanType::Data).await?;
+    ban_hotspot(&pool, key.clone(), BanType::Data).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     // record written to file, but not db
     report_rx.assert_not_empty()?;
@@ -438,11 +488,19 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key, BanType::Poc).await?;
+    ban_hotspot(&pool, key.clone(), BanType::Poc).await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    // A POC ban doesn't block data transfer, so the gateway/routing must be
+    // valid for the session to be burned.
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
@@ -509,9 +567,15 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     )
     .await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid(), Some(writer))
-            .await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![key.clone()],
+        vec![key.clone()],
+        Some(writer),
+    )
+    .await?;
 
     // record written to file and db
     report_rx.assert_not_empty()?;
@@ -541,6 +605,19 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
 
     let reports = vec![make_report(&valid_gateway), make_report(&invalid_gateway)];
 
+    // Only `valid_gateway` is seeded into the inventory (and allow-listed as a
+    // routing key); the other gateway is unknown and gets rejected.
+    common::hotspot_inventory::seed(
+        &harness,
+        vec![MobileHotspotInventory::known(
+            &valid_gateway,
+            Utc::now() - Duration::hours(1),
+        )],
+    )
+    .await?;
+    let resolver = common::gateway_resolver(&harness).await?;
+    let routing_keys: RoutingKeys = [valid_gateway.clone()].into_iter().collect();
+
     let mut txn = pool.begin().await?;
     let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
     let verified_sink = FileSinkClient::new(verified_tx, "test");
@@ -552,8 +629,8 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
         Some(&invalid_session_writer),
         "test_write_id",
         banned_radios,
-        // Only `valid_gateway` is a known gateway; the other is rejected.
-        &TestMobileConfig::valid_gateways(vec![valid_gateway.clone()]),
+        &resolver,
+        &routing_keys,
         &verified_sink,
         Utc::now(),
         futures::stream::iter(reports),
@@ -579,9 +656,121 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
     Ok(())
 }
 
+/// A gateway written to the inventory *after* the resolver built its snapshot is
+/// not in that snapshot, so `is_gateway_known` must fall back to the per-pubkey
+/// Trino query — which finds it and marks the session valid.
+#[sqlx::test]
+async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
+    let gateway = PublicKeyBinary::from(vec![1]);
+
+    // Build the resolver against an empty inventory: `gateway` is NOT in the snapshot.
+    let resolver = common::gateway_resolver(&harness).await?;
+    let routing_keys: RoutingKeys = [gateway.clone()].into_iter().collect();
+
+    // Add the gateway to the inventory only now, first seen an hour ago.
+    common::hotspot_inventory::seed(
+        &harness,
+        vec![MobileHotspotInventory::known(
+            &gateway,
+            Utc::now() - Duration::hours(1),
+        )],
+    )
+    .await?;
+
+    let mut txn = pool.begin().await?;
+    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
+    let verified_sink = FileSinkClient::new(verified_tx, "test");
+    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    handle_data_transfer_session_file(
+        &mut txn,
+        Some(&session_writer),
+        None,
+        "test_write_id",
+        banned_radios,
+        &resolver,
+        &routing_keys,
+        &verified_sink,
+        Utc::now(),
+        futures::stream::iter(vec![make_report(&gateway)]),
+    )
+    .await?;
+    txn.commit().await?;
+
+    // Valid only if the fallback query found it — the snapshot was empty.
+    let pending = pending_burns::get_all(&pool).await?;
+    assert_eq!(pending.len(), 1);
+
+    Ok(())
+}
+
+/// The fallback filters on `inserted_at` (stable first-seen), not
+/// `received_timestamp` (which advances on reassertion). A gateway first seen
+/// before a report — but whose latest assertion was ingested after it — is still
+/// known as of the report time. Guards against reverting to `received_timestamp`.
+#[sqlx::test]
+async fn fallback_filters_on_inserted_at_not_received_timestamp(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+
+    let gateway = PublicKeyBinary::from(vec![1]);
+    let report_time = Utc::now() - Duration::hours(1);
+
+    // Not in the startup snapshot.
+    let resolver = common::gateway_resolver(&harness).await?;
+    let routing_keys: RoutingKeys = [gateway.clone()].into_iter().collect();
+
+    // First seen before the report, but the latest assertion was ingested after
+    // it (as if the gateway reasserted since).
+    let mut row = MobileHotspotInventory::known(&gateway, report_time - Duration::hours(1));
+    row.received_timestamp = (report_time + Duration::hours(1)).into();
+    common::hotspot_inventory::seed(&harness, vec![row]).await?;
+
+    let mut txn = pool.begin().await?;
+    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
+    let verified_sink = FileSinkClient::new(verified_tx, "test");
+    let banned_radios = banning::get_banned_radios(&mut txn, report_time).await?;
+    handle_data_transfer_session_file(
+        &mut txn,
+        Some(&session_writer),
+        None,
+        "test_write_id",
+        banned_radios,
+        &resolver,
+        &routing_keys,
+        &verified_sink,
+        report_time,
+        futures::stream::iter(vec![make_report_at(&gateway, report_time)]),
+    )
+    .await?;
+    txn.commit().await?;
+
+    // Known via `inserted_at` (report_time - 1h ≤ report_time); it would be
+    // rejected if the query used `received_timestamp` (report_time + 1h).
+    let pending = pending_burns::get_all(&pool).await?;
+    assert_eq!(pending.len(), 1);
+
+    Ok(())
+}
+
 fn make_report(gateway: &PublicKeyBinary) -> DataTransferSessionIngestReport {
+    make_report_at(gateway, Utc::now())
+}
+
+fn make_report_at(
+    gateway: &PublicKeyBinary,
+    received_timestamp: DateTime<Utc>,
+) -> DataTransferSessionIngestReport {
     DataTransferSessionIngestReport {
-        received_timestamp: Utc::now(),
+        received_timestamp,
         report: DataTransferSessionReq {
             rewardable_bytes: 1_000,
             pub_key: gateway.clone(),
@@ -595,19 +784,37 @@ fn make_report(gateway: &PublicKeyBinary) -> DataTransferSessionIngestReport {
                 radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
                 event_id: format!("event-{gateway}"),
                 payer: PublicKeyBinary::from(vec![0]),
-                timestamp: Utc::now(),
+                timestamp: received_timestamp,
                 signature: vec![],
             },
         },
     }
 }
 
+/// Seed the given `known_gateways` into the per-test inventory table, build a
+/// real [`GatewayResolver`](mobile_packet_verifier::GatewayResolver) backed by
+/// the harness Trino, and run the reports through
+/// `handle_data_transfer_session_file`.
 async fn run_accumulate_sessions(
     pool: &PgPool,
+    harness: &IcebergTestHarness,
     reports: Vec<DataTransferSessionIngestReport>,
-    mobile_config: TestMobileConfig,
+    known_gateways: Vec<PublicKeyBinary>,
+    routing_keys: Vec<PublicKeyBinary>,
     iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+    // Mark each known gateway as present on-chain, comfortably before the
+    // reports' received timestamps so the `received_timestamp <=` check passes.
+    let seed_ts = Utc::now() - Duration::hours(1);
+    let rows = known_gateways
+        .iter()
+        .map(|gw| MobileHotspotInventory::known(gw, seed_ts))
+        .collect();
+    common::hotspot_inventory::seed(harness, rows).await?;
+
+    let resolver = common::gateway_resolver(harness).await?;
+    let routing_keys: RoutingKeys = routing_keys.into_iter().collect();
+
     let mut txn = pool.begin().await?;
 
     let ts = Utc::now();
@@ -623,7 +830,8 @@ async fn run_accumulate_sessions(
         None,
         "test_write_id",
         banned_radios,
-        &mobile_config,
+        &resolver,
+        &routing_keys,
         &verified_sessions,
         ts,
         futures::stream::iter(reports),

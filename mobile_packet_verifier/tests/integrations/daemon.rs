@@ -26,12 +26,16 @@ use mobile_packet_verifier::{
     daemon::{Daemon, IngestReports},
     iceberg,
     pending_burns::{self, DataTransferSession},
+    routing::RoutingKeys,
 };
 use solana::{self, burn::TestSolanaClientMap};
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 
-use crate::{common, daemon::trigger::TriggerExt};
+use crate::{
+    common::{self, hotspot_inventory::MobileHotspotInventory},
+    daemon::trigger::TriggerExt,
+};
 
 const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Burn period much longer than the test timeout — ensures burn never fires during tests.
@@ -213,12 +217,25 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         .create()
         .await?;
 
+    // Seed the report's gateway (vec![1]) as known, as of before the report time.
+    common::hotspot_inventory::seed(
+        &harness,
+        vec![MobileHotspotInventory::known(
+            &PublicKeyBinary::from(vec![1]),
+            file_time - Duration::hours(1),
+        )],
+    )
+    .await?;
+    let resolver = common::gateway_resolver(&harness).await?;
+
     let ingest_reports = IngestReports::new(
         pool.clone(),
         reports,
         verified_sessions_sink,
         Some(session_writer),
         None,
+        resolver,
+        RoutingKeys::from_iter([PublicKeyBinary::from(vec![1])]),
     );
 
     let daemon = Daemon::new(
@@ -228,7 +245,6 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         NO_BURN, // initial_burn_delay — burn never fires in this test
         ingest_reports,
         noop_burner(),
-        common::TestMobileConfig::all_valid(),
     );
 
     let (trigger, listener) = triggered::trigger();
@@ -339,12 +355,18 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
 
     let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(100);
     // No real-time Iceberg writer — this test only exercises the burn path.
+    // This test seeds pending burns directly and sends no ingest reports, so the
+    // resolver is never queried; an empty one is sufficient.
+    let resolver = common::gateway_resolver(&harness).await?;
+
     let ingest_reports = IngestReports::new(
         pool.clone(),
         reports_rx,
         FileSinkClient::new(verified_tx, "test"),
         None,
         None,
+        resolver,
+        RoutingKeys::default(),
     );
 
     let daemon = Daemon::new(
@@ -354,7 +376,6 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         std::time::Duration::from_millis(100), // initial_burn_delay — fires in ~100ms
         ingest_reports,
         burner,
-        common::TestMobileConfig::all_valid(),
     );
 
     // On BurnSuccess, manually commit the Automatic FileSink so the rolled file
@@ -527,12 +548,27 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         .create()
         .await?;
 
+    // Seed only `valid_gw` as known and allow-list only `valid_routing`, so the
+    // unknown-gateway and invalid-routing reports are rejected. `banned_gw` is
+    // rejected earlier by the ban check and needs no inventory row.
+    common::hotspot_inventory::seed(
+        &harness,
+        vec![MobileHotspotInventory::known(
+            &valid_gw,
+            file_time - Duration::hours(1),
+        )],
+    )
+    .await?;
+    let resolver = common::gateway_resolver(&harness).await?;
+
     let ingest_reports = IngestReports::new(
         pool.clone(),
         reports,
         verified_sessions_sink,
         Some(session_writer),
         Some(invalid_session_writer),
+        resolver,
+        RoutingKeys::from_iter([valid_routing.clone()]),
     );
 
     let daemon = Daemon::new(
@@ -544,7 +580,6 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         std::time::Duration::from_millis(500),
         ingest_reports,
         burner,
-        common::TestMobileConfig::valid_keys(vec![valid_gw], vec![valid_routing]),
     );
 
     // On BurnSuccess, manually commit the Automatic FileSink so the rolled file
