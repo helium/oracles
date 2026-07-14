@@ -5663,6 +5663,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-verifier-compare"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "config",
+ "custom-tracing",
+ "db-store",
+ "futures",
+ "helium-crypto",
+ "mobile-verifier",
+ "rand 0.8.5",
+ "rust_decimal",
+ "serde",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "trino-client",
+ "trino-rust-client",
+ "uuid",
+]
+
+[[package]]
 name = "moka"
 version = "0.12.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
