@@ -4,7 +4,6 @@ use crate::{
     Settings,
 };
 use chrono::{DateTime, Utc};
-use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload, BucketClient,
@@ -28,6 +27,8 @@ use std::{
 };
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+pub const BYTES_PER_MEGABIT: u64 = 125_000;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 // The limit must be 300 megabits per second.

@@ -48,8 +48,6 @@ tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
 uuid = { workspace = true }
 
-coverage-map = { path = "../coverage_map" }
-coverage-point-calculator = { path = "../coverage_point_calculator" }
 custom-tracing = { path = "../custom_tracing" }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }

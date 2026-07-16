@@ -49,7 +49,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
 
-coverage-map = { path = "../coverage_map" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
