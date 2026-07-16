@@ -41,7 +41,6 @@ fn make_validated_heartbeat(index: u8) -> ValidatedHeartbeat {
         distance_to_asserted: Some(i64::from(index) * 100),
         asserted_location: Some(0x8a1fb466d2dffff),
         device_type: Some(device_type),
-        coverage_meta: None,
         validity: HeartbeatValidity::Valid,
     }
 }
@@ -93,7 +92,6 @@ async fn write_heartbeat_with_no_optional_fields() -> anyhow::Result<()> {
         distance_to_asserted: None,
         asserted_location: None,
         device_type: None,
-        coverage_meta: None,
         validity: HeartbeatValidity::Valid,
     };
 
@@ -169,7 +167,6 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
                 distance_to_asserted: None,
                 asserted_location: None,
                 device_type: Some(dt),
-                coverage_meta: None,
                 validity: HeartbeatValidity::Valid,
             };
             IcebergHeartbeat::from(&vhb)

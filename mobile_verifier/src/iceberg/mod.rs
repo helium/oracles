@@ -10,8 +10,6 @@ pub mod invalid_ban;
 pub mod invalid_heartbeat;
 pub mod invalid_speedtest;
 pub mod invalid_speedtest_avg;
-pub mod radio_reward;
-pub mod radio_reward_covered_hex;
 pub mod service_provider_reward;
 pub mod speedtest;
 pub mod speedtest_avg;
@@ -109,36 +107,12 @@ impl PocWriters {
 }
 
 pub struct RewardWriters {
-    proof_of_coverage: BoxedDataWriter<radio_reward::IcebergRadioReward>,
-    covered_hexes: BoxedDataWriter<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
     data_transfer: BoxedDataWriter<gateway_reward::IcebergGatewayReward>,
     service_provider: BoxedDataWriter<service_provider_reward::IcebergServiceProviderReward>,
     unallocated: BoxedDataWriter<unallocated_reward::IcebergUnallocatedReward>,
 }
 
 impl RewardWriters {
-    pub async fn write_proof_of_coverage(
-        &self,
-        id: &str,
-        rows: Vec<radio_reward::IcebergRadioReward>,
-    ) -> anyhow::Result<()> {
-        self.proof_of_coverage
-            .write_idempotent(id, rows)
-            .await
-            .context("writing proof_of_coverage")
-    }
-
-    pub async fn write_covered_hexes(
-        &self,
-        id: &str,
-        rows: Vec<radio_reward_covered_hex::IcebergRadioRewardCoveredHex>,
-    ) -> anyhow::Result<()> {
-        self.covered_hexes
-            .write_idempotent(id, rows)
-            .await
-            .context("writing covered_hexes")
-    }
-
     pub async fn write_data_transfer(
         &self,
         id: &str,
@@ -182,12 +156,6 @@ pub async fn get_reward_writers(
         .create_namespace_if_not_exists(REWARDS_NAMESPACE)
         .await?;
 
-    let proof_of_coverage = catalog
-        .create_table_if_not_exists(radio_reward::table_definition()?)
-        .await?;
-    let covered_hexes = catalog
-        .create_table_if_not_exists(radio_reward_covered_hex::table_definition()?)
-        .await?;
     let data_transfer = catalog
         .create_table_if_not_exists(gateway_reward::table_definition()?)
         .await?;
@@ -199,8 +167,6 @@ pub async fn get_reward_writers(
         .await?;
 
     Ok(RewardWriters {
-        proof_of_coverage: proof_of_coverage.boxed(),
-        covered_hexes: covered_hexes.boxed(),
         data_transfer: data_transfer.boxed(),
         service_provider: service_provider.boxed(),
         unallocated: unallocated.boxed(),

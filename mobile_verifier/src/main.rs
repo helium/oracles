@@ -1,9 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use mobile_verifier::{
-    cli::{reward_from_db, server, verify_disktree},
-    Settings,
-};
+use mobile_verifier::{cli::server, Settings};
 use std::path;
 
 #[derive(clap::Parser)]
@@ -32,20 +29,12 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Server(server::Cmd),
-    RewardFromDb(reward_from_db::Cmd),
-    /// Verify a Disktree file for HexBoosting.
-    ///
-    /// Go through every cell and ensure it's value can be turned into an Assignment.
-    /// NOTE: This can take a very long time. Run with a --release binary.
-    VerifyDisktree(verify_disktree::Cmd),
 }
 
 impl Cmd {
     pub async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
-            Self::RewardFromDb(cmd) => cmd.run(&settings).await,
-            Self::VerifyDisktree(cmd) => cmd.run(&settings).await,
         }
     }
 }

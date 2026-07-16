@@ -1,23 +1,18 @@
 use crate::{
-    banning, coverage,
+    banning,
     data_session::{self, DataSessionSource},
-    heartbeats::{self, HeartbeatReward},
-    iceberg, resolve_subdao_pubkey,
+    heartbeats, iceberg, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
-        hip_149_reward_pools, CalculatedPocRewardShares, CoverageShares,
-        DataTransferAndPocAllocatedRewardBuckets, TransferRewards,
+        hip_149_reward_pools,
     },
-    speedtests,
-    speedtests_average::SpeedtestAverages,
-    telemetry, unique_connections, PriceInfo, Settings,
+    speedtests, telemetry, unique_connections, PriceInfo, Settings,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
-use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
@@ -41,7 +36,6 @@ use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
-pub mod boosted_hex_eligibility;
 mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -273,7 +267,7 @@ where
             .map(|writers| (writers, write_id.as_str()));
 
         // HIP-149: data transfer consumes the entire pool; PoC is not rewarded.
-        reward_dc_hip_149(
+        reward_dc(
             &self.data_session_source,
             self.mobile_rewards.clone(),
             &reward_info,
@@ -296,7 +290,6 @@ where
             &reward_info.epoch_period.start,
         )
         .await?;
-        coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
@@ -342,10 +335,9 @@ where
     }
 }
 
-/// HIP-149 reward path: data transfer consumes the entire emissions pool and
-/// Proof-of-Coverage is not rewarded. Replaces `reward_poc_and_dc` at the call
-/// site; the old PoC + DC pipeline below is retained (dead) for the cleanup PR.
-pub async fn reward_dc_hip_149(
+/// Data-transfer reward path (HIP-149): data transfer consumes the entire
+/// emissions pool and Proof-of-Coverage is not rewarded.
+pub async fn reward_dc(
     data_session_source: &DataSessionSource,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
@@ -412,233 +404,6 @@ pub async fn reward_dc_hip_149(
 
     Ok(())
 }
-
-// ============================================================================
-// HIP-149: dead code. The old PoC + DC reward pipeline, kept for side-by-side
-// review and rollback. `reward()` now calls `reward_dc_hip_149` above instead.
-// Removed in the cleanup PR.
-// ============================================================================
-
-#[allow(dead_code)]
-pub async fn reward_poc_and_dc(
-    pool: &Pool<Postgres>,
-    data_session_source: &DataSessionSource,
-    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-    price_info: PriceInfo,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
-) -> anyhow::Result<CalculatedPocRewardShares> {
-    let mut reward_shares =
-        DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
-
-    let hotspot_data_sessions = data_session_source
-        .load_data_sessions(&reward_info.epoch_period)
-        .await?;
-
-    let transfer_rewards =
-        TransferRewards::from_transfer_sessions(price_info, hotspot_data_sessions, &reward_shares)
-            .await;
-
-    // It's important to gauge the scale metric. If this value is < 1.0, we are in
-    // big trouble.
-    let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
-        anyhow::bail!("The data transfer rewards scale cannot be converted to a float");
-    };
-    telemetry::data_transfer_rewards_scale(scale);
-
-    // reward dc before poc so that we can calculate the unallocated dc reward
-    // and carry this into the poc pool
-    let dc_unallocated_amount = reward_dc(
-        &mobile_rewards,
-        reward_info,
-        transfer_rewards,
-        &reward_shares,
-        reward_ctx,
-    )
-    .await?;
-
-    reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
-    let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
-        pool,
-        &mobile_rewards,
-        reward_info,
-        reward_shares,
-        reward_ctx,
-    )
-    .await?;
-
-    let poc_unallocated_amount = poc_unallocated_amount
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::Poc,
-        poc_unallocated_amount,
-        reward_info,
-        reward_ctx,
-    )
-    .await?;
-
-    Ok(calculated_poc_reward_shares)
-}
-
-#[allow(dead_code)]
-pub async fn reward_poc(
-    pool: &Pool<Postgres>,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-    reward_shares: DataTransferAndPocAllocatedRewardBuckets,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
-) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
-    let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
-    let speedtest_averages =
-        SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
-
-    let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
-
-    let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections.clone());
-
-    let banned_radios = banning::BannedRadios::new(pool, reward_info.epoch_period.end).await?;
-
-    let coverage_shares = CoverageShares::new(
-        pool,
-        heartbeats,
-        &speedtest_averages,
-        &boosted_hex_eligibility,
-        &banned_radios,
-        &unique_connections,
-        &reward_info.epoch_period,
-    )
-    .await?;
-
-    let total_poc_rewards = reward_shares.total_poc();
-
-    let collect_iceberg = reward_ctx.is_some();
-    let (unallocated_poc_amount, calculated_poc_rewards_per_share) =
-        if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
-            coverage_shares.into_rewards(reward_shares, &reward_info.epoch_period)
-        {
-            // handle poc reward outputs
-            let mut allocated_poc_rewards = 0_u64;
-            let mut count_rewarded_radios = 0;
-            let mut iceberg_radio_rewards = Vec::new();
-            let mut iceberg_covered_hexes = Vec::new();
-
-            for (poc_reward_amount, radio_reward_v2) in mobile_reward_shares {
-                allocated_poc_rewards += poc_reward_amount;
-                count_rewarded_radios += 1;
-
-                if collect_iceberg {
-                    iceberg_radio_rewards.push(
-                        iceberg::radio_reward::IcebergRadioReward::from_radio_reward(
-                            &radio_reward_v2,
-                            reward_info.epoch_period.start,
-                            reward_info.epoch_period.end,
-                        ),
-                    );
-                    iceberg_covered_hexes.extend(
-                        iceberg::radio_reward_covered_hex::from_radio_reward(
-                            &radio_reward_v2,
-                            reward_info.epoch_period.start,
-                            reward_info.epoch_period.end,
-                        ),
-                    );
-                }
-
-                let mobile_reward_share = proto::MobileRewardShare {
-                    start_period: reward_info.epoch_period.start.encode_timestamp(),
-                    end_period: reward_info.epoch_period.end.encode_timestamp(),
-                    reward: Some(proto::mobile_reward_share::Reward::RadioRewardV2(
-                        radio_reward_v2,
-                    )),
-                };
-
-                mobile_rewards
-                    .write(mobile_reward_share, [])
-                    .await?
-                    // await the returned one shot to ensure that we wrote the file
-                    .await??;
-            }
-            if let Some((writers, id)) = reward_ctx {
-                writers
-                    .write_proof_of_coverage(id, iceberg_radio_rewards)
-                    .await?;
-                writers
-                    .write_covered_hexes(id, iceberg_covered_hexes)
-                    .await?;
-            }
-            telemetry::poc_rewarded_radios(count_rewarded_radios);
-            // calculate any unallocated poc reward
-            (
-                total_poc_rewards - Decimal::from(allocated_poc_rewards),
-                calculated_poc_rewards_per_share,
-            )
-        } else {
-            telemetry::poc_rewarded_radios(0);
-            // default unallocated poc reward to the total poc reward
-            (total_poc_rewards, CalculatedPocRewardShares::default())
-        };
-    Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
-}
-
-#[allow(dead_code)]
-pub async fn reward_dc(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-    transfer_rewards: TransferRewards,
-    reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
-) -> anyhow::Result<Decimal> {
-    // handle dc reward outputs
-    let collect_iceberg = reward_ctx.is_some();
-    let mut allocated_dc_rewards = 0_u64;
-    let mut count_rewarded_gateways = 0;
-    let mut iceberg_gateway_rewards = Vec::new();
-
-    let start_period = reward_info.epoch_period.start.encode_timestamp();
-    let end_period = reward_info.epoch_period.end.encode_timestamp();
-
-    for (dc_allocated, gateway) in transfer_rewards.into_rewards() {
-        allocated_dc_rewards += dc_allocated;
-        count_rewarded_gateways += 1;
-
-        if collect_iceberg {
-            iceberg_gateway_rewards.push(
-                iceberg::gateway_reward::IcebergGatewayReward::from_gateway_reward(
-                    &gateway,
-                    &reward_info.epoch_period,
-                ),
-            );
-        }
-
-        let reward_share = proto::MobileRewardShare {
-            start_period,
-            end_period,
-            reward: Some(proto::mobile_reward_share::Reward::GatewayReward(gateway)),
-        };
-
-        mobile_rewards.write(reward_share, []).await?.await??;
-    }
-
-    if let Some((writers, id)) = reward_ctx {
-        writers
-            .write_data_transfer(id, iceberg_gateway_rewards)
-            .await?;
-    }
-    telemetry::data_transfer_rewarded_gateways(count_rewarded_gateways);
-    // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
-    // it then gets added to the poc pool
-    // we return the full decimal value just to ensure we allocate all to poc
-    let unallocated_dc_reward_amount =
-        reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
-    Ok(unallocated_dc_reward_amount)
-}
-
-// ============================================================================
-// HIP-149: end of dead PoC + DC pipeline.
-// ============================================================================
 
 pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,

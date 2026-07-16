@@ -216,7 +216,6 @@ mod tests {
             distance_to_asserted: Some(0),
             asserted_location: None,
             device_type: None,
-            coverage_meta: None,
             validity: proto::HeartbeatValidity::Valid,
         };
 

@@ -141,7 +141,6 @@ mod tests {
             distance_to_asserted,
             asserted_location: None,
             device_type,
-            coverage_meta: None,
             validity: HeartbeatValidity::Valid,
         }
     }

@@ -1,18 +1,15 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Duration, Utc};
-use file_store_oracles::mobile::coverage::RadioHexSignalLevel;
-use h3o::LatLng;
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{self as proto, LocationSource};
+use helium_proto::services::poc_mobile::LocationSource;
 use mobile_verifier::{
-    coverage::CoverageObject,
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, ValidatedHeartbeat},
 };
 use rust_decimal_macros::dec;
-use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
+use sqlx::PgPool;
 
 use crate::common::GatewayClientAllOwnersValid;
 
@@ -37,12 +34,8 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
 
     let location_cache = LocationCache::new(&pool);
 
-    let mut transaction = pool.begin().await?;
-    let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
-    transaction.commit().await?;
-
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
+        heartbeat(&hotspot)
             .location_validation_timestamp(Utc::now())
             .build(),
         &GatewayClientAllOwnersValid,
@@ -58,9 +51,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
     );
 
     let validated_heartbeat_2 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
-            .latlng((0.0, 0.0))
-            .build(),
+        heartbeat(&hotspot).latlng((0.0, 0.0)).build(),
         &GatewayClientAllOwnersValid,
         &location_cache,
         &(epoch_start..epoch_end),
@@ -94,12 +85,8 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
 
     let location_cache = LocationCache::new(&pool);
 
-    let mut transaction = pool.begin().await?;
-    let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
-    transaction.commit().await?;
-
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
+        heartbeat(&hotspot)
             .location_validation_timestamp(Utc::now())
             .build(),
         &GatewayClientAllOwnersValid,
@@ -115,14 +102,12 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     );
 
     location_cache.delete_last_location(&hotspot).await;
-    transaction = pool.begin().await?;
+    let mut transaction = pool.begin().await?;
     validated_heartbeat_1.clone().save(&mut transaction).await?;
     transaction.commit().await?;
 
     let validated_heartbeat_2 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
-            .latlng((0.0, 0.0))
-            .build(),
+        heartbeat(&hotspot).latlng((0.0, 0.0)).build(),
         &GatewayClientAllOwnersValid,
         &location_cache,
         &(epoch_start..epoch_end),
@@ -158,14 +143,10 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
 
     let location_cache = LocationCache::new(&pool);
 
-    let mut transaction = pool.begin().await?;
-    let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
-    transaction.commit().await?;
-
     let location_validation_timestamp = Utc::now();
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
+        heartbeat(&hotspot)
             .location_validation_timestamp(location_validation_timestamp)
             // within the 24 hour window of validation timestamp
             .timestamp(location_validation_timestamp - Duration::hours(24) + Duration::seconds(1))
@@ -183,7 +164,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
     );
 
     let validated_heartbeat_2 = ValidatedHeartbeat::validate(
-        heartbeat(&hotspot, &coverage_object)
+        heartbeat(&hotspot)
             // 24 hours past validation timestamp
             .timestamp(location_validation_timestamp + Duration::hours(24) + Duration::seconds(1))
             .latlng((0.0, 0.0))
@@ -205,17 +186,15 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
 
 struct HeartbeatBuilder {
     hotspot: PublicKeyBinary,
-    coverage_object: CoverageObject,
     location_validation_timestamp: Option<DateTime<Utc>>,
     latlng: Option<(f64, f64)>,
     timestamp: Option<DateTime<Utc>>,
 }
 
 impl HeartbeatBuilder {
-    fn new(hotspot: PublicKeyBinary, coverage_object: CoverageObject) -> Self {
+    fn new(hotspot: PublicKeyBinary) -> Self {
         Self {
             hotspot,
-            coverage_object,
             location_validation_timestamp: None,
             latlng: None,
             timestamp: None,
@@ -239,15 +218,9 @@ impl HeartbeatBuilder {
 
     fn build(self) -> Heartbeat {
         let (lat, lon) = self.latlng.unwrap_or_else(|| {
-            let lat_lng: LatLng = self
-                .coverage_object
-                .coverage_object
-                .coverage
-                .first()
-                .unwrap()
-                .location
-                .into();
-
+            // Default to the gateway's asserted location so distance_to_asserted is 0.
+            let cell: CellIndex = "8c2681a3064d9ff".parse().unwrap();
+            let lat_lng = LatLng::from(cell);
             (lat_lng.lat(), lat_lng.lng())
         });
 
@@ -256,7 +229,7 @@ impl HeartbeatBuilder {
             operation_mode: true,
             lat,
             lon,
-            coverage_object: Some(self.coverage_object.coverage_object.uuid),
+            coverage_object: None,
             location_validation_timestamp: self.location_validation_timestamp,
             timestamp: self.timestamp.unwrap_or(Utc::now()),
             heartbeat_timestamp: self.timestamp.unwrap_or(Utc::now()),
@@ -265,39 +238,6 @@ impl HeartbeatBuilder {
     }
 }
 
-fn heartbeat(hotspot: &PublicKeyBinary, coverage_object: &CoverageObject) -> HeartbeatBuilder {
-    HeartbeatBuilder::new(hotspot.clone(), coverage_object.clone())
-}
-
-async fn coverage_object(
-    hotspot: &PublicKeyBinary,
-    transaction: &mut Transaction<'_, Postgres>,
-) -> anyhow::Result<CoverageObject> {
-    let coverage_object = CoverageObject {
-        coverage_object: file_store_oracles::coverage::CoverageObject {
-            pub_key: hotspot.clone(),
-            uuid: Uuid::new_v4(),
-            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hotspot.clone()),
-            coverage_claim_time: Utc::now(),
-            coverage: vec![signal_level("8c2681a3064d9ff", proto::SignalLevel::High)?],
-            indoor: true,
-            trust_score: 0,
-            signature: vec![],
-        },
-        validity: proto::CoverageObjectValidity::Valid,
-    };
-    coverage_object.save(transaction).await?;
-
-    Ok(coverage_object)
-}
-
-fn signal_level(
-    hex: &str,
-    signal_level: proto::SignalLevel,
-) -> anyhow::Result<RadioHexSignalLevel> {
-    Ok(RadioHexSignalLevel {
-        location: hex.parse()?,
-        signal_level,
-        signal_power: 0, // Unused
-    })
+fn heartbeat(hotspot: &PublicKeyBinary) -> HeartbeatBuilder {
+    HeartbeatBuilder::new(hotspot.clone())
 }

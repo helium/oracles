@@ -1,26 +1,18 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::TimestampEncode,
-};
+use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
-    mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare,
-    OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
-    RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
+    mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, PromotionReward,
+    RadioReward, RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
+    UnallocatedReward,
 };
-use hex_assignments::{Assignment, HexBoostDataAssignmentsExt};
-use hextree::Cell;
 use mobile_config::gateway::service::info::DeviceType;
 use mobile_config::{client::ClientError, sub_dao_epoch_reward_info::EpochRewardInfo};
-use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
-};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use mobile_verifier::{GatewayResolution, GatewayResolver, PriceInfo};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use solana::Token;
-use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::{sync::RwLock, time::Timeout};
 use tonic::async_trait;
@@ -29,98 +21,6 @@ pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1
 pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
 pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
-
-pub trait RadioRewardV2Ext {
-    fn total_poc_reward(&self) -> u64;
-}
-
-impl RadioRewardV2Ext for RadioRewardV2 {
-    fn total_poc_reward(&self) -> u64 {
-        self.base_poc_reward + self.boosted_poc_reward
-    }
-}
-
-pub struct MockHexBoostDataAssignment {
-    footfall: Assignment,
-    urbanized: Assignment,
-    landtype: Assignment,
-    service_provider_override: Assignment,
-}
-
-pub fn mock_hex_boost_data_default() -> impl HexBoostDataAssignmentsExt {
-    MockHexBoostDataAssignment {
-        footfall: Assignment::A,
-        landtype: Assignment::A,
-        urbanized: Assignment::A,
-        service_provider_override: Assignment::C,
-    }
-}
-
-pub fn mock_hex_boost_data_bad() -> impl HexBoostDataAssignmentsExt {
-    MockHexBoostDataAssignment {
-        footfall: Assignment::C,
-        landtype: Assignment::C,
-        urbanized: Assignment::C,
-        service_provider_override: Assignment::C,
-    }
-}
-
-impl HexBoostDataAssignmentsExt for MockHexBoostDataAssignment {
-    fn footfall_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
-        Ok(self.footfall)
-    }
-
-    fn landtype_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
-        Ok(self.landtype)
-    }
-
-    fn urbanization_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
-        Ok(self.urbanized)
-    }
-
-    fn service_provider_override_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
-        Ok(self.service_provider_override)
-    }
-}
-
-pub async fn set_unassigned_oracle_boosting_assignments(
-    pool: &PgPool,
-    data_sets: &impl HexBoostDataAssignmentsExt,
-) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
-    let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
-        mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
-        data_sets,
-    )
-    .await?;
-    let timestamp = Utc::now().encode_timestamp();
-    let mut output = Vec::new();
-    for (uuid, hexes) in assigned_coverage_objs.coverage_objs.iter() {
-        let assignments: Vec<_> = hexes
-            .iter()
-            .map(|hex| {
-                let location = format!("{:x}", hex.hex);
-                let assignment_multiplier = (hex.assignments.boosting_multiplier() * dec!(1000))
-                    .to_u32()
-                    .unwrap_or(0);
-                OracleBoostingHexAssignment {
-                    location,
-                    urbanized: hex.assignments.urbanized.into(),
-                    footfall: hex.assignments.footfall.into(),
-                    landtype: hex.assignments.landtype.into(),
-                    service_provider_override: hex.assignments.service_provider_override.into(),
-                    assignment_multiplier,
-                }
-            })
-            .collect();
-        output.push(OracleBoostingReportV1 {
-            coverage_object: Vec::from(uuid.into_bytes()),
-            assignments,
-            timestamp,
-        });
-    }
-    assigned_coverage_objs.save(pool).await?;
-    Ok(output)
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct GatewayClientAllOwnersValid;
