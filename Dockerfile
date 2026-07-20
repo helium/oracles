@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y \
 ARG PACKAGE
 
 COPY --from=builder /app/target/release/${PACKAGE} /opt/${PACKAGE}/bin/${PACKAGE}
+COPY assets/geofence/ /opt/assets/geofence/
 
 ENV PACKAGE=${PACKAGE}
 
