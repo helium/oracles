@@ -1,81 +1,35 @@
-use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
+use std::time::Duration;
+
 use helium_iceberg::IcebergTestHarness;
-use mobile_packet_verifier::{iceberg, MobileConfigResolverExt};
+use mobile_packet_verifier::{gateway::GatewayResolver, iceberg};
+
+pub mod hotspot_inventory;
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     let harness = IcebergTestHarness::new_with_tables([
         iceberg::session::table_definition()?,
         iceberg::invalid_session::table_definition()?,
         iceberg::burned_session::table_definition()?,
+        hotspot_inventory::table_definition()?,
     ])
     .await?;
 
     Ok(harness)
 }
 
-enum ValidKeys {
-    All,
-    Only(Vec<PublicKeyBinary>),
-}
-
-impl ValidKeys {
-    fn is_valid(&self, public_key: &PublicKeyBinary) -> bool {
-        match self {
-            ValidKeys::All => true,
-            ValidKeys::Only(vec) => vec.contains(public_key),
-        }
-    }
-}
-
-pub struct TestMobileConfig {
-    valid_gateways: ValidKeys,
-    valid_routing_keys: ValidKeys,
-}
-
-#[async_trait::async_trait]
-impl MobileConfigResolverExt for TestMobileConfig {
-    async fn is_gateway_known(
-        &self,
-        public_key: &PublicKeyBinary,
-        _gateway_query_time: &DateTime<Utc>,
-    ) -> bool {
-        self.valid_gateways.is_valid(public_key)
-    }
-
-    async fn is_routing_key_known(&self, public_key: &PublicKeyBinary) -> bool {
-        self.valid_routing_keys.is_valid(public_key)
-    }
-}
-
-impl TestMobileConfig {
-    pub fn all_valid() -> Self {
-        Self {
-            valid_gateways: ValidKeys::All,
-            valid_routing_keys: ValidKeys::All,
-        }
-    }
-
-    pub fn valid_gateways(valid: Vec<PublicKeyBinary>) -> Self {
-        Self {
-            valid_gateways: ValidKeys::Only(valid),
-            valid_routing_keys: ValidKeys::All,
-        }
-    }
-
-    pub fn valid_routing_keys(valid: Vec<PublicKeyBinary>) -> Self {
-        Self {
-            valid_gateways: ValidKeys::All,
-            valid_routing_keys: ValidKeys::Only(valid),
-        }
-    }
-
-    pub fn valid_keys(gws: Vec<PublicKeyBinary>, routing: Vec<PublicKeyBinary>) -> Self {
-        Self {
-            valid_gateways: ValidKeys::Only(gws),
-            valid_routing_keys: ValidKeys::Only(routing),
-        }
-    }
+/// Build a real [`GatewayResolver`] backed by the harness's Trino, pointed at
+/// the per-test `chain.mobile_hotspot_inventory` table. Seed the gateways that
+/// should be considered known with [`hotspot_inventory::seed`] first.
+pub async fn gateway_resolver(harness: &IcebergTestHarness) -> anyhow::Result<GatewayResolver> {
+    let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    // Tests exercise the startup snapshot + fallback only; they never build a
+    // refresher, so no background refresh fires during a test.
+    Ok(GatewayResolver::new_with_inventory_table(
+        trino,
+        hotspot_inventory::RESOLVER_TABLE,
+        Duration::from_secs(3600),
+    )
+    .await)
 }
 
 pub trait TestChannelExt {

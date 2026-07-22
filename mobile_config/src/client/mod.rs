@@ -1,5 +1,4 @@
 pub mod authorization_client;
-pub mod carrier_service_client;
 pub mod entity_client;
 mod settings;
 pub mod sub_dao_client;
@@ -8,7 +7,6 @@ use std::time::Duration;
 
 pub use crate::gateway::client::GatewayClient;
 pub use authorization_client::AuthorizationClient;
-pub use carrier_service_client::CarrierServiceClient;
 pub use entity_client::EntityClient;
 pub use settings::Settings;
 pub use sub_dao_client::SubDaoClient;

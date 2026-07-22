@@ -1,20 +1,21 @@
 use std::str::FromStr;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use file_store::file_sink::{FileSinkClient, MessageReceiver};
 use file_store_oracles::mobile_session::{
     DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg,
+    banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg, routing::RoutingKeys,
 };
 use sqlx::{types::Uuid, PgPool};
 
-use crate::common::TestMobileConfig;
+use crate::common::hotspot_inventory::MobileHotspotInventory;
 
 #[sqlx::test]
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
@@ -64,8 +65,10 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     // accumulate and burn
     run_accumulate_sessions(
         &pool,
+        &harness,
         reports,
-        TestMobileConfig::all_valid(),
+        vec![PublicKeyBinary::from(vec![1])],
+        vec![PublicKeyBinary::from(vec![1])],
         Some(session_writer),
     )
     .await?;
@@ -85,10 +88,21 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
 
 async fn run_accumulate_sessions(
     pool: &PgPool,
+    harness: &IcebergTestHarness,
     reports: Vec<DataTransferSessionIngestReport>,
-    mobile_config: TestMobileConfig,
+    known_gateways: Vec<PublicKeyBinary>,
+    routing_keys: Vec<PublicKeyBinary>,
     iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+    let seed_ts = Utc::now() - Duration::hours(1);
+    let rows = known_gateways
+        .iter()
+        .map(|gw| MobileHotspotInventory::known(gw, seed_ts))
+        .collect();
+    crate::common::hotspot_inventory::seed(harness, rows).await?;
+    let resolver = crate::common::gateway_resolver(harness).await?;
+    let routing_keys: RoutingKeys = routing_keys.into_iter().collect();
+
     let mut txn = pool.begin().await?;
 
     let ts = Utc::now();
@@ -103,7 +117,8 @@ async fn run_accumulate_sessions(
         None,
         "test_write_id",
         banned_radios,
-        &mobile_config,
+        &resolver,
+        &routing_keys,
         &verified_sessions,
         ts,
         futures::stream::iter(reports),

@@ -1,6 +1,6 @@
 
 # log settings for the application (RUST_LOG format). Default below
-# 
+#
 # log = "mobile_4packet_verifier=debug"
 
 # Cache location for generated verified reports; Required
@@ -21,8 +21,50 @@ min_burn_period = "15 minutes"
 # default.
 enable_solana_integration = "false"
 
+# Authorized mobile router keys. A data transfer report whose routing key is not
+# in this list is rejected as InvalidRoutingKey.
+#
+# Comma separated list of b58 keys (required)
+routing_keys = ""
+
+# How often the in-memory snapshot of known gateways is refreshed from Trino.
+# Default: 1 hour
+# gateway_refresh_interval = "1 hour"
+
+# Trino connection used to resolve gateway identities. `is_gateway_known`
+# queries network.chain.mobile_hotspot_inventory over this connection.
+[trino]
+# Trino coordinator host. Required.
+host = "localhost"
+# Trino coordinator port. Required.
+port = 8080
+# Trino user. Required.
+user = "mobile-packet-verifier"
+
+# Catalog/schema are optional; the gateway query is fully qualified
+# (network.chain.mobile_hotspot_inventory), so these are usually left unset.
+# catalog = "network"
+# schema = "chain"
+
+# Connect over HTTPS. Default: false
+# secure = true
+
+# Skip TLS certificate verification. Local development only. Default: false
+# insecure_skip_tls_verify = false
+
+# Authentication. Omit the [trino.auth] table entirely for anonymous access.
+# `type` selects the scheme:
+#   - "jwt_file": { path, refresh_interval (default "60s") }
+#   - "jwt":      { token }
+#   - "basic":    { username, password }
+#
+# [trino.auth]
+# type = "jwt_file"
+# path = "/var/run/secrets/trino.jwt"
+# refresh_interval = "60s"
+
 [solana]
-# Solana RPC. This may contain a secret 
+# Solana RPC. This may contain a secret
 rpc_url = "http://localhost:8899"
 # Path to the keypair used to sign data credit burn solana transactions
 burn_keypair = ""
@@ -41,8 +83,8 @@ url = "postgresql://postgres:password@localhost:5432/postgres"
 #
 # max_connections = 10
 
-# Input bucket details for ingest data 
-# 
+# Input bucket details for ingest data
+#
 [ingest]
 
 # Name of bucket to access ingest data. Required
@@ -95,11 +137,11 @@ bucket = ""
 
 # How far back do we read ban files?
 # Default: UNIX_EPOCH
-# 
+#
 # start_after = "2024-12-15 01:00:00Z"
 
 # Verifier bucket details for ban data
-# 
+#
 [banning.input_bucket]
 
 # Name of bucket to access ingest data. Required

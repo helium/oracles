@@ -1,13 +1,17 @@
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
+use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Duration,
 };
 
-use crate::banning;
+use crate::{banning, routing::RoutingKeys};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -34,7 +38,17 @@ pub struct Settings {
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::burn::Settings>,
-    pub config_client: mobile_config::ClientSettings,
+    /// Authorized mobile router keys. A data transfer report whose routing key
+    /// is not in this list is rejected as `InvalidRoutingKey`.
+    /// Comma separated list of b58 keys
+    #[serde(default)]
+    routing_keys: String,
+    /// Trino settings.
+    /// Fetch gateway identities from trino instead of mobile-config.
+    pub trino: trino_client::Settings,
+    /// How often the full snapshot of known gateways is refreshed from Trino.
+    #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
+    pub gateway_refresh_interval: Duration,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
     #[serde(with = "humantime_serde", default = "default_purger_interval")]
@@ -79,6 +93,10 @@ fn default_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
 }
 
+fn default_gateway_refresh_interval() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
+}
+
 fn default_log() -> String {
     "mobile_packet_verifier=debug,poc_store=info".to_string()
 }
@@ -120,5 +138,20 @@ impl Settings {
             )
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    pub fn routing_keys(&self) -> anyhow::Result<RoutingKeys> {
+        if self.routing_keys.is_empty() {
+            anyhow::bail!("No routing keys provided in settings")
+        }
+
+        let mut keys = HashSet::new();
+        for key in self.routing_keys.split(',') {
+            let key = PublicKeyBinary::from_str(key)
+                .with_context(|| format!("settings parsing routing key: {key}"))?;
+            keys.insert(key);
+        }
+
+        Ok(RoutingKeys::from_iter(keys))
     }
 }
