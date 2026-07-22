@@ -174,15 +174,9 @@ impl ValidatedHeartbeat {
             }
         };
 
-        let (cell_type, radio_type) = match device_type {
-            DeviceType::WifiIndoor => (
-                CellType::NovaGenericWifiIndoor,
-                coverage_point_calculator::RadioType::IndoorWifi,
-            ),
-            DeviceType::WifiOutdoor => (
-                CellType::NovaGenericWifiOutdoor,
-                coverage_point_calculator::RadioType::OutdoorWifi,
-            ),
+        let cell_type = match device_type {
+            DeviceType::WifiIndoor => CellType::NovaGenericWifiIndoor,
+            DeviceType::WifiOutdoor => CellType::NovaGenericWifiOutdoor,
             // Data-only gateways are rejected above; CBRS is deprecated.
             DeviceType::WifiDataOnly | DeviceType::Cbrs => {
                 return Ok(Self::new_invalid(
@@ -260,10 +254,7 @@ impl ValidatedHeartbeat {
             dec!(0)
         } else {
             // HIP-119 maximum asserted distance check
-            coverage_point_calculator::asserted_distance_to_trust_multiplier(
-                radio_type,
-                distance_to_asserted as u32,
-            )
+            asserted_distance_to_trust_multiplier(cell_type, distance_to_asserted)
         };
 
         Ok(Self::new(
@@ -415,6 +406,30 @@ pub async fn clear_heartbeats(
         .await?;
 
     Ok(())
+}
+
+/// Returns the trust multiplier for a given radio type and distance to it's asserted location.
+///
+/// [HIP-119: Gaming Loopholes][gaming-loopholes]
+///
+/// [gaming-loopholes]: https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md#maximum-asserted-distance-difference
+pub fn asserted_distance_to_trust_multiplier(
+    radio_type: CellType,
+    meters_to_asserted: i64,
+) -> Decimal {
+    match radio_type {
+        CellType::NovaGenericWifiIndoor => match meters_to_asserted {
+            0..=300 => dec!(1.00),
+            301..=400 => dec!(0.25),
+            _ => dec!(0.00),
+        },
+        CellType::NovaGenericWifiOutdoor => match meters_to_asserted {
+            0..=300 => dec!(1.00),
+            301..=400 => dec!(0.25),
+            _ => dec!(0.00),
+        },
+        _ => dec!(0.00),
+    }
 }
 
 #[cfg(test)]

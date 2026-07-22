@@ -3,8 +3,6 @@ debug = true
 
 [workspace]
 members = [
-  "coverage_map",
-  "coverage_point_calculator",
   "custom_tracing",
   "db_store",
   "file_store",
@@ -23,7 +21,6 @@ members = [
   "reward_scheduler",
   "solana",
   "task_manager",
-  "hex_assignments",
   "tls_init",
   "trino_client",
 ]

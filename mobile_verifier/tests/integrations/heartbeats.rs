@@ -25,8 +25,7 @@ impl GeofenceValidator for MockGeofence {
 
 /// The reworked `validate` sources radio type from the mobile-config device type
 /// (indoor here) and applies the HIP-119 asserted-distance trust curve to the
-/// distance between the heartbeat and the gateway's asserted location. The pure
-/// curve is unit-tested in `coverage_point_calculator`; this covers the wiring.
+/// distance between the heartbeat and the gateway's asserted location.
 #[sqlx::test]
 async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow::Result<()> {
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"

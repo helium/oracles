@@ -1,6 +1,5 @@
 use crate::common;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
 use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
@@ -15,7 +14,7 @@ use mobile_config::{
         service::info::{DeviceType, GatewayInfo, GatewayInfoStream},
     },
 };
-use mobile_verifier::speedtests::SpeedtestDaemon;
+use mobile_verifier::speedtests::{SpeedtestDaemon, BYTES_PER_MEGABIT};
 use sqlx::{Pool, Postgres};
 
 #[derive(Clone)]
