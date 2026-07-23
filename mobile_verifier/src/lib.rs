@@ -98,22 +98,23 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
+    /// HNT price as USD/HNT × 10^decimals — stamped on `GatewayReward.price` and
+    /// the reward manifest.
     pub price_in_bones: u64,
-    pub price_per_token: Decimal,
+    /// USD per bone (1 HNT = 10^decimals bones) — used only for reward telemetry
+    /// (demand, price-per-GB); the payout rate itself is price-independent.
     pub price_per_bone: Decimal,
-    pub decimals: u8,
 }
 
 impl PriceInfo {
     pub fn new(price_in_bones: u64, decimals: u8) -> Self {
-        let price_per_token =
-            Decimal::from(price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
-        let price_per_bone = price_per_token / Decimal::from(10_u64.pow(decimals as u32));
+        // price_in_bones is USD/HNT × 10^decimals: ÷10^decimals gives USD/HNT,
+        // and ÷10^decimals again gives USD per bone.
+        let scale = Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_bone = Decimal::from(price_in_bones) / scale / scale;
         Self {
             price_in_bones,
-            price_per_token,
             price_per_bone,
-            decimals,
         }
     }
 }

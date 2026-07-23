@@ -61,7 +61,6 @@ pub fn reward_info_24_hours() -> EpochRewardInfo {
 pub fn default_price_info() -> PriceInfo {
     let token = Token::Hnt;
     let price_info = PriceInfo::new(1000000000000, token.decimals());
-    assert_eq!(price_info.price_per_token, dec!(10000));
     assert_eq!(price_info.price_per_bone, dec!(0.0001));
     price_info
 }
