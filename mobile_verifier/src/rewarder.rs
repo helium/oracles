@@ -13,7 +13,9 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
-use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
+use crate::reward_shares::{
+    dc_to_hnt_bones, RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES,
+};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -355,7 +357,13 @@ pub async fn reward_dc(
     // flat 24% service-provider cut, so the cap/backstop shift is absorbed here
     // rather than over-/under-allocating. See `reward_shares::emissions_split`.
     let pool = Decimal::from(hip_149_reward_pools(reward_info).data_transfer);
-    let demand = rewardable.reward_sum(&price_info);
+    // Demand is the HNT-bone value of the burned DC at the epoch price — a
+    // telemetry input only (the payout rate is `pool / total_dc`, price-free).
+    // `dc_to_hnt_bones` is linear, so summing per hotspot is unnecessary.
+    let demand = dc_to_hnt_bones(
+        Decimal::from(rewardable.total_dc()),
+        price_info.price_per_bone,
+    );
     let total_bytes = rewardable.total_bytes();
 
     // Distribute the whole pool across hotspots in proportion to their data

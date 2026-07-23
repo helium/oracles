@@ -3,16 +3,12 @@ use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use rust_decimal::Decimal;
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{
-    reward_shares::{data_transfer, dc_to_hnt_bones},
-    PriceInfo, Settings,
-};
+use crate::{reward_shares::data_transfer, Settings};
 
 pub struct DataSessionIngestor {
     pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
@@ -46,10 +42,11 @@ impl RewardableDataByHotspot {
             .collect()
     }
 
-    pub fn reward_sum(&self, price_info: &PriceInfo) -> Decimal {
-        self.values()
-            .map(|r| dc_to_hnt_bones(Decimal::from(r.rewardable_dc), price_info.price_per_bone))
-            .sum()
+    /// Total data credits burned across all hotspots. The demand metric scales
+    /// this by the HNT price (see `rewarder::reward_dc`); the price isn't needed
+    /// here — `demand = dc_to_hnt_bones(total_dc)` since the conversion is linear.
+    pub fn total_dc(&self) -> u64 {
+        self.values().map(|r| r.rewardable_dc).sum()
     }
 
     pub fn total_bytes(&self) -> u64 {
