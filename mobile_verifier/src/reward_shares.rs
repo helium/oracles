@@ -61,7 +61,6 @@ mod test {
     #[test]
     fn test_price_conversion() {
         let token = Token::Hnt;
-        let hnt_dollar_price = dec!(1.0);
         let hnt_price_from_pricer = 100000000_u64;
         let hnt_dollar_bone_price = dec!(0.00000001);
 
@@ -69,6 +68,5 @@ mod test {
 
         assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
         assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
-        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
     }
 }

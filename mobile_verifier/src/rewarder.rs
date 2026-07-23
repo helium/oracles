@@ -1,7 +1,7 @@
 use crate::{
     banning,
     data_session::{self, DataSessionSource},
-    heartbeats, iceberg, resolve_subdao_pubkey,
+    heartbeats, iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
@@ -13,7 +13,9 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
-use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
+use crate::reward_shares::{
+    dc_to_hnt_bones, RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES,
+};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -23,50 +25,41 @@ use helium_proto::{
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
     ServiceProvider,
 };
-use mobile_config::{
-    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
-    sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo,
-};
-use price_tracker::{PriceProvider, PriceTracker};
+use mobile_config::{sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo};
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
-use solana::{SolPubkey, Token};
+use solana::Token;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
 mod db;
+pub mod epoch_reward_info;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<C> {
-    sub_dao: SolPubkey,
+pub struct Rewarder {
     pool: Pool<Postgres>,
-    sub_dao_epoch_reward_client: C,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_manifests: FileSinkClient<RewardManifest>,
-    price_tracker: PriceTracker,
+    /// Trino client, used both to resolve the epoch's on-chain reward inputs
+    /// (see [`epoch_reward_info`]) and by [`DataSessionSource`].
+    trino: trino_client::Client,
     reward_writers: Option<iceberg::RewardWriters>,
     data_session_source: DataSessionSource,
 }
 
-impl<C> Rewarder<C>
-where
-    C: SubDaoEpochRewardInfoResolver,
-{
+impl Rewarder {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        sub_dao_epoch_reward_info_resolver: C,
         reward_writers: Option<iceberg::RewardWriters>,
-        trino: Option<trino_client::Client>,
+        trino: trino_client::Client,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
-
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
@@ -85,22 +78,20 @@ where
         )
         .await?;
 
-        let data_session_source = DataSessionSource::new(pool.clone(), trino);
+        let data_session_source = DataSessionSource::new(pool.clone(), Some(trino.clone()));
 
         let rewarder = Rewarder::new(
             pool.clone(),
-            sub_dao_epoch_reward_info_resolver,
             settings.reward_period,
             settings.reward_period_offset,
             mobile_rewards,
             reward_manifests,
-            price_tracker,
+            trino,
             reward_writers,
             data_session_source,
         )?;
 
         Ok(TaskManager::builder()
-            .add_task(price_daemon)
             .add_task(mobile_rewards_server)
             .add_task(reward_manifests_server)
             .add_task(rewarder)
@@ -110,28 +101,30 @@ where
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
-        sub_dao_epoch_reward_client: C,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
         reward_manifests: FileSinkClient<RewardManifest>,
-        price_tracker: PriceTracker,
+        trino: trino_client::Client,
         reward_writers: Option<iceberg::RewardWriters>,
         data_session_source: DataSessionSource,
     ) -> anyhow::Result<Self> {
-        // get the subdao address
-        let sub_dao = resolve_subdao_pubkey();
-        tracing::info!("Mobile SubDao pubkey: {}", sub_dao);
+        // The mobile rewarder always targets the mobile sub-DAO / HNT DAO; log
+        // the resolved addresses for ops visibility (pinned by the
+        // `resolvers_match_onchain_addresses` test in the crate lib).
+        tracing::info!(
+            "Rewarding mobile sub_dao: {}, hnt dao: {}",
+            resolve_subdao_pubkey(),
+            resolve_dao_pubkey()
+        );
 
         Ok(Self {
-            sub_dao,
             pool,
-            sub_dao_epoch_reward_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
             reward_manifests,
-            price_tracker,
+            trino,
             reward_writers,
             data_session_source,
         })
@@ -153,7 +146,10 @@ where
 
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
-                if self.is_data_current(&scheduler.schedule_period).await? {
+                if self
+                    .is_data_current(next_reward_epoch, &scheduler.schedule_period)
+                    .await?
+                {
                     match self.reward(next_reward_epoch).await {
                         Ok(_) => {
                             tracing::info!("Successfully rewarded for epoch {}", next_reward_epoch);
@@ -198,8 +194,21 @@ where
 
     pub async fn is_data_current(
         &self,
+        epoch: u64,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<bool> {
+        // The HNT reward price is recovered from the epoch's on-chain deployer
+        // cap, so it is mandatory (unlike the complete-data checks below, which
+        // can be disabled). Wait and retry until the DAO epoch has closed and
+        // been indexed into Trino.
+        if epoch_reward_info::resolve(&self.trino, epoch_reward_info::SOLANA_SCHEMA, epoch)
+            .await?
+            .is_none()
+        {
+            tracing::info!(epoch, "On-chain reward data not yet available; waiting");
+            return Ok(false);
+        }
+
         // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
@@ -229,27 +238,26 @@ where
     }
 
     pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
-        tracing::info!(
-            "Resolving reward info for epoch: {}, subdao: {}",
+        tracing::info!("Resolving reward info for epoch: {next_reward_epoch}");
+
+        // Resolve the epoch's reward inputs — the emissions split to distribute
+        // and the HNT price to stamp — from a single Trino snapshot (replacing
+        // the mobile-config gRPC client). The `is_data_current` gate already
+        // confirmed they're available.
+        let epoch_reward_info::ResolvedEpoch {
+            reward_info,
+            price_in_bones,
+        } = epoch_reward_info::resolve(
+            &self.trino,
+            epoch_reward_info::SOLANA_SCHEMA,
             next_reward_epoch,
-            self.sub_dao
-        );
+        )
+        .await?
+        .ok_or_else(|| {
+            anyhow::anyhow!("on-chain reward data unavailable for epoch {next_reward_epoch}")
+        })?;
 
-        let reward_info = self
-            .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao.to_string(), next_reward_epoch)
-            .await?
-            .ok_or(anyhow::anyhow!(
-                "No reward info found for epoch {}",
-                next_reward_epoch
-            ))?;
-
-        let pricer_hnt_price = self
-            .price_tracker
-            .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
-            .await?;
-
-        let price_info = PriceInfo::new(pricer_hnt_price, Token::Hnt.decimals());
+        let price_info = PriceInfo::new(price_in_bones, Token::Hnt.decimals());
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {} and reward pool: {}",
@@ -326,10 +334,7 @@ where
     }
 }
 
-impl<C> ManagedTask for Rewarder<C>
-where
-    C: SubDaoEpochRewardInfoResolver,
-{
+impl ManagedTask for Rewarder {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
@@ -352,7 +357,13 @@ pub async fn reward_dc(
     // flat 24% service-provider cut, so the cap/backstop shift is absorbed here
     // rather than over-/under-allocating. See `reward_shares::emissions_split`.
     let pool = Decimal::from(hip_149_reward_pools(reward_info).data_transfer);
-    let demand = rewardable.reward_sum(&price_info);
+    // Demand is the HNT-bone value of the burned DC at the epoch price — a
+    // telemetry input only (the payout rate is `pool / total_dc`, price-free).
+    // `dc_to_hnt_bones` is linear, so summing per hotspot is unnecessary.
+    let demand = dc_to_hnt_bones(
+        Decimal::from(rewardable.total_dc()),
+        price_info.price_per_bone,
+    );
     let total_bytes = rewardable.total_bytes();
 
     // Distribute the whole pool across hotspots in proportion to their data
