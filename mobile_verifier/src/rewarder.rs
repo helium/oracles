@@ -1,7 +1,7 @@
 use crate::{
     banning,
     data_session::{self, DataSessionSource},
-    heartbeats, iceberg, resolve_subdao_pubkey,
+    heartbeats, iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
@@ -27,28 +27,29 @@ use mobile_config::{
     client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo,
 };
-use price_tracker::{PriceProvider, PriceTracker};
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
-use solana::{SolPubkey, Token};
+use solana::Token;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
 mod db;
+pub mod hnt_price;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder<C> {
-    sub_dao: SolPubkey,
     pool: Pool<Postgres>,
     sub_dao_epoch_reward_client: C,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_manifests: FileSinkClient<RewardManifest>,
-    price_tracker: PriceTracker,
+    /// Trino client, used both to recover the epoch's HNT price from the
+    /// on-chain deployer cap (see [`hnt_price`]) and by [`DataSessionSource`].
+    trino: trino_client::Client,
     reward_writers: Option<iceberg::RewardWriters>,
     data_session_source: DataSessionSource,
 }
@@ -63,10 +64,8 @@ where
         file_upload: FileUpload,
         sub_dao_epoch_reward_info_resolver: C,
         reward_writers: Option<iceberg::RewardWriters>,
-        trino: Option<trino_client::Client>,
+        trino: trino_client::Client,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
-
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
@@ -85,7 +84,7 @@ where
         )
         .await?;
 
-        let data_session_source = DataSessionSource::new(pool.clone(), trino);
+        let data_session_source = DataSessionSource::new(pool.clone(), Some(trino.clone()));
 
         let rewarder = Rewarder::new(
             pool.clone(),
@@ -94,13 +93,12 @@ where
             settings.reward_period_offset,
             mobile_rewards,
             reward_manifests,
-            price_tracker,
+            trino,
             reward_writers,
             data_session_source,
         )?;
 
         Ok(TaskManager::builder()
-            .add_task(price_daemon)
             .add_task(mobile_rewards_server)
             .add_task(reward_manifests_server)
             .add_task(rewarder)
@@ -115,23 +113,27 @@ where
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
         reward_manifests: FileSinkClient<RewardManifest>,
-        price_tracker: PriceTracker,
+        trino: trino_client::Client,
         reward_writers: Option<iceberg::RewardWriters>,
         data_session_source: DataSessionSource,
     ) -> anyhow::Result<Self> {
-        // get the subdao address
-        let sub_dao = resolve_subdao_pubkey();
-        tracing::info!("Mobile SubDao pubkey: {}", sub_dao);
+        // The mobile rewarder always targets the mobile sub-DAO / HNT DAO; log
+        // the resolved addresses for ops visibility (pinned by the
+        // `resolvers_match_onchain_addresses` test in the crate lib).
+        tracing::info!(
+            "Rewarding mobile sub_dao: {}, hnt dao: {}",
+            resolve_subdao_pubkey(),
+            resolve_dao_pubkey()
+        );
 
         Ok(Self {
-            sub_dao,
             pool,
             sub_dao_epoch_reward_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
             reward_manifests,
-            price_tracker,
+            trino,
             reward_writers,
             data_session_source,
         })
@@ -153,7 +155,10 @@ where
 
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
-                if self.is_data_current(&scheduler.schedule_period).await? {
+                if self
+                    .is_data_current(next_reward_epoch, &scheduler.schedule_period)
+                    .await?
+                {
                     match self.reward(next_reward_epoch).await {
                         Ok(_) => {
                             tracing::info!("Successfully rewarded for epoch {}", next_reward_epoch);
@@ -198,8 +203,21 @@ where
 
     pub async fn is_data_current(
         &self,
+        epoch: u64,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<bool> {
+        // The HNT reward price is recovered from the epoch's on-chain deployer
+        // cap, so it is mandatory (unlike the complete-data checks below, which
+        // can be disabled). Wait and retry until the DAO epoch has closed and
+        // been indexed into Trino.
+        if hnt_price::price_in_bones_for_epoch(&self.trino, hnt_price::SOLANA_SCHEMA, epoch)
+            .await?
+            .is_none()
+        {
+            tracing::info!(epoch, "On-chain deployer cap not yet available; waiting");
+            return Ok(false);
+        }
+
         // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
@@ -229,27 +247,34 @@ where
     }
 
     pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
-        tracing::info!(
-            "Resolving reward info for epoch: {}, subdao: {}",
-            next_reward_epoch,
-            self.sub_dao
-        );
+        tracing::info!("Resolving reward info for epoch: {next_reward_epoch}");
 
         let reward_info = self
             .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao.to_string(), next_reward_epoch)
+            .resolve_info(&resolve_subdao_pubkey().to_string(), next_reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",
                 next_reward_epoch
             ))?;
 
-        let pricer_hnt_price = self
-            .price_tracker
-            .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
-            .await?;
+        // Recover the HNT price the chain pinned at epoch close from the stored
+        // deployer cap, rather than a price feed (see `hnt_price`). The
+        // `is_data_current` gate already confirmed it is available.
+        let price_in_bones = hnt_price::price_in_bones_for_epoch(
+            &self.trino,
+            hnt_price::SOLANA_SCHEMA,
+            reward_info.epoch_day,
+        )
+        .await?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "on-chain deployer cap unavailable for epoch {}",
+                reward_info.epoch_day
+            )
+        })?;
 
-        let price_info = PriceInfo::new(pricer_hnt_price, Token::Hnt.decimals());
+        let price_info = PriceInfo::new(price_in_bones, Token::Hnt.decimals());
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {} and reward pool: {}",

@@ -122,6 +122,10 @@ pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Mobile.key()
 }
 
+pub fn resolve_dao_pubkey() -> SolPubkey {
+    solana::Dao::Hnt.key()
+}
+
 pub trait ToProtoDecimal {
     fn proto_decimal(&self) -> helium_proto::Decimal;
 }
@@ -150,3 +154,21 @@ impl FromProtoDecimal for Option<helium_proto::Decimal> {
 
 #[cfg(test)]
 tls_init::include_tls_tests!();
+
+#[cfg(test)]
+mod address_tests {
+    use super::{resolve_dao_pubkey, resolve_subdao_pubkey};
+
+    // On-chain addresses observed in the prod Solana indexer (dao_epoch_infos /
+    // sub_dao_epoch_infos). These are the exact values the reward-price query
+    // filters on, so pin the derived PDAs against them — a canary for a
+    // helium-lib change or a wrong DAO/sub-DAO mapping.
+    const HNT_DAO: &str = "BQ3MCuTT5zVBhNfQ4SjMh3NPVhFy73MPV8rjfq5d1zie";
+    const MOBILE_SUB_DAO: &str = "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22";
+
+    #[test]
+    fn resolvers_match_onchain_addresses() {
+        assert_eq!(resolve_dao_pubkey().to_string(), HNT_DAO);
+        assert_eq!(resolve_subdao_pubkey().to_string(), MOBILE_SUB_DAO);
+    }
+}

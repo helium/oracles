@@ -7,6 +7,7 @@ mod heartbeats_iceberg;
 mod last_location;
 mod reward_dc;
 mod rewarder_dc_trino;
+mod rewarder_hnt_price_trino;
 mod rewarder_sp_rewards;
 mod speedtest_avgs_iceberg;
 mod speedtests;

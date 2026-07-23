@@ -66,15 +66,12 @@ impl Cmd {
                 (iceberg::PocWriters::noop(), None)
             };
 
-        // Optional Trino query client for the reward pipeline. When configured,
-        // data-transfer sessions are read from Trino and compared against
-        // Postgres (see `data_session::DataSessionSource`). `from_settings` is
+        // Trino query client for the reward pipeline: recovers the epoch's HNT
+        // price from on-chain deployer-cap data, and reads/compares data-transfer
+        // sessions against Postgres (see `data_session::DataSessionSource`).
+        // Required — rewarding has no other price source. `from_settings` is
         // synchronous and starts the JWT-file watcher if configured.
-        let trino_client = settings
-            .trino
-            .as_ref()
-            .map(trino_client::Client::from_settings)
-            .transpose()?;
+        let trino_client = trino_client::Client::from_settings(&settings.trino)?;
 
         TaskManager::builder()
             .add_task(file_upload_server)

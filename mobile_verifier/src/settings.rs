@@ -34,17 +34,17 @@ pub struct Settings {
     pub database: db_store::Settings,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
-    pub price_tracker: price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
-    /// Optional Trino query client. When configured, the reward pipeline reads
-    /// data-transfer sessions from both Postgres and Trino each epoch and emits
-    /// divergence metrics (the "compare" phase of the Postgres→Trino migration).
-    /// When absent, rewards read from Postgres only.
-    #[serde(default)]
-    pub trino: Option<trino_client::Settings>,
+    /// Trino query client. Required: each epoch the reward pipeline recovers the
+    /// HNT price from on-chain deployer-cap data via Trino
+    /// (`solana.public.dao_epoch_infos` joined to `sub_dao_epoch_infos`) instead
+    /// of a price feed. It also reads data-transfer sessions from Trino and emits
+    /// divergence metrics against Postgres (the "compare" phase of the
+    /// Postgres→Trino migration), so that comparison now always runs.
+    pub trino: trino_client::Settings,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]
     pub usa_and_mexico_geofence_regions: PathBuf,

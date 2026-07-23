@@ -86,20 +86,24 @@ bucket = "mainnet-mobile-verified"
 #
 # endpoint = "127.0.0.1:19000"
 
-# Trino query client. When present, the reward pipeline reads data-transfer
-# sessions from Trino alongside Postgres and emits divergence metrics (the
-# Postgres -> Trino migration "compare" phase). Omit the whole section to read
-# data sessions from Postgres only.
-#
-# [trino]
-# host = "trino.example.com"
-# port = 443
-# user = "mobile-verifier"
-#
-# # Catalog/schema that holds data_transfer.burned_sessions. Optional; a
-# # two-part `namespace.table` name resolves against `catalog`.
-# # catalog = "iceberg"
-# # schema = "data_transfer"
+# Trino query client. REQUIRED. Each epoch the reward pipeline recovers the HNT
+# price from on-chain deployer-cap data via Trino (solana.public.dao_epoch_infos
+# joined to sub_dao_epoch_infos) instead of a price feed; it also reads
+# data-transfer sessions from Trino and compares them against Postgres (the
+# Postgres -> Trino migration "compare" phase). The cluster must expose both the
+# `solana` catalog (on-chain indexer DB) and the catalog holding
+# data_transfer.burned_sessions.
+
+[trino]
+host = "trino.example.com"
+port = 443
+user = "mobile-verifier"
+
+# Default catalog/schema for two-part `namespace.table` names (e.g.
+# data_transfer.burned_sessions). Price queries use fully-qualified
+# solana.public.* names and resolve regardless of these.
+# catalog = "iceberg"
+# schema = "data_transfer"
 #
 # # Use HTTPS (default false); skip TLS verification for local dev (default false).
 # # secure = true
