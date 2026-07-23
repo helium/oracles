@@ -1,68 +1,32 @@
-//! Single-purpose helpers against the on-chain metadata Postgres
-//! (`mobile_hotspot_infos`, `key_to_assets`).
+//! Helpers against the on-chain metadata Postgres (`mobile_hotspot_infos`,
+//! `key_to_assets`).
 //!
-//! The chain_rewardable_entities S3 stream is the primary source of gateway
-//! updates. These helpers exist solely to recover the WiFi `(antenna,
-//! elevation)` pair, which is not carried by the proto and must be looked
-//! up from `mobile_hotspot_infos.deployment_info`.
+//! The dbt chain tables (dbt.mobile_gateway_inventory / mobile_hotspot_history)
+//! carry every gateway field except the WiFi `(antenna, elevation)` pair, which
+//! lives only in `mobile_hotspot_infos.deployment_info`. [`fetch_all_deployment_info`]
+//! bulk-reads that pair for every mobile hotspot so the
+//! [`crate::gateway::tracker::DeploymentInfoTracker`] can cache it locally in
+//! the `deployment_info` table, which gateway reads then join against.
 
 use crate::gateway::service::info::DeploymentInfo;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{Pool, Postgres, Row};
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
-/// Single-row variant used by the hotspot change stream daemon — looks up
-/// `(antenna, elevation)` for one entity at change-event time.
-///
-/// Returns `(None, None)` when the metadata DB does not yet have a row for
-/// the entity, or when the row's `deployment_info` is missing/CBRS. The
-/// reconciliation [`crate::gateway::tracker::Tracker`] backfills any nulls
-/// left behind.
-pub async fn fetch_antenna_and_elevation(
-    pool: &Pool<Postgres>,
-    entity_key: &PublicKeyBinary,
-) -> sqlx::Result<(Option<u32>, Option<u32>)> {
-    let entity_key_bytes = entity_key_storage_form(entity_key)?;
-
-    let row = sqlx::query(
-        r#"
-            SELECT mhi.deployment_info::text AS deployment_info
-            FROM key_to_assets kta
-            INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
-            WHERE kta.entity_key = $1
-            ORDER BY mhi.refreshed_at DESC NULLS LAST
-            LIMIT 1
-        "#,
-    )
-    .bind(entity_key_bytes)
-    .fetch_optional(pool)
-    .await?;
-
-    let Some(row) = row else {
-        return Ok((None, None));
-    };
-
-    Ok(parse_wifi_deployment(&row, "deployment_info"))
+/// One entity's cached deployment values, ready to upsert into `deployment_info`.
+#[derive(Debug, Clone)]
+pub struct DeploymentInfoRecord {
+    pub address: PublicKeyBinary,
+    pub antenna: u32,
+    pub elevation: u32,
 }
 
-/// Batched variant used by the reconciliation tracker — fetches
-/// `(antenna, elevation)` for many entities in a single query.
-///
-/// Entities with no matching row in `key_to_assets` / `mobile_hotspot_infos`
-/// are simply absent from the returned map.
-pub async fn fetch_antenna_and_elevation_batch(
+/// Bulk-fetch `(antenna, elevation)` for every mobile hotspot that has WiFi
+/// deployment info. Entities with no row, non-WiFi (CBRS) deployment, or
+/// missing/empty deployment info are simply absent from the result.
+pub async fn fetch_all_deployment_info(
     pool: &Pool<Postgres>,
-    entity_keys: &[PublicKeyBinary],
-) -> sqlx::Result<HashMap<PublicKeyBinary, (Option<u32>, Option<u32>)>> {
-    if entity_keys.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let storage_keys: Vec<Vec<u8>> = entity_keys
-        .iter()
-        .map(entity_key_storage_form)
-        .collect::<sqlx::Result<_>>()?;
-
+) -> sqlx::Result<Vec<DeploymentInfoRecord>> {
     let rows = sqlx::query(
         r#"
             SELECT
@@ -71,33 +35,25 @@ pub async fn fetch_antenna_and_elevation_batch(
                 mhi.deployment_info::text AS deployment_info
             FROM key_to_assets kta
             INNER JOIN mobile_hotspot_infos mhi ON kta.asset = mhi.asset
-            WHERE kta.entity_key = ANY($1)
             ORDER BY kta.entity_key, mhi.refreshed_at DESC NULLS LAST
         "#,
     )
-    .bind(storage_keys)
     .fetch_all(pool)
     .await?;
 
-    rows.into_iter()
-        .map(|row| {
-            let bytes: &[u8] = row.try_get("entity_key")?;
-            let pkb = PublicKeyBinary::from_str(&bs58::encode(bytes).into_string())
-                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-            let pair = parse_wifi_deployment(&row, "deployment_info");
-            Ok((pkb, pair))
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let bytes: &[u8] = row.try_get("entity_key").ok()?;
+            let address = PublicKeyBinary::from_str(&bs58::encode(bytes).into_string()).ok()?;
+            let (antenna, elevation) = parse_wifi_deployment(&row, "deployment_info");
+            Some(DeploymentInfoRecord {
+                address,
+                antenna: antenna?,
+                elevation: elevation?,
+            })
         })
-        .collect()
-}
-
-/// `key_to_assets.entity_key` is stored as the bs58check-decoded form
-/// (network byte + inner key + 4-byte checksum), not the raw inner bytes
-/// returned by `PublicKeyBinary::as_ref()`. Round-trip through the bs58
-/// string to match the storage encoding.
-fn entity_key_storage_form(entity_key: &PublicKeyBinary) -> sqlx::Result<Vec<u8>> {
-    bs58::decode(entity_key.to_string())
-        .into_vec()
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))
+        .collect())
 }
 
 fn parse_wifi_deployment(row: &sqlx::postgres::PgRow, column: &str) -> (Option<u32>, Option<u32>) {

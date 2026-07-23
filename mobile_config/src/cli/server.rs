@@ -3,20 +3,13 @@ use crate::{
     authorization_service::AuthorizationService,
     carrier_service::CarrierService,
     entity_service::EntityService,
-    gateway::{
-        hotspot_change_stream::{self, HotspotChangeDaemon},
-        ownership_change_stream::{self, OwnershipChangeDaemon},
-        service::GatewayService,
-        tracker::Tracker,
-    },
+    gateway::{service::GatewayService, tracker::DeploymentInfoTracker},
     grpc_server::GrpcServer,
     key_cache::KeyCache,
     settings::Settings,
     sub_dao_service::SubDaoService,
 };
 
-use file_store::file_source;
-use file_store_oracles::FileType;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -77,40 +70,12 @@ impl Server {
             sub_dao_svc,
         );
 
-        let ingest_bucket = settings.ingest.connect().await;
-
-        let (hotspot_change_rx, hotspot_change_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(ingest_bucket.clone())
-            .lookback_start_after(settings.gateway_stream_start_after)
-            .prefix(FileType::MobileHotspotChangeReport.to_str())
-            .process_name(hotspot_change_stream::PROCESS_NAME.to_string())
-            .create()
-            .await?;
-
-        let (ownership_change_rx, ownership_change_server) = file_source::continuous_source()
-            .state(pool.clone())
-            .bucket_client(ingest_bucket)
-            .lookback_start_after(settings.gateway_stream_start_after)
-            .prefix(FileType::EntityOwnershipChangeReport.to_str())
-            .process_name(ownership_change_stream::PROCESS_NAME.to_string())
-            .create()
-            .await?;
-
-        let hotspot_change_daemon =
-            HotspotChangeDaemon::new(pool.clone(), metadata_pool.clone(), hotspot_change_rx);
-        let ownership_change_daemon = OwnershipChangeDaemon::new(pool.clone(), ownership_change_rx);
-
         TaskManager::builder()
             .add_task(grpc_server)
-            .add_task(hotspot_change_server)
-            .add_task(ownership_change_server)
-            .add_task(task_manager::channel_consumer(hotspot_change_daemon))
-            .add_task(task_manager::channel_consumer(ownership_change_daemon))
-            .add_task(task_manager::periodic(Tracker::new(
+            .add_task(task_manager::periodic(DeploymentInfoTracker::new(
                 pool.clone(),
                 metadata_pool.clone(),
-                settings.gateway_tracker_interval,
+                settings.deployment_info_interval,
             )))
             .build()
             .start()
