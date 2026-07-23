@@ -5590,7 +5590,6 @@ dependencies = [
  "mobile-config",
  "poc-metrics",
  "price",
- "price-tracker",
  "proptest",
  "prost",
  "rand 0.8.5",
