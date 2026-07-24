@@ -16,9 +16,6 @@ pub const DEFAULT_PREC: u32 = 15;
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 
-// Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
-pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;
-
 /// Returns the equivalent amount of Hnt bones for a specified amount of Data Credits
 pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {
     let dc_in_usd = dc_amount * DC_USD_PRICE;
@@ -42,8 +39,6 @@ pub(crate) fn floor_to_u64(value: Decimal) -> u64 {
 pub enum RewardableEntityKey {
     #[strum(serialize = "Helium Mobile")]
     Network,
-    #[strum(serialize = "Helium Mobile Service Rewards")]
-    Subscriber,
 }
 
 #[cfg(test)]
