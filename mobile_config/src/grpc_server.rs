@@ -1,13 +1,11 @@
 use crate::{
     admin_service::AdminService, authorization_service::AuthorizationService,
-    carrier_service::CarrierService, entity_service::EntityService,
-    gateway::service::GatewayService, sub_dao_service::SubDaoService,
+    entity_service::EntityService, gateway::service::GatewayService,
+    sub_dao_service::SubDaoService,
 };
 use futures_util::TryFutureExt;
 use helium_proto::services::{
-    mobile_config::{
-        AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
-    },
+    mobile_config::{AdminServer, AuthorizationServer, EntityServer, GatewayServer},
     sub_dao::SubDaoServer,
 };
 use std::{net::SocketAddr, time::Duration};
@@ -20,7 +18,6 @@ pub struct GrpcServer {
     gateway_svc: GatewayService,
     auth_svc: AuthorizationService,
     entity_svc: EntityService,
-    carrier_svc: CarrierService,
     sub_dao_svc: SubDaoService,
 }
 
@@ -32,7 +29,6 @@ impl GrpcServer {
         gateway_svc: GatewayService,
         auth_svc: AuthorizationService,
         entity_svc: EntityService,
-        carrier_svc: CarrierService,
         sub_dao_svc: SubDaoService,
     ) -> Self {
         Self {
@@ -41,7 +37,6 @@ impl GrpcServer {
             gateway_svc,
             auth_svc,
             entity_svc,
-            carrier_svc,
             sub_dao_svc,
         }
     }
@@ -58,7 +53,6 @@ impl ManagedTask for GrpcServer {
                 .add_service(GatewayServer::new(self.gateway_svc))
                 .add_service(AuthorizationServer::new(self.auth_svc))
                 .add_service(EntityServer::new(self.entity_svc))
-                .add_service(CarrierServiceServer::new(self.carrier_svc))
                 .add_service(SubDaoServer::new(self.sub_dao_svc))
                 .serve_with_shutdown(self.listen_addr, shutdown)
                 .map_err(anyhow::Error::from)

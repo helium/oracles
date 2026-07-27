@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
@@ -24,6 +23,7 @@ http-serde = { workspace = true }
 humantime-serde = { workspace = true }
 metrics = { workspace = true }
 prost = { workspace = true }
+retainer = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -40,13 +40,13 @@ custom-tracing = { path = "../custom_tracing" }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 file-store-oracles = { path = "../file_store_oracles" }
-mobile-config = { path = "../mobile_config" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
 
 helium-iceberg = { path = "../helium_iceberg", features = ["test-harness"] }
 helium-iceberg-oracles = { path = "../helium_iceberg_oracles" }
+trino-client = { path = "../trino_client" }
 trino-rust-client = { version = "0.9" }
 
 [dev-dependencies]
