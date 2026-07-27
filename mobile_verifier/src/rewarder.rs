@@ -13,7 +13,7 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
-use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
+use crate::reward_shares::RewardableEntityKey;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -413,51 +413,34 @@ pub async fn reward_service_providers(
     // HIP-149: a flat 24% of total emissions (see `reward_shares::emissions_split`).
     let sp_reward_amount = hip_149_reward_pools(reward_info).service_provider;
 
-    let subscriber_amount = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
-    let network_amount = sp_reward_amount.saturating_sub(subscriber_amount);
-
-    // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
-    let subscriber_share = proto::ServiceProviderReward {
-        service_provider_id: ServiceProvider::HeliumMobile.into(),
-        rewardable_entity_key: RewardableEntityKey::Subscriber.to_string(),
-        amount: subscriber_amount,
-    };
-
-    // Remaining rewards goes to HeliumMobile Network Wallet
+    // The entire service-provider pool goes to the HeliumMobile Network Wallet.
     let network_share = proto::ServiceProviderReward {
         service_provider_id: ServiceProvider::HeliumMobile.into(),
         rewardable_entity_key: RewardableEntityKey::Network.to_string(),
-        amount: network_amount,
+        amount: sp_reward_amount,
     };
 
     if let Some((writers, id)) = reward_ctx {
         use iceberg::service_provider_reward::IcebergServiceProviderReward;
-        let start = reward_info.epoch_period.start;
-        let end = reward_info.epoch_period.end;
 
         writers
             .write_service_provider(
                 id,
-                vec![
-                    IcebergServiceProviderReward::from_sp_reward(&subscriber_share, start, end),
-                    IcebergServiceProviderReward::from_sp_reward(&network_share, start, end),
-                ],
+                vec![IcebergServiceProviderReward::from_sp_reward(
+                    &network_share,
+                    reward_info.epoch_period.start,
+                    reward_info.epoch_period.end,
+                )],
             )
             .await?;
     }
 
-    let subscriber_reward = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::ServiceProviderReward(subscriber_share)),
-    };
     let network_reward = proto::MobileRewardShare {
         start_period: reward_info.epoch_period.start.encode_timestamp(),
         end_period: reward_info.epoch_period.end.encode_timestamp(),
         reward: Some(ProtoReward::ServiceProviderReward(network_share)),
     };
 
-    mobile_rewards.write(subscriber_reward, []).await?.await??;
     mobile_rewards.write(network_reward, []).await?.await??;
 
     Ok(())
