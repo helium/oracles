@@ -10,7 +10,7 @@ use anyhow::Result;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::services::poc_mobile::Heartbeat;
-use mobile_config::client::{sub_dao_client::SubDaoClient, AuthorizationClient, GatewayClient};
+use mobile_config::client::{AuthorizationClient, GatewayClient};
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -32,7 +32,6 @@ impl Cmd {
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
-        let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             &settings.cache,
@@ -66,15 +65,12 @@ impl Cmd {
                 (iceberg::PocWriters::noop(), None)
             };
 
-        // Optional Trino query client for the reward pipeline. When configured,
-        // data-transfer sessions are read from Trino and compared against
-        // Postgres (see `data_session::DataSessionSource`). `from_settings` is
+        // Trino query client for the reward pipeline: recovers the epoch's HNT
+        // price from on-chain deployer-cap data, and reads/compares data-transfer
+        // sessions against Postgres (see `data_session::DataSessionSource`).
+        // Required — rewarding has no other price source. `from_settings` is
         // synchronous and starts the JWT-file watcher if configured.
-        let trino_client = settings
-            .trino
-            .as_ref()
-            .map(trino_client::Client::from_settings)
-            .transpose()?;
+        let trino_client = trino_client::Client::from_settings(&settings.trino)?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
@@ -137,7 +133,6 @@ impl Cmd {
                     pool,
                     settings,
                     file_upload,
-                    sub_dao_rewards_client,
                     reward_writers,
                     trino_client,
                 )

@@ -15,7 +15,7 @@ use std::time::SystemTimeError;
 
 pub use helium_lib::{
     self,
-    dao::SubDao,
+    dao::{Dao, SubDao},
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{pubkey::Pubkey as SolPubkey, signature::Signature},
     token::{self, Token},

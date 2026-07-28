@@ -98,28 +98,33 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
+    /// HNT price as USD/HNT × 10^decimals — stamped on `GatewayReward.price` and
+    /// the reward manifest.
     pub price_in_bones: u64,
-    pub price_per_token: Decimal,
+    /// USD per bone (1 HNT = 10^decimals bones) — used only for reward telemetry
+    /// (demand, price-per-GB); the payout rate itself is price-independent.
     pub price_per_bone: Decimal,
-    pub decimals: u8,
 }
 
 impl PriceInfo {
     pub fn new(price_in_bones: u64, decimals: u8) -> Self {
-        let price_per_token =
-            Decimal::from(price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
-        let price_per_bone = price_per_token / Decimal::from(10_u64.pow(decimals as u32));
+        // price_in_bones is USD/HNT × 10^decimals: ÷10^decimals gives USD/HNT,
+        // and ÷10^decimals again gives USD per bone.
+        let scale = Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_bone = Decimal::from(price_in_bones) / scale / scale;
         Self {
             price_in_bones,
-            price_per_token,
             price_per_bone,
-            decimals,
         }
     }
 }
 
 pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Mobile.key()
+}
+
+pub fn resolve_dao_pubkey() -> SolPubkey {
+    solana::Dao::Hnt.key()
 }
 
 pub trait ToProtoDecimal {
@@ -150,3 +155,21 @@ impl FromProtoDecimal for Option<helium_proto::Decimal> {
 
 #[cfg(test)]
 tls_init::include_tls_tests!();
+
+#[cfg(test)]
+mod address_tests {
+    use super::{resolve_dao_pubkey, resolve_subdao_pubkey};
+
+    // On-chain addresses observed in the prod Solana indexer (dao_epoch_infos /
+    // sub_dao_epoch_infos). These are the exact values the reward-price query
+    // filters on, so pin the derived PDAs against them — a canary for a
+    // helium-lib change or a wrong DAO/sub-DAO mapping.
+    const HNT_DAO: &str = "BQ3MCuTT5zVBhNfQ4SjMh3NPVhFy73MPV8rjfq5d1zie";
+    const MOBILE_SUB_DAO: &str = "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22";
+
+    #[test]
+    fn resolvers_match_onchain_addresses() {
+        assert_eq!(resolve_dao_pubkey().to_string(), HNT_DAO);
+        assert_eq!(resolve_subdao_pubkey().to_string(), MOBILE_SUB_DAO);
+    }
+}
