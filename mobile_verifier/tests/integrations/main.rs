@@ -2,6 +2,7 @@ mod common;
 
 mod banning;
 mod banning_iceberg;
+mod gateway_trino;
 mod heartbeats;
 mod heartbeats_iceberg;
 mod last_location;

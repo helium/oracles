@@ -3,44 +3,26 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
 use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    mobile_config::DeviceType as MobileDeviceType,
-    poc_mobile::{SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult},
-};
-use mobile_config::{
-    client::ClientError,
-    gateway::{
-        client::GatewayInfoResolver,
-        service::info::{DeviceType, GatewayInfo, GatewayInfoStream},
-    },
+use helium_proto::services::poc_mobile::{
+    SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult,
 };
 use mobile_verifier::speedtests::{SpeedtestDaemon, BYTES_PER_MEGABIT};
+use mobile_verifier::{GatewayResolution, GatewayResolver};
 use sqlx::{Pool, Postgres};
 
 #[derive(Clone)]
 struct MockGatewayInfoResolver {}
 
 #[async_trait::async_trait]
-impl GatewayInfoResolver for MockGatewayInfoResolver {
-    async fn resolve_gateway_info(
+impl GatewayResolver for MockGatewayInfoResolver {
+    async fn resolve_gateway(
         &self,
-        address: &PublicKeyBinary,
+        _address: &PublicKeyBinary,
         _gateway_query_timestamp: &DateTime<Utc>,
-    ) -> Result<Option<GatewayInfo>, ClientError> {
-        Ok(Some(GatewayInfo {
-            address: address.clone(),
-            metadata: None,
-            device_type: DeviceType::Cbrs,
-            created_at: None,
-            updated_at: None,
-        }))
-    }
-
-    async fn stream_gateways_info(
-        &mut self,
-        _device_types: &[MobileDeviceType],
-    ) -> Result<GatewayInfoStream, ClientError> {
-        todo!()
+    ) -> anyhow::Result<GatewayResolution> {
+        // On-chain, non-data-only: speedtest verification treats this as a valid
+        // device type (the previous mock returned a CBRS gateway).
+        Ok(GatewayResolution::GatewayNotAsserted)
     }
 }
 

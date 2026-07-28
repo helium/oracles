@@ -18,12 +18,11 @@ use helium_proto::services::{
         VerifiedUniqueConnectionsIngestReportStatus, VerifiedUniqueConnectionsIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{authorization::AuthorizationVerifier, Settings};
 
 use super::db;
 
@@ -129,9 +128,8 @@ where
         let mut verified = vec![];
 
         while let Some(unique_connections_report) = stream.next().await {
-            let verified_report_status = self
-                .verify_unique_connection_report(&unique_connections_report.report)
-                .await;
+            let verified_report_status =
+                self.verify_unique_connection_report(&unique_connections_report.report);
 
             let is_valid = matches!(
                 verified_report_status,
@@ -164,20 +162,18 @@ where
         Ok(())
     }
 
-    async fn verify_unique_connection_report(
+    fn verify_unique_connection_report(
         &self,
         report: &UniqueConnectionReq,
     ) -> VerifiedUniqueConnectionsIngestReportStatus {
-        if !self.verify_known_carrier_key(&report.carrier_key).await {
+        if !self.verify_known_carrier_key(&report.carrier_key) {
             return VerifiedUniqueConnectionsIngestReportStatus::InvalidCarrierKey;
         }
         VerifiedUniqueConnectionsIngestReportStatus::Valid
     }
 
-    async fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> bool {
+    fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> bool {
         self.authorization_verifier
-            .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
-            .await
-            .unwrap_or_default()
+            .is_authorized(public_key, NetworkKeyRole::MobileCarrier)
     }
 }

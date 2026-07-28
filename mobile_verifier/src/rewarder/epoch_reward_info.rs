@@ -33,10 +33,54 @@
 //! [`PriceInfo::price_in_bones`]: crate::PriceInfo
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
-use mobile_config::{sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo};
+use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
+use std::ops::Range;
 use trino_rust_client::Trino;
+
+/// The time period covered by a reward epoch. Epoch `n` is the `n`-th UTC day
+/// since the Unix epoch. Local copy of the type mobile-config used to serve;
+/// kept here now that the epoch reward inputs are read from Trino.
+#[derive(Clone, Debug)]
+pub struct EpochInfo {
+    pub period: Range<DateTime<Utc>>,
+}
+
+impl From<u64> for EpochInfo {
+    fn from(next_reward_epoch: u64) -> Self {
+        let start_time = DateTime::UNIX_EPOCH + Duration::days(next_reward_epoch as i64);
+        let end_time = start_time + Duration::days(1);
+        EpochInfo {
+            period: start_time..end_time,
+        }
+    }
+}
+
+/// The on-chain HIP-149 reward inputs for a single epoch. Local copy of the type
+/// mobile-config used to serve over gRPC; the values are now recovered from
+/// Trino (see [`resolve`]).
+#[derive(Clone, Debug)]
+pub struct EpochRewardInfo {
+    pub epoch_day: u64,
+    pub epoch_address: String,
+    pub sub_dao_address: String,
+    pub epoch_period: Range<DateTime<Utc>>,
+    /// Total mobile sub-DAO emissions for the epoch (100%): the HNT this rewarder
+    /// distributes (`hnt_rewards_issued`) plus the delegation rewards already paid
+    /// to veHNT holders on-chain.
+    pub epoch_emissions: Decimal,
+    /// The slice of `epoch_emissions` this rewarder is responsible for
+    /// distributing (service providers + data transfer). Under the HIP-149 3×
+    /// cap / backstop the chain shifts HNT between this and the delegation
+    /// rewards, so it is no longer a fixed 94% of `epoch_emissions`; the rewarder
+    /// must distribute exactly this amount — no more, no less.
+    pub hnt_rewards_issued: Decimal,
+    /// The portion of `epoch_emissions` paid to veHNT delegators on-chain
+    /// (`epoch_emissions - hnt_rewards_issued`). The rewarder does not distribute
+    /// this; it is carried so the full on-chain split is available.
+    pub delegation_rewards_issued: Decimal,
+    pub rewards_issued_at: DateTime<Utc>,
+}
 
 /// `10^(hnt_decimals - pyth_exponent - 5)` — the DC→HNT scale factor the chain's
 /// backstop applies (`compute_backstop`). With HNT's fixed 8 decimals and the

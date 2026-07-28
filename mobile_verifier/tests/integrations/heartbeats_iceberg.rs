@@ -1,7 +1,7 @@
 use chrono::{DateTime, SubsecRound, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
-use mobile_config::gateway::service::info::DeviceType;
+use mobile_verifier::DeviceType;
 use mobile_verifier::{
     cell_type::CellType,
     heartbeats::{Heartbeat, ValidatedHeartbeat},

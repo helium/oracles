@@ -1,6 +1,5 @@
-use crate::rewarder;
+use crate::rewarder::{self, EpochInfo};
 use chrono::{DateTime, Utc};
-use mobile_config::EpochInfo;
 use sqlx::{Pool, Postgres};
 
 const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";

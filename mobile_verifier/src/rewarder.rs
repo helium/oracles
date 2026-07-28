@@ -23,7 +23,6 @@ use helium_proto::{
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
     ServiceProvider,
 };
-use mobile_config::{sub_dao_epoch_reward_info::EpochRewardInfo, EpochInfo};
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use solana::Token;
@@ -34,6 +33,8 @@ use tokio::time::sleep;
 
 mod db;
 pub mod epoch_reward_info;
+
+pub use epoch_reward_info::{EpochInfo, EpochRewardInfo};
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
