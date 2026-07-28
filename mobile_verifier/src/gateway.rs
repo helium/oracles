@@ -237,7 +237,8 @@ impl TrinoGatewayResolver {
         #[derive(Trino, serde::Serialize, serde::Deserialize)]
         struct Row {
             device_type: String,
-            asserted_hex: String,
+            // Nullable: an unasserted gateway has a NULL `asserted_hex`.
+            asserted_hex: Option<String>,
         }
 
         // The inventory table has one row per pubkey (unique index on `pub_key`).
@@ -258,7 +259,7 @@ impl TrinoGatewayResolver {
         Ok(rows
             .into_iter()
             .next()
-            .and_then(|row| row_to_meta(&row.device_type, &row.asserted_hex)))
+            .and_then(|row| row_to_meta(&row.device_type, row.asserted_hex.as_deref())))
     }
 }
 
@@ -334,10 +335,10 @@ impl Periodic for GatewaySnapshotRefresher {
 
 /// Build a [`GatewayMeta`] from the inventory's raw `device_type` / `asserted_hex`
 /// columns. Returns `None` for an unparseable device type (treated as unknown).
-/// An empty `asserted_hex` means the gateway is on-chain but unasserted.
-fn row_to_meta(device_type: &str, asserted_hex: &str) -> Option<GatewayMeta> {
+/// A NULL (or empty) `asserted_hex` means the gateway is on-chain but unasserted.
+fn row_to_meta(device_type: &str, asserted_hex: Option<&str>) -> Option<GatewayMeta> {
     let device_type = DeviceType::from_inventory(device_type)?;
-    let location = parse_asserted_location(asserted_hex);
+    let location = asserted_hex.and_then(parse_asserted_location);
     Some(GatewayMeta {
         device_type,
         location,
@@ -345,9 +346,9 @@ fn row_to_meta(device_type: &str, asserted_hex: &str) -> Option<GatewayMeta> {
 }
 
 /// Parse the inventory's `asserted_hex` column into an H3 cell index. The column
-/// holds the H3 index as a hex string (e.g. `8c2681a3064d9ff`); empty means
-/// unasserted. An unparseable non-empty value is logged and treated as
-/// unasserted.
+/// holds the H3 index as a hex string (e.g. `8c2681a3064d9ff`); a NULL (handled
+/// by the caller) or empty value means unasserted. An unparseable non-empty
+/// value is logged and treated as unasserted.
 fn parse_asserted_location(asserted_hex: &str) -> Option<u64> {
     let trimmed = asserted_hex
         .trim()
@@ -380,7 +381,8 @@ async fn load_known_gateways(
     struct Row {
         pub_key: String,
         device_type: String,
-        asserted_hex: String,
+        // Nullable: an unasserted gateway has a NULL `asserted_hex`.
+        asserted_hex: Option<String>,
     }
 
     let stmt = trino_client::Statement::new(format!(
@@ -398,7 +400,7 @@ async fn load_known_gateways(
                 continue;
             }
         };
-        if let Some(meta) = row_to_meta(&row.device_type, &row.asserted_hex) {
+        if let Some(meta) = row_to_meta(&row.device_type, row.asserted_hex.as_deref()) {
             known.insert(pubkey, meta);
         }
     }

@@ -26,23 +26,24 @@ const TABLE_NAME: &str = "mobile_hotspot_inventory";
 const LOCATION: u64 = 0x8c2681a3064d9ff;
 
 /// Only the columns [`TrinoGatewayResolver`] queries: `pub_key`, `device_type`,
-/// `asserted_hex` and `inserted_at` (the as-of filter).
+/// `asserted_hex` and `inserted_at` (the as-of filter). `asserted_hex` is
+/// nullable — unasserted gateways carry a NULL (there are ~2k of these on-chain).
 #[derive(Serialize)]
 struct InventoryRow {
     pub_key: String,
     device_type: String,
-    asserted_hex: String,
+    asserted_hex: Option<String>,
     inserted_at: DateTime<FixedOffset>,
 }
 
-fn row(pub_key: &PublicKeyBinary, device_type: &str, asserted_hex: &str) -> InventoryRow {
+fn row(pub_key: &PublicKeyBinary, device_type: &str, asserted_hex: Option<&str>) -> InventoryRow {
     // A fixed past instant; the resolver's `inserted_at <= now` fallback filter
     // is satisfied by any past time.
     let inserted_at: DateTime<FixedOffset> = "2024-01-01T00:00:00Z".parse().unwrap();
     InventoryRow {
         pub_key: pub_key.to_string(),
         device_type: device_type.to_string(),
-        asserted_hex: asserted_hex.to_string(),
+        asserted_hex: asserted_hex.map(str::to_string),
         inserted_at,
     }
 }
@@ -52,7 +53,8 @@ fn inventory_table() -> anyhow::Result<TableDefinition> {
         .with_fields([
             FieldDefinition::required_string("pub_key"),
             FieldDefinition::required_string("device_type"),
-            FieldDefinition::required_string("asserted_hex"),
+            // Nullable, matching production (unasserted gateways have NULL here).
+            FieldDefinition::optional_string("asserted_hex"),
             FieldDefinition::required_timestamptz("inserted_at"),
         ])
         .with_partition(PartitionDefinition::day("inserted_at", "inserted_at_day"))
@@ -100,9 +102,10 @@ async fn snapshot_resolves_each_device_type_and_location() -> anyhow::Result<()>
         &h,
         "initial",
         vec![
-            row(&asserted, "wifi_indoor", "8c2681a3064d9ff"),
-            row(&data_only, "wifi_data_only", ""),
-            row(&unasserted, "wifi_outdoor", ""),
+            row(&asserted, "wifi_indoor", Some("8c2681a3064d9ff")),
+            // Unasserted / data-only gateways carry a NULL asserted_hex on-chain.
+            row(&data_only, "wifi_data_only", None),
+            row(&unasserted, "wifi_outdoor", None),
         ],
     )
     .await?;
@@ -137,7 +140,7 @@ async fn fallback_resolves_gateway_missing_from_snapshot() -> anyhow::Result<()>
 
     // Snapshot is loaded with just this gateway.
     let in_snapshot = PublicKeyBinary::from(vec![1]);
-    seed(&h, "initial", vec![row(&in_snapshot, "wifi_outdoor", "")]).await?;
+    seed(&h, "initial", vec![row(&in_snapshot, "wifi_outdoor", None)]).await?;
 
     let resolver = resolver(&h).await?;
 
@@ -147,7 +150,7 @@ async fn fallback_resolves_gateway_missing_from_snapshot() -> anyhow::Result<()>
     seed(
         &h,
         "later",
-        vec![row(&onboarded_later, "wifi_indoor", "8c2681a3064d9ff")],
+        vec![row(&onboarded_later, "wifi_indoor", Some("8c2681a3064d9ff"))],
     )
     .await?;
 
