@@ -102,10 +102,10 @@ async fn snapshot_resolves_each_device_type_and_location() -> anyhow::Result<()>
         &h,
         "initial",
         vec![
-            row(&asserted, "wifi_indoor", Some("8c2681a3064d9ff")),
+            row(&asserted, "WIFI_INDOOR", Some("8c2681a3064d9ff")),
             // Unasserted / data-only gateways carry a NULL asserted_hex on-chain.
-            row(&data_only, "wifi_data_only", None),
-            row(&unasserted, "wifi_outdoor", None),
+            row(&data_only, "WIFI_DATA_ONLY", None),
+            row(&unasserted, "WIFI_OUTDOOR", None),
         ],
     )
     .await?;
@@ -140,7 +140,7 @@ async fn fallback_resolves_gateway_missing_from_snapshot() -> anyhow::Result<()>
 
     // Snapshot is loaded with just this gateway.
     let in_snapshot = PublicKeyBinary::from(vec![1]);
-    seed(&h, "initial", vec![row(&in_snapshot, "wifi_outdoor", None)]).await?;
+    seed(&h, "initial", vec![row(&in_snapshot, "WIFI_OUTDOOR", None)]).await?;
 
     let resolver = resolver(&h).await?;
 
@@ -150,7 +150,11 @@ async fn fallback_resolves_gateway_missing_from_snapshot() -> anyhow::Result<()>
     seed(
         &h,
         "later",
-        vec![row(&onboarded_later, "wifi_indoor", Some("8c2681a3064d9ff"))],
+        vec![row(
+            &onboarded_later,
+            "WIFI_INDOOR",
+            Some("8c2681a3064d9ff"),
+        )],
     )
     .await?;
 

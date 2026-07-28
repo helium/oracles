@@ -48,10 +48,10 @@ impl DeviceType {
     /// [`DeviceType::from_inventory`].
     pub fn as_str(&self) -> &'static str {
         match self {
-            DeviceType::Cbrs => "cbrs",
-            DeviceType::WifiIndoor => "wifi_indoor",
-            DeviceType::WifiOutdoor => "wifi_outdoor",
-            DeviceType::WifiDataOnly => "wifi_data_only",
+            DeviceType::Cbrs => "CBRS",
+            DeviceType::WifiIndoor => "WIFI_INDOOR",
+            DeviceType::WifiOutdoor => "WIFI_OUTDOOR",
+            DeviceType::WifiDataOnly => "WIFI_DATA_ONLY",
         }
     }
 
@@ -59,10 +59,10 @@ impl DeviceType {
     /// Returns `None` for an unrecognized value.
     pub fn from_inventory(s: &str) -> Option<Self> {
         match s {
-            "cbrs" => Some(DeviceType::Cbrs),
-            "wifi_indoor" => Some(DeviceType::WifiIndoor),
-            "wifi_outdoor" => Some(DeviceType::WifiOutdoor),
-            "wifi_data_only" => Some(DeviceType::WifiDataOnly),
+            "CBRS" => Some(DeviceType::Cbrs),
+            "WIFI_INDOOR" => Some(DeviceType::WifiIndoor),
+            "WIFI_OUTDOOR" => Some(DeviceType::WifiOutdoor),
+            "WIFI_DATA_ONLY" => Some(DeviceType::WifiDataOnly),
             _ => None,
         }
     }
@@ -410,6 +410,31 @@ async fn load_known_gateways(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "manual query validation"]
+    async fn connect() -> anyhow::Result<()> {
+        // Test load_known_gateways against real trino backend.
+        // Grab the creds and insert them here, DO NOT COMMIT!!!
+
+        let trino_client = trino_client::Client::from_settings(&trino_client::Settings {
+            host: "xxx".to_string(),
+            port: 443,
+            user: "xxx".to_string(),
+            catalog: None,
+            schema: None,
+            secure: true,
+            insecure_skip_tls_verify: false,
+            auth: Some(trino_client::AuthSettings::Basic {
+                username: "xxx".to_string(),
+                password: Some("xxx".to_string()),
+            }),
+        })?;
+        let map = load_known_gateways(&trino_client, MOBILE_HOTSPOT_INVENTORY_TABLE).await?;
+        // println!("map count: {}", map.len());
+        assert!(!map.is_empty());
+        Ok(())
+    }
 
     #[test]
     fn device_type_round_trips_inventory_strings() {
