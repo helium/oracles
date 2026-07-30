@@ -1,9 +1,11 @@
 extern crate tls_init;
 
+pub mod authorization;
 pub mod banning;
 pub mod cell_type;
 pub mod cli;
 pub mod data_session;
+pub mod gateway;
 pub mod geofence;
 pub mod heartbeats;
 pub mod iceberg;
@@ -15,86 +17,12 @@ pub mod speedtests_average;
 pub mod telemetry;
 pub mod unique_connections;
 
+pub use authorization::{AuthorizationVerifier, AuthorizedKeys};
+pub use gateway::{DeviceType, GatewayResolution, GatewayResolver};
 pub use settings::Settings;
 
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use mobile_config::client::ClientError;
-use mobile_config::gateway::service::info::DeviceType;
 use rust_decimal::Decimal;
 use solana::SolPubkey;
-
-pub enum GatewayResolution {
-    GatewayNotFound,
-    GatewayNotAsserted,
-    AssertedLocation(u64, DeviceType),
-    DataOnly,
-}
-
-impl GatewayResolution {
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, GatewayResolution::GatewayNotFound)
-    }
-}
-
-#[async_trait::async_trait]
-pub trait GatewayResolver: Clone + Send + Sync + 'static {
-    async fn resolve_gateway(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        gateway_query_timestamp: &DateTime<Utc>,
-    ) -> Result<GatewayResolution, ClientError>;
-}
-
-#[async_trait]
-impl GatewayResolver for mobile_config::GatewayClient {
-    async fn resolve_gateway(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        gateway_query_timestamp: &DateTime<Utc>,
-    ) -> Result<GatewayResolution, ClientError> {
-        use mobile_config::gateway::client::GatewayInfoResolver;
-        use mobile_config::gateway::service::info::GatewayInfo;
-
-        match self
-            .resolve_gateway_info(address, gateway_query_timestamp)
-            .await?
-        {
-            None => Ok(GatewayResolution::GatewayNotFound),
-            Some(info) if info.is_data_only() => Ok(GatewayResolution::DataOnly),
-            Some(GatewayInfo {
-                metadata: Some(metadata),
-                device_type,
-                ..
-            }) => Ok(GatewayResolution::AssertedLocation(
-                metadata.location,
-                device_type,
-            )),
-            Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
-        }
-    }
-}
-
-#[async_trait]
-pub trait IsAuthorized {
-    async fn is_authorized(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        role: helium_proto::services::mobile_config::NetworkKeyRole,
-    ) -> Result<bool, ClientError>;
-}
-
-#[async_trait]
-impl IsAuthorized for mobile_config::client::AuthorizationClient {
-    async fn is_authorized(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        role: helium_proto::services::mobile_config::NetworkKeyRole,
-    ) -> Result<bool, ClientError> {
-        use mobile_config::client::authorization_client::AuthorizationVerifier;
-        self.verify_authorized_key(address, role).await
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {

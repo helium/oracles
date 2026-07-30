@@ -1,6 +1,7 @@
 pub mod last_location;
 pub mod wifi;
 
+use crate::DeviceType;
 use crate::{cell_type::CellType, geofence::GeofenceValidator, GatewayResolution, GatewayResolver};
 use anyhow::Context;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
@@ -10,7 +11,6 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
-use mobile_config::gateway::service::info::DeviceType;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;

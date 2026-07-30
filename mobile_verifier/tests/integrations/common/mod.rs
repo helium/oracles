@@ -7,9 +7,8 @@ use helium_proto::services::poc_mobile::{
     RadioReward, RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
     UnallocatedReward,
 };
-use mobile_config::gateway::service::info::DeviceType;
-use mobile_config::{client::ClientError, sub_dao_epoch_reward_info::EpochRewardInfo};
-use mobile_verifier::{GatewayResolution, GatewayResolver, PriceInfo};
+use mobile_verifier::rewarder::EpochRewardInfo;
+use mobile_verifier::{DeviceType, GatewayResolution, GatewayResolver, PriceInfo};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use solana::Token;
@@ -31,7 +30,7 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
         &self,
         _address: &PublicKeyBinary,
         _gateway_query_timestamp: &DateTime<Utc>,
-    ) -> Result<GatewayResolution, ClientError> {
+    ) -> anyhow::Result<GatewayResolution> {
         Ok(GatewayResolution::AssertedLocation(
             0x8c2681a3064d9ff,
             DeviceType::WifiIndoor,

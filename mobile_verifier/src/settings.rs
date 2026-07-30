@@ -1,9 +1,14 @@
+use crate::authorization::AuthorizedKeys;
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
+use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Duration,
 };
 
@@ -34,7 +39,21 @@ pub struct Settings {
     pub database: db_store::Settings,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
-    pub config_client: mobile_config::ClientSettings,
+    /// Public keys authorized to submit hotspot ban reports
+    /// (`NetworkKeyRole::Banning`). Comma-separated b58 keys. Required — at least
+    /// one key; see [`Settings::authorized_keys`]. Replaces the mobile-config
+    /// authorization lookup.
+    #[serde(default)]
+    pub banning_authorized_keys: String,
+    /// Public keys authorized to submit unique-connection reports
+    /// (`NetworkKeyRole::MobileCarrier`). Comma-separated b58 keys. Required — at
+    /// least one key; see [`Settings::authorized_keys`].
+    #[serde(default)]
+    pub mobile_carrier_authorized_keys: String,
+    /// How often the in-memory snapshot of known gateways is refreshed from the
+    /// Trino inventory table (see [`crate::gateway`]).
+    #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
+    pub gateway_refresh_interval: Duration,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
     pub iceberg_settings: Option<helium_iceberg::Settings>,
@@ -54,6 +73,10 @@ pub struct Settings {
 
 fn default_fencing_resolution() -> u8 {
     7
+}
+
+fn default_gateway_refresh_interval() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
 fn default_log() -> String {
@@ -125,5 +148,66 @@ impl Settings {
 
     pub fn store_base_path(&self) -> &std::path::Path {
         std::path::Path::new(&self.cache)
+    }
+
+    /// The static per-role authorization allow-lists, parsed from settings. Both
+    /// lists are required: an empty list is an error (mirrors mobile-packet-verifier's
+    /// `routing_keys`), so a misconfiguration fails at startup rather than
+    /// silently rejecting every report.
+    pub fn authorized_keys(&self) -> anyhow::Result<AuthorizedKeys> {
+        Ok(AuthorizedKeys::new(
+            parse_authorized_keys("banning_authorized_keys", &self.banning_authorized_keys)?,
+            parse_authorized_keys(
+                "mobile_carrier_authorized_keys",
+                &self.mobile_carrier_authorized_keys,
+            )?,
+        ))
+    }
+}
+
+/// Parse a comma-separated list of b58 public keys into a non-empty set. Blank
+/// entries are ignored; a list that yields no keys is an error, since each
+/// authorized-key role must be configured.
+fn parse_authorized_keys(setting: &str, keys: &str) -> anyhow::Result<HashSet<PublicKeyBinary>> {
+    let parsed: HashSet<PublicKeyBinary> = keys
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(|key| {
+            PublicKeyBinary::from_str(key)
+                .with_context(|| format!("settings parsing {setting}: {key}"))
+        })
+        .collect::<anyhow::Result<_>>()?;
+
+    if parsed.is_empty() {
+        anyhow::bail!("no keys provided in settings for {setting}");
+    }
+    Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_authorized_keys;
+
+    const KEY: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+    #[test]
+    fn empty_authorized_keys_is_an_error() {
+        assert!(parse_authorized_keys("banning_authorized_keys", "").is_err());
+        // Whitespace / stray commas still yield no keys — also an error.
+        assert!(parse_authorized_keys("banning_authorized_keys", "  , ,").is_err());
+    }
+
+    #[test]
+    fn invalid_key_is_an_error() {
+        assert!(parse_authorized_keys("banning_authorized_keys", "not-a-b58-key").is_err());
+    }
+
+    #[test]
+    fn parses_and_dedupes_keys() {
+        let keys =
+            parse_authorized_keys("mobile_carrier_authorized_keys", &format!("{KEY}, {KEY}"))
+                .expect("valid keys");
+        assert_eq!(keys.len(), 1);
     }
 }

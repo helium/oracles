@@ -3,6 +3,7 @@ use crate::{
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
 };
+use crate::{GatewayResolution, GatewayResolver};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
@@ -19,7 +20,6 @@ use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestAvgValidity, SpeedtestIngestReportV1,
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use mobile_config::gateway::client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, PgPool, PgTransaction, Row};
 use std::{
     collections::HashMap,
@@ -72,7 +72,7 @@ pub struct SpeedtestDaemon<GIR> {
 
 impl<GIR> SpeedtestDaemon<GIR>
 where
-    GIR: GatewayInfoResolver,
+    GIR: GatewayResolver,
 {
     pub async fn create_managed_task(
         pool: PgPool,
@@ -248,14 +248,15 @@ where
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&speedtest.report.pubkey, &speedtest.received_timestamp)
+            .resolve_gateway(&speedtest.report.pubkey, &speedtest.received_timestamp)
             .await?
         {
-            Some(gw_info) if gw_info.is_data_only() => {
-                Ok(SpeedtestResult::SpeedtestInvalidDeviceType)
+            GatewayResolution::DataOnly => Ok(SpeedtestResult::SpeedtestInvalidDeviceType),
+            GatewayResolution::GatewayNotFound => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
+            // Asserted or on-chain-but-unasserted, non-data-only: valid.
+            GatewayResolution::AssertedLocation(_, _) | GatewayResolution::GatewayNotAsserted => {
+                Ok(SpeedtestResult::SpeedtestValid)
             }
-            Some(_) => Ok(SpeedtestResult::SpeedtestValid),
-            None => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
         }
     }
 
@@ -281,7 +282,7 @@ where
 
 impl<GIR> ManagedTask for SpeedtestDaemon<GIR>
 where
-    GIR: GatewayInfoResolver,
+    GIR: GatewayResolver,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))

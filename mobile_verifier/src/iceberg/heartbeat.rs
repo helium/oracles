@@ -4,9 +4,8 @@ use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use mobile_config::gateway::service::info::DeviceType;
-
 use crate::heartbeats::ValidatedHeartbeat;
+use crate::DeviceType;
 
 pub use super::NAMESPACE;
 pub const TABLE_NAME: &str = "heartbeats";

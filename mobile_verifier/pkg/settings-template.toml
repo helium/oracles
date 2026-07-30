@@ -13,6 +13,20 @@ cache = "/var/data/verfied-reports"
 # the reward period + reward_offset; Default = 30 minutes
 # reward_offset_minutes = "30 minutes"
 
+# Comma-separated b58 public keys authorized to submit hotspot ban reports
+# (NetworkKeyRole::Banning). Replaces the mobile-config authorization lookup.
+# Required: at least one key, or the service errors on startup.
+banning_authorized_keys = "key1,key2"
+
+# Comma-separated b58 public keys authorized to submit unique-connection reports
+# (NetworkKeyRole::MobileCarrier).
+# Required: at least one key, or the service errors on startup.
+mobile_carrier_authorized_keys = "key1,key2"
+
+# How often the in-memory snapshot of known gateways is refreshed from the Trino
+# inventory table (see [trino]). Default is 1 hour.
+# gateway_refresh_interval = "1 hour"
+
 [database]
 
 # Postgres Connection Information

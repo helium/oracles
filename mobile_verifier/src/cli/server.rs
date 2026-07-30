@@ -1,16 +1,15 @@
 use std::time::Duration;
 
 use crate::{
-    banning::ingestor::BanIngestor, data_session::DataSessionIngestor, geofence::Geofence,
-    heartbeats::wifi::WifiHeartbeatDaemon, iceberg, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, telemetry,
+    banning::ingestor::BanIngestor, data_session::DataSessionIngestor,
+    gateway::TrinoGatewayResolver, geofence::Geofence, heartbeats::wifi::WifiHeartbeatDaemon,
+    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor, Settings,
 };
 use anyhow::Result;
 use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::services::poc_mobile::Heartbeat;
-use mobile_config::client::{AuthorizationClient, GatewayClient};
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -28,10 +27,6 @@ impl Cmd {
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
                 .await;
-
-        // mobile config clients
-        let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
-        let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             &settings.cache,
@@ -69,18 +64,28 @@ impl Cmd {
         // price from on-chain deployer-cap data, and reads/compares data-transfer
         // sessions against Postgres (see `data_session::DataSessionSource`).
         // Required — rewarding has no other price source. `from_settings` is
-        // synchronous and starts the JWT-file watcher if configured.
+        // synchronous and starts the JWT-file watcher if configured. It also
+        // backs the gateway resolver below (replacing mobile-config).
         let trino_client = trino_client::Client::from_settings(&settings.trino)?;
+
+        // Gateway resolution and authorization now come from Trino + settings
+        // instead of the mobile-config gRPC server.
+        let gateway_resolver =
+            TrinoGatewayResolver::new(trino_client.clone(), settings.gateway_refresh_interval)
+                .await;
+        let gateway_refresher = gateway_resolver.refresher();
+        let authorized_keys = settings.authorized_keys()?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
+            .add_task(task_manager::periodic(gateway_refresher))
             .add_task(
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     ingest_bucket_client.clone(),
-                    gateway_client.clone(),
+                    gateway_resolver.clone(),
                     valid_heartbeats,
                     usa_and_mexico_geofence,
                     poc_writers.heartbeat,
@@ -93,7 +98,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
-                    gateway_client.clone(),
+                    gateway_resolver.clone(),
                     poc_writers.speedtest,
                     poc_writers.speedtest_avg,
                 )
@@ -105,7 +110,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
-                    auth_client.clone(),
+                    authorized_keys.clone(),
                 )
                 .await?,
             )
@@ -122,7 +127,7 @@ impl Cmd {
                     pool.clone(),
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
-                    auth_client,
+                    authorized_keys,
                     settings,
                     poc_writers.ban,
                 )

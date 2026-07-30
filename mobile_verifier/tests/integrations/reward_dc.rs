@@ -11,7 +11,7 @@ use helium_iceberg::IcebergTestHarness;
 use helium_iceberg_oracles::data_transfer::burned_session::{
     self, IcebergBurnedDataTransferSession,
 };
-use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
+use mobile_verifier::rewarder::EpochRewardInfo;
 use mobile_verifier::{
     data_session::{self, DataSessionSource},
     reward_shares, rewarder,

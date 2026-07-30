@@ -4,23 +4,16 @@ use file_store_oracles::mobile_ban::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
-use mobile_config::{
-    client::{authorization_client::AuthorizationVerifier, ClientError},
-    EpochInfo,
-};
+use mobile_verifier::authorization::AuthorizationVerifier;
 use mobile_verifier::banning::{ingestor::process_ban_report, BannedRadios};
+use mobile_verifier::rewarder::EpochInfo;
 use sqlx::PgPool;
 
 struct AllVerified;
 
-#[async_trait::async_trait]
 impl AuthorizationVerifier for AllVerified {
-    async fn verify_authorized_key(
-        &self,
-        _pubkey: &PublicKeyBinary,
-        _role: NetworkKeyRole,
-    ) -> Result<bool, ClientError> {
-        Ok(true)
+    fn is_authorized(&self, _address: &PublicKeyBinary, _role: NetworkKeyRole) -> bool {
+        true
     }
 }
 
@@ -359,14 +352,9 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
 async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Result<()> {
     struct NoneVerified;
 
-    #[async_trait::async_trait]
     impl AuthorizationVerifier for NoneVerified {
-        async fn verify_authorized_key(
-            &self,
-            _pubkey: &PublicKeyBinary,
-            _role: NetworkKeyRole,
-        ) -> Result<bool, ClientError> {
-            Ok(false)
+        fn is_authorized(&self, _address: &PublicKeyBinary, _role: NetworkKeyRole) -> bool {
+            false
         }
     }
 

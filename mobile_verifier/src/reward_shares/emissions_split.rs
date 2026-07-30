@@ -28,7 +28,7 @@
 //! holds exactly, every epoch. The proptests below pin that invariant across the
 //! full input range.
 
-use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
+use crate::rewarder::EpochRewardInfo;
 use rust_decimal::Decimal;
 
 use super::{floor_to_u64, SERVICE_PROVIDER_PERCENT};

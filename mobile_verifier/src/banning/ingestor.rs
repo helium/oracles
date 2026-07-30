@@ -16,12 +16,14 @@ use file_store_oracles::{
 };
 use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
-use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{iceberg, Settings};
+use crate::{
+    authorization::{AuthorizationVerifier, AuthorizedKeys},
+    iceberg, Settings,
+};
 
 use super::db;
 
@@ -29,7 +31,7 @@ use super::db;
 
 pub struct BanIngestor {
     pool: PgPool,
-    auth_verifier: AuthorizationClient,
+    authorized_keys: AuthorizedKeys,
     report_rx: Receiver<FileInfoStream<BanReport>>,
     verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
     iceberg_writer: Option<iceberg::BanWriter>,
@@ -59,7 +61,7 @@ impl BanIngestor {
         pool: PgPool,
         file_upload: FileUpload,
         bucket_client: BucketClient,
-        auth_verifier: AuthorizationClient,
+        authorized_keys: AuthorizedKeys,
         settings: &Settings,
         iceberg_writer: Option<iceberg::BanWriter>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -82,7 +84,7 @@ impl BanIngestor {
 
         let ingestor = Self::new(
             pool,
-            auth_verifier,
+            authorized_keys,
             report_rx,
             verified_sink,
             iceberg_writer,
@@ -97,14 +99,14 @@ impl BanIngestor {
 
     pub fn new(
         pool: PgPool,
-        auth_verifier: AuthorizationClient,
+        authorized_keys: AuthorizedKeys,
         report_rx: Receiver<FileInfoStream<BanReport>>,
         verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
         iceberg_writer: Option<iceberg::BanWriter>,
     ) -> Self {
         Self {
             pool,
-            auth_verifier,
+            authorized_keys,
             report_rx,
             verified_sink,
             iceberg_writer,
@@ -125,7 +127,8 @@ impl BanIngestor {
         let mut invalid_iceberg_records = vec![];
 
         while let Some(report) = stream.next().await {
-            let verified_report = process_ban_report(&mut txn, &self.auth_verifier, report).await?;
+            let verified_report =
+                process_ban_report(&mut txn, &self.authorized_keys, report).await?;
             if self.iceberg_writer.is_some() {
                 let record = iceberg::IcebergBan::from(&verified_report);
                 if verified_report.is_valid() {
@@ -161,7 +164,7 @@ pub async fn process_ban_report(
     auth_verifier: &impl AuthorizationVerifier,
     report: BanReport,
 ) -> anyhow::Result<VerifiedBanReport> {
-    let status = get_verified_status(auth_verifier, &report.report.ban_pubkey).await?;
+    let status = get_verified_status(auth_verifier, &report.report.ban_pubkey);
 
     let verified_report = VerifiedBanReport {
         verified_timestamp: Utc::now(),
@@ -175,16 +178,12 @@ pub async fn process_ban_report(
     Ok(verified_report)
 }
 
-async fn get_verified_status(
+fn get_verified_status(
     auth_verifier: &impl AuthorizationVerifier,
     pubkey: &helium_crypto::PublicKeyBinary,
-) -> anyhow::Result<VerifiedBanIngestReportStatus> {
-    let is_authorized = auth_verifier
-        .verify_authorized_key(pubkey, NetworkKeyRole::Banning)
-        .await?;
-    let status = match is_authorized {
+) -> VerifiedBanIngestReportStatus {
+    match auth_verifier.is_authorized(pubkey, NetworkKeyRole::Banning) {
         true => VerifiedBanIngestReportStatus::Valid,
         false => VerifiedBanIngestReportStatus::InvalidBanKey,
-    };
-    Ok(status)
+    }
 }
