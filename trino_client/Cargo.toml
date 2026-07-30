@@ -13,7 +13,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-trino-rust-client = "0.9"
+trino-rust-client = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 notify = { workspace = true, features = ["macos_fsevent"] }

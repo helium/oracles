@@ -60,7 +60,7 @@ task-manager = { path = "../task_manager" }
 helium-iceberg = { path = "../helium_iceberg" }
 helium-iceberg-oracles = { path = "../helium_iceberg_oracles" }
 trino-client = { path = "../trino_client" }
-trino-rust-client = { version = "0.9" }
+trino-rust-client = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.5.0"
