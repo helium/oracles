@@ -15,7 +15,6 @@ mod settings;
 pub mod speedtests;
 pub mod speedtests_average;
 pub mod telemetry;
-pub mod unique_connections;
 
 pub use authorization::{AuthorizationVerifier, AuthorizedKeys};
 pub use gateway::{DeviceType, GatewayResolution, GatewayResolver};

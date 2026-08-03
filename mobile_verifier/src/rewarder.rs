@@ -6,7 +6,7 @@ use crate::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
     },
-    speedtests, telemetry, unique_connections, PriceInfo, Settings,
+    speedtests, telemetry, PriceInfo, Settings,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
@@ -208,7 +208,7 @@ impl Rewarder {
             return Ok(false);
         }
 
-        // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
+        // Check if we have heartbeats and speedtests past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No wifi heartbeats found past reward period");
@@ -217,11 +217,6 @@ impl Rewarder {
 
             if db::no_speedtests(&self.pool, reward_period).await? {
                 tracing::info!("No speedtests found past reward period");
-                return Ok(false);
-            }
-
-            if db::no_unique_connections(&self.pool, reward_period).await? {
-                tracing::info!("No unique connections found past reward period");
                 return Ok(false);
             }
 
@@ -297,7 +292,6 @@ impl Rewarder {
             &reward_info.epoch_period.start,
         )
         .await?;
-        unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
         save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
