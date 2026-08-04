@@ -3,8 +3,9 @@
 //! The table's schema (struct + `table_definition`) is owned by the shared
 //! [`helium_iceberg_oracles::data_transfer::burned_session`] crate and written
 //! by `mobile_packet_verifier`. This module holds only the read side: the
-//! per-hotspot aggregation the reward pipeline needs, returning the same
-//! [`RewardableDataByHotspot`] as the Postgres path in [`crate::data_session`].
+//! per-hotspot aggregation the reward pipeline needs, returning a
+//! [`RewardableDataByHotspot`] (from [`crate::data_session`]) for the rewarder
+//! to distribute.
 
 use std::ops::Range;
 
@@ -17,11 +18,10 @@ use trino_rust_client::Trino;
 use crate::data_session::RewardableDataByHotspot;
 
 /// Aggregate the burned data-transfer sessions for `epoch` into a
-/// [`RewardableDataByHotspot`].
+/// [`RewardableDataByHotspot`], summing DC and rewardable bytes per hotspot.
 ///
-/// Mirrors [`crate::data_session::aggregate_hotspot_data_sessions_to_dc`] but
-/// reads from Trino. No `COALESCE` is needed: `rewardable_bytes` is non-nullable
-/// in the iceberg schema (unlike Postgres). An empty epoch yields an empty map.
+/// `rewardable_bytes` is non-nullable in the iceberg schema, so no `COALESCE` is
+/// needed. An empty epoch yields an empty map.
 pub async fn aggregate_hotspot_data_sessions_to_dc(
     trino: &trino_client::Client,
     epoch: &Range<DateTime<Utc>>,
