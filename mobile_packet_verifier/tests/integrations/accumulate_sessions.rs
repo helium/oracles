@@ -804,7 +804,7 @@ async fn run_accumulate_sessions(
     iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     // Mark each known gateway as present on-chain, comfortably before the
-    // reports' received timestamps so the `received_timestamp <=` check passes.
+    // reports' received timestamps so the `inserted_at <= query timestamp` check passes.
     let seed_ts = Utc::now() - Duration::hours(1);
     let rows = known_gateways
         .iter()
