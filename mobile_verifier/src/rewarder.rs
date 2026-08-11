@@ -1,7 +1,5 @@
 use crate::{
-    banning,
-    data_session::{self, DataSessionSource},
-    heartbeats, iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
+    banning, heartbeats, iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
@@ -45,10 +43,10 @@ pub struct Rewarder {
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_manifests: FileSinkClient<RewardManifest>,
     /// Trino client, used both to resolve the epoch's on-chain reward inputs
-    /// (see [`epoch_reward_info`]) and by [`DataSessionSource`].
+    /// (see [`epoch_reward_info`]) and to read burned data-transfer sessions for
+    /// the reward pool (see [`crate::iceberg::burned_session`]).
     trino: trino_client::Client,
     reward_writers: Option<iceberg::RewardWriters>,
-    data_session_source: DataSessionSource,
 }
 
 impl Rewarder {
@@ -77,8 +75,6 @@ impl Rewarder {
         )
         .await?;
 
-        let data_session_source = DataSessionSource::new(pool.clone(), Some(trino.clone()));
-
         let rewarder = Rewarder::new(
             pool.clone(),
             settings.reward_period,
@@ -87,7 +83,6 @@ impl Rewarder {
             reward_manifests,
             trino,
             reward_writers,
-            data_session_source,
         )?;
 
         Ok(TaskManager::builder()
@@ -97,7 +92,6 @@ impl Rewarder {
             .build())
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         reward_period_duration: Duration,
@@ -106,7 +100,6 @@ impl Rewarder {
         reward_manifests: FileSinkClient<RewardManifest>,
         trino: trino_client::Client,
         reward_writers: Option<iceberg::RewardWriters>,
-        data_session_source: DataSessionSource,
     ) -> anyhow::Result<Self> {
         // The mobile rewarder always targets the mobile sub-DAO / HNT DAO; log
         // the resolved addresses for ops visibility (pinned by the
@@ -125,7 +118,6 @@ impl Rewarder {
             reward_manifests,
             trino,
             reward_writers,
-            data_session_source,
         })
     }
 
@@ -220,7 +212,7 @@ impl Rewarder {
                 return Ok(false);
             }
 
-            if db::no_data_transfer_sessions(&self.data_session_source, reward_period).await? {
+            if db::no_data_transfer_sessions(&self.trino, reward_period).await? {
                 tracing::info!("No Burned Data Transfer Sessions found past reward period");
                 return Ok(false);
             }
@@ -270,7 +262,7 @@ impl Rewarder {
 
         // HIP-149: data transfer consumes the entire pool; PoC is not rewarded.
         reward_dc(
-            &self.data_session_source,
+            &self.trino,
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
@@ -287,11 +279,6 @@ impl Rewarder {
         // clear out the various db tables
         heartbeats::clear_heartbeats(&mut transaction, &reward_info.epoch_period.start).await?;
         speedtests::clear_speedtests(&mut transaction, &reward_info.epoch_period.start).await?;
-        data_session::clear_hotspot_data_sessions(
-            &mut transaction,
-            &reward_info.epoch_period.start,
-        )
-        .await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
         save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
@@ -336,15 +323,17 @@ impl ManagedTask for Rewarder {
 /// Data-transfer reward path (HIP-149): data transfer consumes the entire
 /// emissions pool and Proof-of-Coverage is not rewarded.
 pub async fn reward_dc(
-    data_session_source: &DataSessionSource,
+    trino: &trino_client::Client,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
-    let rewardable = data_session_source
-        .load_data_sessions(&reward_info.epoch_period)
-        .await?;
+    let rewardable = iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(
+        trino,
+        &reward_info.epoch_period,
+    )
+    .await?;
 
     // HIP-149: data transfer is the residual of `hnt_rewards_issued` after the
     // flat 24% service-provider cut, so the cap/backstop shift is absorbed here

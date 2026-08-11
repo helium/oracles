@@ -15,7 +15,6 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Buckets {
     pub ingest: file_store::BucketSettings,
-    pub data_transfer: file_store::BucketSettings,
     pub output: file_store::BucketSettings,
 }
 
@@ -55,9 +54,8 @@ pub struct Settings {
     /// Trino query client. Required: each epoch the reward pipeline recovers the
     /// HNT price from on-chain deployer-cap data via Trino
     /// (`solana.public.dao_epoch_infos` joined to `sub_dao_epoch_infos`) instead
-    /// of a price feed. It also reads data-transfer sessions from Trino and emits
-    /// divergence metrics against Postgres (the "compare" phase of the
-    /// Postgres→Trino migration), so that comparison now always runs.
+    /// of a price feed. It also reads the burned data-transfer sessions that
+    /// size and split the reward pool (`data_transfer.burned_sessions`).
     pub trino: trino_client::Settings,
     // Geofencing settings
     #[serde(default = "default_usa_and_mexico_geofence_regions")]

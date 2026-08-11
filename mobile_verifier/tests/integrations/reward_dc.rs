@@ -3,6 +3,10 @@
 //! rewarded. Each hotspot with burned data-transfer sessions splits the pool in
 //! proportion to its data credits, with rounding dust emitted as a single
 //! `UnallocatedReward`.
+//!
+//! Burned sessions are read from the Trino-backed
+//! `data_transfer.burned_sessions` iceberg table — the only backend the reward
+//! pipeline uses.
 
 use crate::common::{self, default_price_info, reward_info_24_hours};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -12,36 +16,30 @@ use helium_iceberg_oracles::data_transfer::burned_session::{
     self, IcebergBurnedDataTransferSession,
 };
 use mobile_verifier::rewarder::EpochRewardInfo;
-use mobile_verifier::{
-    data_session::{self, DataSessionSource},
-    reward_shares, rewarder,
-};
+use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
-use sqlx::{PgPool, Postgres, Transaction};
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
-#[sqlx::test]
-async fn test_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_dc_rewards() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
 
-    // seed data sessions land in both Postgres and Trino
-    let mut txn = pool.begin().await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
-    txn.commit().await?;
+    // seed burned data sessions into the Trino-backed iceberg table
+    seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
 
-    // run rewards for poc and dc (Compare: rewards from Postgres, validates Trino)
+    // run data-transfer rewards, reading burned sessions from Trino
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -88,19 +86,19 @@ async fn test_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_no_data_sessions_unallocate_whole_pool(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
-    // The iceberg tables are created but no data sessions are seeded into either
-    // backend, so there is nothing to distribute against.
+    // The iceberg tables are created but no data sessions are seeded, so there is
+    // nothing to distribute against.
     let harness = common::setup_iceberg().await?;
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
 
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -121,8 +119,8 @@ async fn test_no_data_sessions_unallocate_whole_pool(pool: PgPool) -> anyhow::Re
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -138,13 +136,11 @@ async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<
             (HOTSPOT_3, 3_000_000),
         ],
     );
-    let mut txn = pool.begin().await?;
-    write_sessions(&mut txn, &harness, &sessions).await?;
-    txn.commit().await?;
+    write_sessions(&harness, &sessions).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -180,8 +176,8 @@ async fn test_unequal_dc_rewards_proportionally(pool: PgPool) -> anyhow::Result<
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -200,14 +196,12 @@ async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Res
             (HOTSPOT_3, dc_per_hotspot),
         ],
     );
-    let mut txn = pool.begin().await?;
-    write_sessions(&mut txn, &harness, &sessions).await?;
-    txn.commit().await?;
+    write_sessions(&harness, &sessions).await?;
 
     let price_info = default_price_info();
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         price_info.clone(),
@@ -241,8 +235,8 @@ async fn test_oversubscribed_distributes_whole_pool(pool: PgPool) -> anyhow::Res
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_single_hotspot_takes_whole_pool(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -250,13 +244,11 @@ async fn test_single_hotspot_takes_whole_pool(pool: PgPool) -> anyhow::Result<()
     let harness = common::setup_iceberg().await?;
 
     let sessions = data_sessions_with_dc(reward_info.epoch_period.start, &[(HOTSPOT_1, 5_000_000)]);
-    let mut txn = pool.begin().await?;
-    write_sessions(&mut txn, &harness, &sessions).await?;
-    txn.commit().await?;
+    write_sessions(&harness, &sessions).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -316,8 +308,8 @@ fn expected_data_transfer_pool(reward_info: &EpochRewardInfo) -> u64 {
     hnt_issued - service_provider
 }
 
-#[sqlx::test]
-async fn test_cap_shrinks_data_transfer_pool(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     // 3× cap moved 14% of emissions out of the data bucket into delegation:
@@ -329,13 +321,11 @@ async fn test_cap_shrinks_data_transfer_pool(pool: PgPool) -> anyhow::Result<()>
     );
 
     let harness = common::setup_iceberg().await?;
-    let mut txn = pool.begin().await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
-    txn.commit().await?;
+    seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -358,8 +348,8 @@ async fn test_cap_shrinks_data_transfer_pool(pool: PgPool) -> anyhow::Result<()>
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_backstop_grows_data_transfer_pool(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     // Backstop re-emitted HNT into the data bucket: issued HNT rises to 98%
@@ -371,13 +361,11 @@ async fn test_backstop_grows_data_transfer_pool(pool: PgPool) -> anyhow::Result<
     );
 
     let harness = common::setup_iceberg().await?;
-    let mut txn = pool.begin().await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn, &harness).await?;
-    txn.commit().await?;
+    seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
     rewarder::reward_dc(
-        &DataSessionSource::new(pool.clone(), Some(trino)),
+        &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
@@ -400,8 +388,8 @@ async fn test_backstop_grows_data_transfer_pool(pool: PgPool) -> anyhow::Result<
     Ok(())
 }
 
-/// A logical data-transfer session, materializable into either backend so the
-/// same input can drive the Postgres and Trino reward paths.
+/// A burned data-transfer session, written into the Trino-backed
+/// `data_transfer.burned_sessions` iceberg table to drive the reward path.
 struct DataSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -413,22 +401,6 @@ struct DataSession {
 }
 
 impl DataSession {
-    async fn save_postgres(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        data_session::HotspotDataSession {
-            pub_key: self.pub_key.clone(),
-            payer: self.payer.clone(),
-            upload_bytes: self.upload_bytes as i64,
-            download_bytes: self.download_bytes as i64,
-            rewardable_bytes: self.rewardable_bytes as i64,
-            num_dcs: self.num_dcs as i64,
-            received_timestamp: self.timestamp,
-            burn_timestamp: self.timestamp,
-        }
-        .save(txn)
-        .await?;
-        Ok(())
-    }
-
     fn to_iceberg(&self) -> IcebergBurnedDataTransferSession {
         IcebergBurnedDataTransferSession {
             pub_key: self.pub_key.to_string(),
@@ -482,18 +454,12 @@ fn data_sessions(ts: DateTime<Utc>) -> Vec<DataSession> {
     ]
 }
 
-/// Write data sessions into BOTH backends — Postgres and the Trino-backed
-/// `data_transfer.burned_sessions` iceberg table. Tests read from whichever
-/// backend they pass via the `DataSessionSource`.
+/// Write data sessions into the Trino-backed `data_transfer.burned_sessions`
+/// iceberg table — the sole backend the reward pipeline reads.
 async fn write_sessions(
-    txn: &mut Transaction<'_, Postgres>,
     harness: &IcebergTestHarness,
     sessions: &[DataSession],
 ) -> anyhow::Result<()> {
-    for session in sessions {
-        session.save_postgres(txn).await?;
-    }
-
     let rows = sessions
         .iter()
         .map(DataSession::to_iceberg)
@@ -510,15 +476,13 @@ async fn write_sessions(
     Ok(())
 }
 
-/// Seed the standard three-hotspot fixture into both backends and return the
-/// total rewardable bytes.
+/// Seed the standard three-hotspot fixture and return the total rewardable bytes.
 async fn seed_data_sessions(
     ts: DateTime<Utc>,
-    txn: &mut Transaction<'_, Postgres>,
     harness: &IcebergTestHarness,
 ) -> anyhow::Result<u64> {
     let sessions = data_sessions(ts);
-    write_sessions(txn, harness, &sessions).await?;
+    write_sessions(harness, &sessions).await?;
     Ok(sessions.iter().map(|s| s.rewardable_bytes).sum())
 }
 

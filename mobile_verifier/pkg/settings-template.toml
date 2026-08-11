@@ -97,11 +97,10 @@ bucket = "mainnet-mobile-verified"
 
 # Trino query client. REQUIRED. Each epoch the reward pipeline recovers the HNT
 # price from on-chain deployer-cap data via Trino (solana.public.dao_epoch_infos
-# joined to sub_dao_epoch_infos) instead of a price feed; it also reads
-# data-transfer sessions from Trino and compares them against Postgres (the
-# Postgres -> Trino migration "compare" phase). The cluster must expose both the
-# `solana` catalog (on-chain indexer DB) and the catalog holding
-# data_transfer.burned_sessions.
+# joined to sub_dao_epoch_infos) instead of a price feed; it also reads the
+# burned data-transfer sessions that size and split the reward pool. The cluster
+# must expose both the `solana` catalog (on-chain indexer DB) and the catalog
+# holding data_transfer.burned_sessions.
 
 [trino]
 host = "trino.example.com"
