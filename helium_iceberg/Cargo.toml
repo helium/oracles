@@ -50,7 +50,7 @@ tls-init = { path = "../tls_init" }
 triggered = { workspace = true }
 
 # Test harness dependencies (optional)
-trino-rust-client = { version = "0.9", optional = true }
+trino-rust-client = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

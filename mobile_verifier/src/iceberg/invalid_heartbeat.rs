@@ -69,7 +69,6 @@ pub async fn get_all(
         .await
     {
         Ok(all) => all.into_vec(),
-        Err(trino_rust_client::error::Error::EmptyData) => vec![],
         Err(err) => return Err(err.into()),
     };
     Ok(all)
