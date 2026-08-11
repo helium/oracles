@@ -45,11 +45,6 @@ pub struct Settings {
     /// authorization lookup.
     #[serde(default)]
     pub banning_authorized_keys: String,
-    /// Public keys authorized to submit unique-connection reports
-    /// (`NetworkKeyRole::MobileCarrier`). Comma-separated b58 keys. Required — at
-    /// least one key; see [`Settings::authorized_keys`].
-    #[serde(default)]
-    pub mobile_carrier_authorized_keys: String,
     /// How often the in-memory snapshot of known gateways is refreshed from the
     /// Trino inventory table (see [`crate::gateway`]).
     #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
@@ -150,18 +145,15 @@ impl Settings {
         std::path::Path::new(&self.cache)
     }
 
-    /// The static per-role authorization allow-lists, parsed from settings. Both
-    /// lists are required: an empty list is an error (mirrors mobile-packet-verifier's
+    /// The static authorization allow-list, parsed from settings. The list is
+    /// required: an empty list is an error (mirrors mobile-packet-verifier's
     /// `routing_keys`), so a misconfiguration fails at startup rather than
     /// silently rejecting every report.
     pub fn authorized_keys(&self) -> anyhow::Result<AuthorizedKeys> {
-        Ok(AuthorizedKeys::new(
-            parse_authorized_keys("banning_authorized_keys", &self.banning_authorized_keys)?,
-            parse_authorized_keys(
-                "mobile_carrier_authorized_keys",
-                &self.mobile_carrier_authorized_keys,
-            )?,
-        ))
+        Ok(AuthorizedKeys::new(parse_authorized_keys(
+            "banning_authorized_keys",
+            &self.banning_authorized_keys,
+        )?))
     }
 }
 
@@ -205,9 +197,8 @@ mod tests {
 
     #[test]
     fn parses_and_dedupes_keys() {
-        let keys =
-            parse_authorized_keys("mobile_carrier_authorized_keys", &format!("{KEY}, {KEY}"))
-                .expect("valid keys");
+        let keys = parse_authorized_keys("banning_authorized_keys", &format!("{KEY}, {KEY}"))
+            .expect("valid keys");
         assert_eq!(keys.len(), 1);
     }
 }

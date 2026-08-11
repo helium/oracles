@@ -3,8 +3,7 @@ use std::time::Duration;
 use crate::{
     banning::ingestor::BanIngestor, data_session::DataSessionIngestor,
     gateway::TrinoGatewayResolver, geofence::Geofence, heartbeats::wifi::WifiHeartbeatDaemon,
-    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry,
-    unique_connections::ingestor::UniqueConnectionsIngestor, Settings,
+    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry, Settings,
 };
 use anyhow::Result;
 use file_store::file_upload;
@@ -101,16 +100,6 @@ impl Cmd {
                     gateway_resolver.clone(),
                     poc_writers.speedtest,
                     poc_writers.speedtest_avg,
-                )
-                .await?,
-            )
-            .add_task(
-                UniqueConnectionsIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    ingest_bucket_client.clone(),
-                    authorized_keys.clone(),
                 )
                 .await?,
             )
