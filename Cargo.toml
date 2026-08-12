@@ -106,6 +106,7 @@ tracing-subscriber = { version = "0", default-features = false, features = [
   "fmt",
 ] }
 triggered = "0"
+trino-rust-client = "0.11"
 twox-hash = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 xorf = { version = "0", features = ["serde"] }

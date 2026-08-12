@@ -135,7 +135,6 @@ impl Client {
     {
         match self.inner().get_all::<T>(sql.into()).await {
             Ok(ds) => Ok(ds.into_vec()),
-            Err(trino_rust_client::error::Error::EmptyData) => Ok(Vec::new()),
             Err(e) => Err(e.into()),
         }
     }

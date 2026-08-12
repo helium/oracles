@@ -16,18 +16,11 @@ use helium_proto::services::mobile_config::NetworkKeyRole;
 #[derive(Debug, Clone, Default)]
 pub struct AuthorizedKeys {
     banning: HashSet<PublicKeyBinary>,
-    mobile_carrier: HashSet<PublicKeyBinary>,
 }
 
 impl AuthorizedKeys {
-    pub fn new(
-        banning: HashSet<PublicKeyBinary>,
-        mobile_carrier: HashSet<PublicKeyBinary>,
-    ) -> Self {
-        Self {
-            banning,
-            mobile_carrier,
-        }
+    pub fn new(banning: HashSet<PublicKeyBinary>) -> Self {
+        Self { banning }
     }
 }
 
@@ -41,8 +34,7 @@ impl AuthorizationVerifier for AuthorizedKeys {
     fn is_authorized(&self, address: &PublicKeyBinary, role: NetworkKeyRole) -> bool {
         match role {
             NetworkKeyRole::Banning => self.banning.contains(address),
-            NetworkKeyRole::MobileCarrier => self.mobile_carrier.contains(address),
-            // The verifier only authorizes the two roles above.
+            // The verifier only authorizes the role above.
             _ => false,
         }
     }
@@ -58,15 +50,13 @@ mod tests {
 
     #[test]
     fn authorizes_only_configured_keys_per_role() {
-        let keys = AuthorizedKeys::new(HashSet::from([key(1)]), HashSet::from([key(2)]));
+        let keys = AuthorizedKeys::new(HashSet::from([key(1)]));
 
         assert!(keys.is_authorized(&key(1), NetworkKeyRole::Banning));
         assert!(!keys.is_authorized(&key(2), NetworkKeyRole::Banning));
 
-        assert!(keys.is_authorized(&key(2), NetworkKeyRole::MobileCarrier));
+        // Roles the verifier doesn't manage are never authorized.
         assert!(!keys.is_authorized(&key(1), NetworkKeyRole::MobileCarrier));
-
-        // A role the verifier doesn't manage is never authorized.
         assert!(!keys.is_authorized(&key(1), NetworkKeyRole::MobileRouter));
     }
 }

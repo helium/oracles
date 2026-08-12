@@ -1,10 +1,9 @@
 use std::time::Duration;
 
 use crate::{
-    banning::ingestor::BanIngestor, data_session::DataSessionIngestor,
-    gateway::TrinoGatewayResolver, geofence::Geofence, heartbeats::wifi::WifiHeartbeatDaemon,
-    iceberg, rewarder::Rewarder, speedtests::SpeedtestDaemon, telemetry,
-    unique_connections::ingestor::UniqueConnectionsIngestor, Settings,
+    banning::ingestor::BanIngestor, gateway::TrinoGatewayResolver, geofence::Geofence,
+    heartbeats::wifi::WifiHeartbeatDaemon, iceberg, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, telemetry, Settings,
 };
 use anyhow::Result;
 use file_store::file_upload;
@@ -61,8 +60,8 @@ impl Cmd {
             };
 
         // Trino query client for the reward pipeline: recovers the epoch's HNT
-        // price from on-chain deployer-cap data, and reads/compares data-transfer
-        // sessions against Postgres (see `data_session::DataSessionSource`).
+        // price from on-chain deployer-cap data, and reads burned data-transfer
+        // sessions for the reward pool (see `iceberg::burned_session`).
         // Required — rewarding has no other price source. `from_settings` is
         // synchronous and starts the JWT-file watcher if configured. It also
         // backs the gateway resolver below (replacing mobile-config).
@@ -101,24 +100,6 @@ impl Cmd {
                     gateway_resolver.clone(),
                     poc_writers.speedtest,
                     poc_writers.speedtest_avg,
-                )
-                .await?,
-            )
-            .add_task(
-                UniqueConnectionsIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    ingest_bucket_client.clone(),
-                    authorized_keys.clone(),
-                )
-                .await?,
-            )
-            .add_task(
-                DataSessionIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    settings.buckets.data_transfer.connect().await,
                 )
                 .await?,
             )
