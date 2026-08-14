@@ -2,9 +2,9 @@ use crate::hermes;
 use anyhow::{anyhow, Result};
 use chrono::{TimeZone, Utc};
 
-pub async fn run(url: String) -> Result<()> {
+pub async fn run(url: String, api_key: String) -> Result<()> {
     let client = reqwest::Client::new();
-    let parsed = hermes::fetch(&client, &url).await?;
+    let parsed = hermes::fetch(&client, &url, &api_key).await?;
     let scaled = parsed.price.scaled_u64()?;
     let timestamp = Utc
         .timestamp_opt(parsed.price.publish_time, 0)

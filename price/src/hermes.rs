@@ -39,9 +39,14 @@ impl HermesPrice {
     }
 }
 
-pub async fn fetch(client: &reqwest::Client, url: &str) -> Result<HermesParsedPrice> {
+pub async fn fetch(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+) -> Result<HermesParsedPrice> {
     let response: HermesResponse = client
         .get(url)
+        .bearer_auth(api_key)
         .send()
         .await?
         .error_for_status()?

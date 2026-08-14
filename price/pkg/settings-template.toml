@@ -5,7 +5,13 @@
 # Hermes price update URL including the HNT feed id query parameter. Default
 # below.
 #
-# source = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756"
+# source = "https://pyth.dourolabs.app/hermes/v2/updates/price/latest?ids[]=649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756"
+
+# Bearer token sent in the `Authorization` header when fetching `source`.
+# Required. Prefer setting this via the `PRICE__API_KEY` environment variable
+# rather than in the config file.
+#
+# api_key = "..."
 
 
 # Folder for the local on-disk price cache / file sink staging area.

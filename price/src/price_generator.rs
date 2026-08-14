@@ -27,6 +27,7 @@ impl Price {
 pub struct PriceGenerator {
     http: reqwest::Client,
     source_url: String,
+    api_key: String,
     interval_duration: std::time::Duration,
     last_price_opt: Option<Price>,
     default_price: Option<u64>,
@@ -80,6 +81,7 @@ impl PriceGenerator {
             last_price_opt: None,
             http: reqwest::Client::new(),
             source_url: settings.source.clone(),
+            api_key: settings.api_key.clone(),
             default_price: settings.default_price,
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
@@ -134,7 +136,7 @@ impl PriceGenerator {
     }
 
     async fn fetch_hermes_price(&self) -> Result<Price> {
-        let parsed = hermes::fetch(&self.http, &self.source_url).await?;
+        let parsed = hermes::fetch(&self.http, &self.source_url, &self.api_key).await?;
         let price = parsed.price.scaled_u64()?;
         let timestamp = Utc
             .timestamp_opt(parsed.price.publish_time, 0)
