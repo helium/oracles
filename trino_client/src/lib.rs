@@ -14,6 +14,7 @@ pub use statement::{Param, Statement, TypedStatement};
 
 pub use jwt_watcher::JwtWatcherError;
 
+use futures::{Stream, StreamExt};
 use jwt_watcher::JwtWatcher;
 use notify::PollWatcher;
 use std::sync::Arc;
@@ -136,6 +137,66 @@ impl Client {
         match self.inner().get_all::<T>(sql.into()).await {
             Ok(ds) => Ok(ds.into_vec()),
             Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Stream a query's rows in batches of `size`, letting the upstream client page
+    /// the result set. Prefer this to [`get_all`](Self::get_all) for anything
+    /// unbounded — `get_all` buffers the whole result in memory.
+    ///
+    /// The final batch is short rather than padded, and a query matching no rows
+    /// yields no batches at all. An error surfaces as a single `Err` item, after
+    /// which the stream ends. Dropping the stream early cancels the query
+    /// server-side.
+    ///
+    /// Unlike the one-shot methods this pins the inner client — and so the JWT it
+    /// was built with — for the life of the stream, instead of picking up a refresh
+    /// per request. Queries expected to outlive a token refresh should be split
+    /// across several calls.
+    pub fn chunks<S: SqlQuery>(
+        &self,
+        sql_query: S,
+        size: usize,
+    ) -> impl Stream<Item = Result<Vec<S::Row>>> + Send
+    where
+        S::Row: trino_rust_client::Trino + Send + 'static,
+        for<'de> S::Row: serde::Deserialize<'de> + serde::Serialize,
+    {
+        self.chunks_raw(sql_query.to_statement().render(), size)
+    }
+
+    /// [`chunks`](Self::chunks) over an already-rendered statement.
+    ///
+    /// Takes the render `Result` rather than a `String` so a failed render surfaces
+    /// as the stream's first item, which keeps this neither `async` nor fallible to
+    /// call.
+    pub fn chunks_raw<T>(
+        &self,
+        sql: Result<String>,
+        size: usize,
+    ) -> impl Stream<Item = Result<Vec<T>>> + Send
+    where
+        T: trino_rust_client::Trino + Send + 'static,
+        for<'de> T: serde::Deserialize<'de> + serde::Serialize,
+    {
+        // Moved into the generator, which keeps it alive as long as the `RowStream`
+        // borrowing it. A stream returned any other way would have to borrow this
+        // local `Arc`, which is self-referential and will not compile.
+        let client = self.inner();
+        let size = size.max(1);
+
+        async_stream::try_stream! {
+            let mut rows = client.stream::<T>(sql?).await?;
+            let mut batch = Vec::with_capacity(size);
+            while let Some(row) = rows.next().await {
+                batch.push(row?);
+                if batch.len() == size {
+                    yield std::mem::replace(&mut batch, Vec::with_capacity(size));
+                }
+            }
+            if !batch.is_empty() {
+                yield batch;
+            }
         }
     }
 }

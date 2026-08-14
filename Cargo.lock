@@ -11951,7 +11951,9 @@ name = "trino-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "chrono",
+ "futures",
  "humantime-serde",
  "notify",
  "serde",

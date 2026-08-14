@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, TimeZone, Utc};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use trino_client::{
     Client, ClientBuilder, SqlQuery, SqlStatement, Statement, TrinoFromRow, TypedStatement,
@@ -233,5 +234,88 @@ async fn typed_statement_via_get_all() -> anyhow::Result<()> {
             d: 1.5,
         }]
     );
+    Ok(())
+}
+
+// ── chunks ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, TrinoFromRow, Deserialize, Serialize, PartialEq)]
+struct Num {
+    n: i64,
+}
+
+/// `SELECT n FROM (VALUES (1), (2), ...) AS t(n) ORDER BY n` over `1..=count`.
+fn numbers(count: i64) -> TypedStatement<Num> {
+    let values = (1..=count)
+        .map(|n| format!("({n})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Statement::new(format!(
+        "SELECT n FROM (VALUES {values}) AS t(n) ORDER BY n"
+    ))
+    .typed()
+}
+
+async fn collect_chunks(count: i64, size: usize) -> anyhow::Result<Vec<Vec<i64>>> {
+    let stream = client().chunks(numbers(count), size);
+    futures::pin_mut!(stream);
+    let mut out = Vec::new();
+    while let Some(batch) = stream.next().await {
+        out.push(batch?.into_iter().map(|r| r.n).collect());
+    }
+    Ok(out)
+}
+
+#[tokio::test]
+async fn chunks_splits_on_an_exact_multiple() -> anyhow::Result<()> {
+    assert_eq!(
+        collect_chunks(6, 2).await?,
+        vec![vec![1, 2], vec![3, 4], vec![5, 6]]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_leaves_a_short_final_batch() -> anyhow::Result<()> {
+    // 7 rows in 3s: the tail is short, not padded, and not dropped.
+    assert_eq!(
+        collect_chunks(7, 3).await?,
+        vec![vec![1, 2, 3], vec![4, 5, 6], vec![7]]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_yields_nothing_for_an_empty_result() -> anyhow::Result<()> {
+    // Not one empty batch — no batches at all.
+    let stream = client().chunks(
+        Statement::new("SELECT n FROM (VALUES (1)) AS t(n) WHERE n < 0").typed::<Num>(),
+        10,
+    );
+    futures::pin_mut!(stream);
+    assert!(stream.next().await.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_renders_bound_parameters() -> anyhow::Result<()> {
+    let stmt = Statement::new("SELECT :n AS n")
+        .bind("n", 7i64)
+        .typed::<Num>();
+    let stream = client().chunks(stmt, 10);
+    futures::pin_mut!(stream);
+    let batch = stream.next().await.expect("one batch")?;
+    assert_eq!(batch, vec![Num { n: 7 }]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_surfaces_a_query_error() -> anyhow::Result<()> {
+    let stream = client().chunks(
+        Statement::new("SELECT * FROM no_such_table").typed::<Num>(),
+        10,
+    );
+    futures::pin_mut!(stream);
+    assert!(stream.next().await.expect("an item").is_err());
     Ok(())
 }

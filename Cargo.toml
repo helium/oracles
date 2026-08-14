@@ -33,6 +33,7 @@ edition = "2021"
 
 [workspace.dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
+async-stream = "0.3"
 async-trait = "*"
 base64 = ">=0.21"
 bincode = "1"
