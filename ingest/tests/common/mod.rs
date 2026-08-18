@@ -21,9 +21,8 @@ use helium_proto::services::{
         SubscriberVerifiedMappingEventReqV1, SubscriberVerifiedMappingEventResV1,
     },
 };
+use ingest::authorization::AuthorizationVerifier;
 use ingest::server_mobile::GrpcServer;
-use mobile_config::client::authorization_client::AuthorizationVerifier;
-use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::str::FromStr;
@@ -31,7 +30,6 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::{net::TcpListener, sync::mpsc::Receiver, time::timeout};
 use tonic::{
-    async_trait,
     metadata::{Ascii, MetadataValue},
     transport::Channel,
     Request,
@@ -40,17 +38,20 @@ use triggered::Trigger;
 
 struct MockAuthorizationClient;
 
-#[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    async fn verify_authorized_key(
-        &self,
-        _pubkey: &PublicKeyBinary,
-        _role: NetworkKeyRole,
-    ) -> Result<bool, ClientError> {
-        Ok(true)
+    fn is_authorized(&self, _pubkey: &PublicKeyBinary, _role: NetworkKeyRole) -> bool {
+        true
     }
 }
 pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
+    setup_mobile_with_verifier(MockAuthorizationClient).await
+}
+
+/// Boot the mobile server with a specific authorization verifier, so tests can
+/// exercise the carrier allow-list instead of the permissive mock.
+pub async fn setup_mobile_with_verifier<AV: AuthorizationVerifier>(
+    authorization_verifier: AV,
+) -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
     let socket_addr = {
@@ -105,7 +106,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             Network::MainNet,
             socket_addr,
             api_token,
-            MockAuthorizationClient,
+            authorization_verifier,
         );
 
         grpc_server.run(listener).await

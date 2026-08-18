@@ -5,6 +5,7 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, RadioUsageCarrierDataTransferInfoV2,
     RadioUsageCarrierTransferInfo, RadioUsageSamplingCarrierDataTransferInfoV1,
 };
+use ingest::AuthorizedKeys;
 use std::str::FromStr;
 
 mod common;
@@ -199,6 +200,66 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
         }
         Err(e) => panic!("got error {e}"),
     }
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// The carrier-signed endpoints are gated on the static allow-list from
+/// settings. With an empty allow-list every carrier key is unknown, so each
+/// gated endpoint must reject rather than write a report.
+#[tokio::test]
+async fn carrier_endpoints_reject_unauthorized_keys() -> anyhow::Result<()> {
+    let keypair = generate_keypair();
+    let (mut client, trigger) =
+        common::setup_mobile_with_verifier(AuthorizedKeys::default()).await?;
+
+    let hex_usage = client.submit_hex_usage_req(360, 10, 11, 12, 13, 14).await;
+    assert!(hex_usage.is_err(), "hex usage stats should be rejected");
+
+    let radio_usage = client
+        .submit_radio_usage_req(
+            PublicKeyBinary::from_str(PUBKEY1)?,
+            10,
+            11,
+            12,
+            13,
+            14,
+            vec![],
+        )
+        .await;
+    assert!(radio_usage.is_err(), "radio usage stats should be rejected");
+
+    let radio_usage_v2 = client
+        .submit_radio_usage_req_v2(
+            PublicKeyBinary::from_str(PUBKEY1)?,
+            10,
+            11,
+            12,
+            13,
+            14,
+            vec![],
+            vec![],
+        )
+        .await;
+    assert!(
+        radio_usage_v2.is_err(),
+        "radio usage stats v2 should be rejected"
+    );
+
+    let enabled_carriers = client
+        .submit_enabled_carriers_info(
+            &keypair,
+            PUBKEY1,
+            vec![CarrierIdV2::Carrier0],
+            vec![CarrierIdV2::Carrier1],
+            Utc::now().timestamp_millis() as u64,
+        )
+        .await;
+    assert!(
+        enabled_carriers.is_err(),
+        "enabled carriers info should be rejected"
+    );
 
     trigger.trigger();
     Ok(())
