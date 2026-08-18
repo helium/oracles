@@ -24,6 +24,13 @@ mode = "mobile"
 #
 network = "mainnet"
 
+# Comma-separated b58 public keys authorized to submit carrier-signed reports
+# (NetworkKeyRole::MobileCarrier): hex usage stats, radio usage stats (v1/v2),
+# and enabled carriers info. Replaces the mobile-config authorization lookup.
+# Required in "mobile" mode: at least one key, or the service errors on startup.
+# Ignored in "chain" mode.
+carrier_authorized_keys = "key1,key2"
+
 [output]
 # Output bucket for ingested data
 

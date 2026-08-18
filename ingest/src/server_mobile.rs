@@ -1,4 +1,4 @@
-use crate::Settings;
+use crate::{authorization::AuthorizationVerifier, Settings};
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
@@ -29,7 +29,6 @@ use helium_proto::services::{
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
 use helium_proto_crypto::MsgVerify;
-use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use std::net::SocketAddr;
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{
@@ -178,15 +177,15 @@ where
         Ok((public_key, event))
     }
 
-    async fn verify_known_carrier_key(&self, public_key: PublicKey) -> VerifyResult<()> {
-        let public_key_bin = PublicKeyBinary::from(public_key.clone());
-        self.authorization_verifier
-            .verify_authorized_key(&public_key_bin, NetworkKeyRole::MobileCarrier)
-            .await
-            .map_err(|_| {
-                tracing::error!(%public_key_bin, "unknown carrier key");
-                Status::invalid_argument("unknown carrier key")
-            })?;
+    fn verify_known_carrier_key(&self, public_key: PublicKey) -> VerifyResult<()> {
+        let public_key_bin = PublicKeyBinary::from(public_key);
+        if !self
+            .authorization_verifier
+            .is_authorized(&public_key_bin, NetworkKeyRole::MobileCarrier)
+        {
+            tracing::error!(%public_key_bin, "unknown carrier key");
+            return Err(Status::invalid_argument("unknown carrier key"));
+        }
         Ok(())
     }
 }
@@ -527,7 +526,7 @@ where
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))?;
-        self.verify_known_carrier_key(verified_pubkey).await?;
+        self.verify_known_carrier_key(verified_pubkey)?;
 
         let report = HexUsageStatsIngestReportV1 {
             received_timestamp: timestamp,
@@ -553,7 +552,7 @@ where
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))?;
-        self.verify_known_carrier_key(verified_pubkey).await?;
+        self.verify_known_carrier_key(verified_pubkey)?;
 
         let report = RadioUsageStatsIngestReportV1 {
             received_timestamp: timestamp,
@@ -579,7 +578,7 @@ where
             .verify_public_key(event.carrier_pubkey.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))?;
-        self.verify_known_carrier_key(verified_pubkey).await?;
+        self.verify_known_carrier_key(verified_pubkey)?;
 
         let report = RadioUsageStatsIngestReportV2 {
             received_timestamp_ms: timestamp,
@@ -664,7 +663,7 @@ where
             .verify_public_key(&event.signer_pubkey)
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))?;
-        self.verify_known_carrier_key(verified_pubkey).await?;
+        self.verify_known_carrier_key(verified_pubkey)?;
 
         let report = EnabledCarriersInfoReportV1 {
             received_timestamp_ms,
@@ -857,10 +856,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
-    let Some(config_client) = settings.config_client.as_ref() else {
-        bail!("expected mobile config client settings");
-    };
-
     let grpc_server = GrpcServer::new(
         wifi_heartbeat_report_sink,
         speedtest_report_sink,
@@ -881,7 +876,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.network,
         settings.listen_addr,
         api_token,
-        AuthorizationClient::from_settings(config_client)?,
+        settings.authorized_keys()?,
     );
 
     tracing::info!(
