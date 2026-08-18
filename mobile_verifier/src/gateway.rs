@@ -283,7 +283,7 @@ impl GatewayResolver for TrinoGatewayResolver {
 /// Registered with the daemon's `TaskManager` via [`task_manager::periodic`], so
 /// it is interleaved with file processing and stops on shutdown.
 ///
-/// Ticks at [`GATEWAY_REFRESH_RETRY_INTERVAL`] but reloads only when due: once
+/// Ticks at `GATEWAY_REFRESH_RETRY_INTERVAL` but reloads only when due: once
 /// per `refresh_interval` while healthy, and on every tick after a failed load,
 /// so a Trino outage doesn't leave the snapshot stale for a full interval.
 pub struct GatewaySnapshotRefresher {

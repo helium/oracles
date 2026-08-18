@@ -1,13 +1,12 @@
 use crate::{
-    banning, heartbeats, iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
+    iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
     reward_shares::{
         data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
     },
-    speedtests, telemetry, PriceInfo, Settings,
+    telemetry, PriceInfo, Settings,
 };
-use chrono::{DateTime, TimeZone, Utc};
-use db_store::meta;
+use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
@@ -24,15 +23,16 @@ use helium_proto::{
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use solana::Token;
-use sqlx::{PgExecutor, Pool, Postgres};
+use sqlx::{Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
-mod db;
 pub mod epoch_reward_info;
+pub mod meta_state;
 
 pub use epoch_reward_info::{EpochInfo, EpochRewardInfo};
+pub use meta_state::RewarderState;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
@@ -46,7 +46,10 @@ pub struct Rewarder {
     /// (see [`epoch_reward_info`]) and to read burned data-transfer sessions for
     /// the reward pool (see [`crate::iceberg::burned_session`]).
     trino: trino_client::Client,
-    reward_writers: Option<iceberg::RewardWriters>,
+    reward_writers: iceberg::RewardWriters,
+    /// The rewarder's own `meta` state: `next_reward_epoch` and
+    /// `disable_complete_data_checks_until`.
+    state: RewarderState,
 }
 
 impl Rewarder {
@@ -54,8 +57,9 @@ impl Rewarder {
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        reward_writers: Option<iceberg::RewardWriters>,
+        reward_writers: iceberg::RewardWriters,
         trino: trino_client::Client,
+        state: RewarderState,
     ) -> anyhow::Result<impl ManagedTask> {
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
@@ -83,6 +87,7 @@ impl Rewarder {
             reward_manifests,
             trino,
             reward_writers,
+            state,
         )?;
 
         Ok(TaskManager::builder()
@@ -92,6 +97,7 @@ impl Rewarder {
             .build())
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         reward_period_duration: Duration,
@@ -99,7 +105,8 @@ impl Rewarder {
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
         reward_manifests: FileSinkClient<RewardManifest>,
         trino: trino_client::Client,
-        reward_writers: Option<iceberg::RewardWriters>,
+        reward_writers: iceberg::RewardWriters,
+        state: RewarderState,
     ) -> anyhow::Result<Self> {
         // The mobile rewarder always targets the mobile sub-DAO / HNT DAO; log
         // the resolved addresses for ops visibility (pinned by the
@@ -118,6 +125,7 @@ impl Rewarder {
             reward_manifests,
             trino,
             reward_writers,
+            state,
         })
     }
 
@@ -125,7 +133,7 @@ impl Rewarder {
         tracing::info!("Starting rewarder");
 
         loop {
-            let next_reward_epoch = next_reward_epoch(&self.pool).await?;
+            let next_reward_epoch = self.state.next_reward_epoch().await?;
             let next_reward_epoch_period = EpochInfo::from(next_reward_epoch);
 
             let scheduler = Scheduler::new(
@@ -174,15 +182,6 @@ impl Rewarder {
         Ok(())
     }
 
-    async fn disable_complete_data_checks_until(&self) -> db_store::Result<DateTime<Utc>> {
-        Utc.timestamp_opt(
-            meta::fetch(&self.pool, "disable_complete_data_checks_until").await?,
-            0,
-        )
-        .single()
-        .ok_or(db_store::Error::DecodeError)
-    }
-
     pub async fn is_data_current(
         &self,
         epoch: u64,
@@ -200,19 +199,18 @@ impl Rewarder {
             return Ok(false);
         }
 
-        // Check if we have heartbeats and speedtests past the end of the reward period
-        if reward_period.end >= self.disable_complete_data_checks_until().await? {
-            if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
-                tracing::info!("No wifi heartbeats found past reward period");
-                return Ok(false);
-            }
-
-            if db::no_speedtests(&self.pool, reward_period).await? {
-                tracing::info!("No speedtests found past reward period");
-                return Ok(false);
-            }
-
-            if db::no_data_transfer_sessions(&self.trino, reward_period).await? {
+        // Burned data-transfer sessions arrive continuously, so sessions landing
+        // *past* the end of the reward period tell us the burn pipeline ran at
+        // least through the period we're about to reward.
+        //
+        // This is the only data-currency gate. Heartbeats and speedtests were
+        // gated on too, back when Proof-of-Coverage was rewarded and they were
+        // reward inputs. Under HIP-149 they feed no part of the payout, so
+        // blocking on them could only ever delay a reward that would have been
+        // correct — they come from a different pipeline than burned sessions and
+        // fail independently of it.
+        if reward_period.end >= self.state.disable_complete_data_checks_until().await? {
+            if iceberg::burned_session::no_burned_sessions(&self.trino, reward_period).await? {
                 tracing::info!("No Burned Data Transfer Sessions found past reward period");
                 return Ok(false);
             }
@@ -255,10 +253,6 @@ impl Rewarder {
         );
 
         let write_id = format!("rewards-epoch-{}", reward_info.epoch_day);
-        let reward_ctx = self
-            .reward_writers
-            .as_ref()
-            .map(|writers| (writers, write_id.as_str()));
 
         // HIP-149: data transfer consumes the entire pool; PoC is not rewarded.
         reward_dc(
@@ -266,24 +260,31 @@ impl Rewarder {
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
-            reward_ctx,
+            &self.reward_writers,
+            &write_id,
         )
         .await?;
 
         // process rewards for service providers
-        reward_service_providers(self.mobile_rewards.clone(), &reward_info, reward_ctx).await?;
+        reward_service_providers(
+            self.mobile_rewards.clone(),
+            &reward_info,
+            &self.reward_writers,
+            &write_id,
+        )
+        .await?;
 
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
-        // clear out the various db tables
-        heartbeats::clear_heartbeats(&mut transaction, &reward_info.epoch_period.start).await?;
-        speedtests::clear_speedtests(&mut transaction, &reward_info.epoch_period.start).await?;
-        banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
-
-        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
+        self.state
+            .save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1)
+            .await?;
 
         transaction.commit().await?;
+
+        // Mirror the committed state, if a mirror file is configured.
+        self.state.mirror_to_file().await?;
 
         // now that the db has been purged, safe to write out the manifest
         let reward_data = ManifestMobileRewardData {
@@ -327,7 +328,8 @@ pub async fn reward_dc(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
+    reward_writers: &iceberg::RewardWriters,
+    write_id: &str,
 ) -> anyhow::Result<()> {
     let rewardable = iceberg::burned_session::aggregate_hotspot_data_sessions_to_dc(
         trino,
@@ -376,10 +378,10 @@ pub async fn reward_dc(
     telemetry::data_transfer_target_price_per_gb(target.to_f64().unwrap_or_default());
     telemetry::data_transfer_actual_price_per_gb(actual.to_f64().unwrap_or_default());
 
-    if let Some((writers, id)) = reward_ctx {
-        let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);
-        writers.write_data_transfer(id, rewards).await?;
-    }
+    let rewards = to_iceberg_rewards(&gw_rewards, &reward_info.epoch_period);
+    reward_writers
+        .write_data_transfer(write_id, rewards)
+        .await?;
 
     let proto_rewards = into_proto_rewards(gw_rewards, &reward_info.epoch_period);
     mobile_rewards.write_all(proto_rewards).await?;
@@ -391,7 +393,8 @@ pub async fn reward_dc(
         UnallocatedRewardType::Data,
         unallocated,
         reward_info,
-        reward_ctx,
+        reward_writers,
+        write_id,
     )
     .await?;
 
@@ -401,7 +404,8 @@ pub async fn reward_dc(
 pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
+    reward_writers: &iceberg::RewardWriters,
+    write_id: &str,
 ) -> anyhow::Result<()> {
     // HIP-149: a flat 24% of total emissions (see `reward_shares::emissions_split`).
     let sp_reward_amount = hip_149_reward_pools(reward_info).service_provider;
@@ -413,20 +417,18 @@ pub async fn reward_service_providers(
         amount: sp_reward_amount,
     };
 
-    if let Some((writers, id)) = reward_ctx {
-        use iceberg::service_provider_reward::IcebergServiceProviderReward;
-
-        writers
-            .write_service_provider(
-                id,
-                vec![IcebergServiceProviderReward::from_sp_reward(
+    reward_writers
+        .write_service_provider(
+            write_id,
+            vec![
+                iceberg::service_provider_reward::IcebergServiceProviderReward::from_sp_reward(
                     &network_share,
                     reward_info.epoch_period.start,
                     reward_info.epoch_period.end,
-                )],
-            )
-            .await?;
-    }
+                ),
+            ],
+        )
+        .await?;
 
     let network_reward = proto::MobileRewardShare {
         start_period: reward_info.epoch_period.start.encode_timestamp(),
@@ -444,7 +446,8 @@ async fn write_unallocated_reward(
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_info: &'_ EpochRewardInfo,
-    reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
+    reward_writers: &iceberg::RewardWriters,
+    write_id: &str,
 ) -> anyhow::Result<()> {
     if unallocated_amount == 0 {
         return Ok(());
@@ -455,20 +458,18 @@ async fn write_unallocated_reward(
         amount: unallocated_amount,
     };
 
-    if let Some((writers, id)) = reward_ctx {
-        writers
-            .write_unallocated(
-                id,
-                vec![
-                    iceberg::unallocated_reward::IcebergUnallocatedReward::from_reward(
-                        &reward,
-                        reward_info.epoch_period.start,
-                        reward_info.epoch_period.end,
-                    ),
-                ],
-            )
-            .await?;
-    }
+    reward_writers
+        .write_unallocated(
+            write_id,
+            vec![
+                iceberg::unallocated_reward::IcebergUnallocatedReward::from_reward(
+                    &reward,
+                    reward_info.epoch_period.start,
+                    reward_info.epoch_period.end,
+                ),
+            ],
+        )
+        .await?;
 
     let reward_share = proto::MobileRewardShare {
         start_period: reward_info.epoch_period.start.encode_timestamp(),
@@ -478,12 +479,4 @@ async fn write_unallocated_reward(
     mobile_rewards.write(reward_share, []).await?.await??;
 
     Ok(())
-}
-
-pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
-    meta::fetch(db, "next_reward_epoch").await
-}
-
-async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
-    meta::store(exec, "next_reward_epoch", value).await
 }

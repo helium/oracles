@@ -49,22 +49,13 @@ pub type SpeedtestWriter = ValidInvalidWriter<IcebergSpeedtest, IcebergInvalidSp
 pub type SpeedtestAvgWriter = ValidInvalidWriter<IcebergSpeedtestAvg, IcebergInvalidSpeedtestAvg>;
 
 pub struct PocWriters {
-    pub ban: Option<BanWriter>,
-    pub heartbeat: Option<HeartbeatWriter>,
-    pub speedtest: Option<SpeedtestWriter>,
-    pub speedtest_avg: Option<SpeedtestAvgWriter>,
+    pub ban: BanWriter,
+    pub heartbeat: HeartbeatWriter,
+    pub speedtest: SpeedtestWriter,
+    pub speedtest_avg: SpeedtestAvgWriter,
 }
 
 impl PocWriters {
-    pub fn noop() -> Self {
-        Self {
-            ban: None,
-            heartbeat: None,
-            speedtest: None,
-            speedtest_avg: None,
-        }
-    }
-
     pub async fn from_settings(settings: &helium_iceberg::Settings) -> anyhow::Result<Self> {
         tracing::info!("iceberg settings provided, connecting...");
         let catalog = settings.connect().await.context("connecting to catalog")?;
@@ -98,10 +89,10 @@ impl PocWriters {
         .await?;
 
         Ok(Self {
-            ban: Some(ban),
-            heartbeat: Some(heartbeat),
-            speedtest: Some(speedtest),
-            speedtest_avg: Some(speedtest_avg),
+            ban,
+            heartbeat,
+            speedtest,
+            speedtest_avg,
         })
     }
 }

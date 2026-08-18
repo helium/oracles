@@ -214,3 +214,21 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
     .await?;
     Ok(harness)
 }
+
+/// Reward-table writers backed by the test harness's catalog.
+///
+/// Iceberg is a hard requirement of the service, so the reward path takes its
+/// writers unconditionally; tests supply real ones rather than a stub.
+pub async fn reward_writers(
+    harness: &IcebergTestHarness,
+) -> anyhow::Result<mobile_verifier::iceberg::RewardWriters> {
+    mobile_verifier::iceberg::get_reward_writers(&harness.as_settings()).await
+}
+
+/// PoC-table writers (heartbeat, speedtest, speedtest average, ban) backed by
+/// the test harness's catalog.
+pub async fn poc_writers(
+    harness: &IcebergTestHarness,
+) -> anyhow::Result<mobile_verifier::iceberg::PocWriters> {
+    mobile_verifier::iceberg::PocWriters::from_settings(&harness.as_settings()).await
+}
