@@ -6,12 +6,12 @@
 //! per-pubkey Trino fallback.
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use helium_crypto::PublicKeyBinary;
 use retainer::Cache;
 use task_manager::Periodic;
@@ -39,8 +39,8 @@ const GATEWAY_REFRESH_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 pub struct GatewayResolver {
     trino_client: trino_client::Client,
     inventory_table: String,
-    known_gateways: Arc<RwLock<HashSet<PublicKeyBinary>>>,
-    fallback_cache: Arc<Cache<PublicKeyBinary, bool>>,
+    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayEntry>>>,
+    fallback_cache: Arc<Cache<PublicKeyBinary, Option<GatewayEntry>>>,
     refresh_interval: Duration,
     /// When the startup snapshot was loaded (`None` if the load failed). Seeds
     /// the refresher's first-refresh timing via [`GatewayResolver::refresher`].
@@ -85,7 +85,7 @@ impl GatewayResolver {
                         ?err,
                         "failed to load gateway inventory at startup; starting empty, will retry"
                     );
-                    (HashSet::new(), None)
+                    (HashMap::new(), None)
                 }
             };
         let known_gateways = Arc::new(RwLock::new(initial));
@@ -124,22 +124,20 @@ impl GatewayResolver {
         gateway_query_time: &DateTime<Utc>,
     ) -> bool {
         // Fast path: the startup/refresh snapshot of every known gateway.
-        let in_snapshot = self.known_gateways.read().unwrap().contains(public_key);
-        if in_snapshot {
-            return true;
+        if let Some(entry) = self.known_gateways.read().unwrap().get(public_key).copied() {
+            return entry.is_known_at(gateway_query_time);
         }
 
         // Miss: an unknown gateway, or one onboarded since the last refresh.
         // Fall back to a per-pubkey query, cached to avoid re-querying.
         if let Some(cached) = self.fallback_cache.get(public_key).await {
-            return *cached.value();
+            return cached
+                .value()
+                .is_some_and(|entry| entry.is_known_at(gateway_query_time));
         }
 
-        let is_known = match self
-            .query_gateway_known(public_key, gateway_query_time)
-            .await
-        {
-            Ok(is_known) => is_known,
+        let entry = match self.query_gateway(public_key).await {
+            Ok(entry) => entry,
             Err(err) => {
                 // Don't cache transient failures — fail closed for this call only.
                 tracing::warn!(?err, %public_key, "gateway fallback query failed");
@@ -147,39 +145,47 @@ impl GatewayResolver {
             }
         };
         self.fallback_cache
-            .insert(public_key.clone(), is_known, self.refresh_interval)
+            .insert(public_key.clone(), entry, self.refresh_interval)
             .await;
-        is_known
+        entry.is_some_and(|entry| entry.is_known_at(gateway_query_time))
     }
 
-    async fn query_gateway_known(
+    async fn query_gateway(
         &self,
         public_key: &PublicKeyBinary,
-        gateway_query_time: &DateTime<Utc>,
-    ) -> trino_client::Result<bool> {
+    ) -> trino_client::Result<Option<GatewayEntry>> {
         use trino_rust_client::Trino;
         #[derive(Trino, serde::Serialize, serde::Deserialize)]
-        struct Exists {
-            is_known: bool,
+        struct Row {
+            inserted_at: DateTime<FixedOffset>,
         }
 
         let stmt = trino_client::Statement::new(format!(
             r#"
-            SELECT EXISTS (
-                SELECT 1
-                FROM {}
-                WHERE pub_key = :address
-                  AND inserted_at <= :timestamp
-            ) AS is_known
+            SELECT inserted_at
+            FROM {}
+            WHERE pub_key = :address
             "#,
             self.inventory_table
         ))
         .bind("address", public_key.to_string())
-        .bind("timestamp", *gateway_query_time)
-        .typed::<Exists>();
+        .typed::<Row>();
 
         let rows = self.trino_client.get_all(stmt).await?;
-        Ok(rows.first().is_some_and(|row| row.is_known))
+        Ok(rows.into_iter().next().map(|row| GatewayEntry {
+            inserted_at: row.inserted_at.with_timezone(&Utc),
+        }))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct GatewayEntry {
+    inserted_at: DateTime<Utc>,
+}
+
+impl GatewayEntry {
+    fn is_known_at(&self, gateway_query_time: &DateTime<Utc>) -> bool {
+        self.inserted_at <= *gateway_query_time
     }
 }
 
@@ -193,7 +199,7 @@ impl GatewayResolver {
 pub struct GatewaySnapshotRefresher {
     trino_client: trino_client::Client,
     inventory_table: String,
-    known_gateways: Arc<RwLock<HashSet<PublicKeyBinary>>>,
+    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayEntry>>>,
     refresh_interval: Duration,
     last_refresh: Option<Instant>,
 }
@@ -238,26 +244,34 @@ impl Periodic for GatewaySnapshotRefresher {
     }
 }
 
-/// Load every gateway pubkey from the inventory table into a set.
+/// Load every gateway pubkey and its stable onboarding timestamp.
 async fn load_known_gateways(
     trino_client: &trino_client::Client,
     inventory_table: &str,
-) -> anyhow::Result<HashSet<PublicKeyBinary>> {
+) -> anyhow::Result<HashMap<PublicKeyBinary, GatewayEntry>> {
     use trino_rust_client::Trino;
     #[derive(Trino, serde::Serialize, serde::Deserialize)]
     struct Row {
         pub_key: String,
+        inserted_at: DateTime<FixedOffset>,
     }
 
-    let stmt = trino_client::Statement::new(format!("SELECT pub_key FROM {inventory_table}"))
-        .typed::<Row>();
+    let stmt = trino_client::Statement::new(format!(
+        "SELECT pub_key, inserted_at FROM {inventory_table}"
+    ))
+    .typed::<Row>();
     let rows = trino_client.get_all(stmt).await?;
 
-    let mut known = HashSet::with_capacity(rows.len());
+    let mut known = HashMap::with_capacity(rows.len());
     for row in rows {
         match row.pub_key.parse::<PublicKeyBinary>() {
             Ok(pubkey) => {
-                known.insert(pubkey);
+                known.insert(
+                    pubkey,
+                    GatewayEntry {
+                        inserted_at: row.inserted_at.with_timezone(&Utc),
+                    },
+                );
             }
             Err(err) => {
                 tracing::warn!(?err, pub_key = %row.pub_key, "skipping unparseable gateway pubkey")
@@ -265,4 +279,18 @@ async fn load_known_gateways(
         }
     }
     Ok(known)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gateway_entry_respects_inserted_at() {
+        let inserted_at = Utc::now();
+        let entry = GatewayEntry { inserted_at };
+
+        assert!(!entry.is_known_at(&(inserted_at - chrono::Duration::seconds(1))));
+        assert!(entry.is_known_at(&inserted_at));
+    }
 }
