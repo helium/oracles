@@ -251,7 +251,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Docker Registry
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
         with:
           registry: ${{ secrets.ZOT_URL }}
@@ -266,6 +266,6 @@ jobs:
           file: Dockerfile
           target: runner
           push: true
-          tags: ${{ secrets.ZOT_URL }}/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}
+          tags: ${{ secrets.ZOT_URL }}/oracles/${{ matrix.package }}:${{ github.ref_name }}
           build-args: |
             PACKAGE=${{ matrix.package }}
