@@ -154,5 +154,6 @@ make_string_mapped_enum! {
         EntityRewardDestinationChangeReport => "entity_reward_destination_change_report",
         EnabledCarriersInfoReport => "enabled_carriers_report",
         DataTransferMultiplierTicketIngestReport => "data_transfer_multiplier_ticket_ingest_report",
+        VerifiedDataTransferMultiplierTicketReport => "verified_data_transfer_multiplier_ticket_report",
     }
 }

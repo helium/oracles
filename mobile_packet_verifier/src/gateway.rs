@@ -36,6 +36,12 @@ const GATEWAY_REFRESH_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 /// that misses the snapshot — an unknown gateway, or one onboarded since the
 /// last refresh — falls back to a per-pubkey Trino query, cached to avoid
 /// re-querying.
+/// Cloning shares the snapshot rather than copying it: `known_gateways` and
+/// `fallback_cache` are behind `Arc`, so every clone sees the same set and the
+/// single [`GatewaySnapshotRefresher`] keeps all of them current. Build one per
+/// process and clone it for each consumer — a second `new()` would load its own
+/// copy of the whole inventory and then never refresh it.
+#[derive(Clone)]
 pub struct GatewayResolver {
     trino_client: trino_client::Client,
     inventory_table: String,

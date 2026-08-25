@@ -342,3 +342,8 @@ impl_file_sink!(
     FileType::DataTransferMultiplierTicketIngestReport.to_str(),
     "data_transfer_multiplier_ticket_ingest_report"
 );
+impl_file_sink!(
+    poc_mobile::VerifiedDataTransferMultiplierTicketReportV1,
+    FileType::VerifiedDataTransferMultiplierTicketReport.to_str(),
+    "verified_data_transfer_multiplier_ticket_report"
+);

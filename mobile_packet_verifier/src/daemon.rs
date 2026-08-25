@@ -5,7 +5,7 @@ use crate::{
     event_ids::EventIdPurger,
     gateway::GatewayResolver,
     iceberg::{self, DataTransferWriter, InvalidDataTransferWriter},
-    pending_burns,
+    multiplier, pending_burns,
     routing::RoutingKeys,
     settings::Settings,
 };
@@ -312,16 +312,27 @@ impl Cmd {
             )
             .await?;
 
-        let (session_writer, invalid_session_writer, burned_session_writer) =
-            if let Some(ref iceberg_settings) = settings.iceberg_settings {
-                tracing::info!("iceberg settings provided, connecting...");
-                let (session, invalid_session, burned) =
-                    iceberg::get_writers(iceberg_settings).await?;
-                (Some(session), Some(invalid_session), Some(burned))
-            } else {
-                tracing::info!("no iceberg settings provided");
-                (None, None, None)
-            };
+        let writers = if let Some(ref iceberg_settings) = settings.iceberg_settings {
+            tracing::info!("iceberg settings provided, connecting...");
+            Some(iceberg::get_writers(iceberg_settings).await?)
+        } else {
+            tracing::info!("no iceberg settings provided");
+            None
+        };
+        let (
+            session_writer,
+            invalid_session_writer,
+            burned_session_writer,
+            multiplier_ticket_writer,
+        ) = match writers {
+            Some(w) => (
+                Some(w.session),
+                Some(w.invalid_session),
+                Some(w.burned_session),
+                Some(w.multiplier_ticket),
+            ),
+            None => (None, None, None, None),
+        };
 
         let burner = Burner::new(
             valid_sessions,
@@ -345,6 +356,10 @@ impl Cmd {
         )
         .await;
         let gw_refresher = gw_resolver.refresher();
+        // Shared, not a second resolver: clones point at the same snapshot, so
+        // the refresher above keeps the ticket path current too. Building
+        // another would load its own copy of the inventory and never refresh it.
+        let ticket_resolver = gw_resolver.clone();
 
         let ingest_reports = IngestReports::new(
             pool.clone(),
@@ -366,7 +381,19 @@ impl Cmd {
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
-        let banning = banning::create_managed_task(pool, &settings.banning).await?;
+        let banning = banning::create_managed_task(pool.clone(), &settings.banning).await?;
+
+        let multipliers = multiplier::create_managed_task(
+            pool,
+            file_upload,
+            &settings.multiplier,
+            settings.ticket_signers()?,
+            ticket_resolver,
+            &settings.cache,
+            multiplier_ticket_writer,
+            trino_client::Client::from_settings(&settings.trino)?,
+        )
+        .await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
@@ -374,6 +401,7 @@ impl Cmd {
             .add_task(verified_sessions_server)
             .add_task(reports_server)
             .add_task(banning)
+            .add_task(multipliers)
             .add_task(task_manager::periodic(event_id_purger))
             .add_task(task_manager::periodic(gw_refresher))
             .add_task(daemon)

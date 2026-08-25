@@ -151,3 +151,55 @@ bucket = "helium-mainnet-mobile-verified"
 # Region for bucket. Defaults to below
 #
 region = "us-west-2"
+
+# HIP-150 data transfer multiplier tickets
+#
+# Verified tickets are written to s3 and to the append-only
+# data_transfer.multiplier_ticket_history table. No ticket data is stored in
+# Postgres.
+# A periodic job merges that history into
+# data_transfer.multiplier_ticket_inventory, which is what is currently in
+# force.
+#
+[multiplier]
+
+# Comma-separated b58 public keys authorized to issue tickets.
+#
+# Checked here as well as at ingest: the two services are deployed and
+# configured separately, and it is this verdict that lands on the record.
+#
+# May be empty, and is by default — no ticket can be issued until a key is
+# provisioned. Empty rejects every ticket and warns at startup.
+#
+# authorized_keys = "key1,key2"
+
+# How old a ticket's signed timestamp may be, measured against when ingest
+# received it, before it is refused. A second check of what ingest already
+# checked, configured separately so a mistake in ingest's window does not
+# silently widen the replay window everywhere.
+# Default: 10 minutes
+#
+# ticket_max_age = "10 minutes"
+
+# How often to merge the history into the inventory table. Nothing in the burn
+# depends on the inventory, so a slow cadence is fine.
+# Default: 15 minutes
+#
+# inventory_refresh_interval = "15 minutes"
+
+# How far back do we read ticket files?
+# Default: UNIX_EPOCH
+#
+# start_after = "2024-12-15 01:00:00Z"
+
+# Ingest bucket details for data transfer multiplier tickets
+#
+[multiplier.input_bucket]
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "helium-mainnet-mobile-ingest"
+
+# Region for bucket. Defaults to below
+#
+region = "us-west-2"
