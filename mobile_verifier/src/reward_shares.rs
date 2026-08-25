@@ -13,8 +13,19 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 /// Default precision used for rounding
 pub const DEFAULT_PREC: u32 = 15;
 
-// Percent of total emissions allocated for service provider rewards
-const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
+// Percent of total emissions allocated for service provider rewards.
+//
+// HIP-150 Decision 3: Nova Labs contributes its Service Provider Rewards to the
+// Deployer Data Reward Pool, moving the Mobile data bucket from 70% to 94% and
+// this allocation to zero. The contribution runs to 2027-07-31 and may be
+// extended once by a year; ending it earlier takes a later HIP. It is a
+// suspension, not a retirement — the Service Provider role stays defined
+// throughout, and unrewarded only while the contribution lasts.
+//
+// Restoring the allocation is this constant and nothing else: the split in
+// `emissions_split` and the guard in `rewarder::reward_service_providers` both
+// key off the resulting amount.
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0);
 
 /// Returns the equivalent amount of Hnt bones for a specified amount of Data Credits
 pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {

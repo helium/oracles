@@ -335,9 +335,10 @@ pub async fn reward_dc(
     )
     .await?;
 
-    // HIP-149: data transfer is the residual of `hnt_rewards_issued` after the
-    // flat 24% service-provider cut, so the cap/backstop shift is absorbed here
-    // rather than over-/under-allocating. See `reward_shares::emissions_split`.
+    // Data transfer is the residual of `hnt_rewards_issued` after the flat
+    // service-provider cut, so the cap/backstop shift is absorbed here rather
+    // than over-/under-allocating. Under HIP-150 that cut is zero and the pool is
+    // the whole issued amount. See `reward_shares::emissions_split`.
     let pool = Decimal::from(hip_149_reward_pools(reward_info).data_transfer);
     // Demand is the HNT-bone value of the burned DC at the epoch price — a
     // telemetry input only (the payout rate is `pool / total_dc`, price-free).
@@ -403,8 +404,21 @@ pub async fn reward_service_providers(
     reward_info: &EpochRewardInfo,
     reward_ctx: Option<(&iceberg::RewardWriters, &str)>,
 ) -> anyhow::Result<()> {
-    // HIP-149: a flat 24% of total emissions (see `reward_shares::emissions_split`).
+    // A flat percent of total emissions (see `reward_shares::emissions_split`).
     let sp_reward_amount = hip_149_reward_pools(reward_info).service_provider;
+
+    // HIP-150 Decision 3: Nova Labs contributes its Service Provider Rewards to
+    // the Deployer Data Reward Pool, so the pool is zero and *no reward is
+    // written at all* — not a reward of zero. Consumers see no service-provider
+    // rows for a suspended epoch rather than rows that claim an award of nothing.
+    //
+    // Guarded on the amount rather than deleted: the contribution runs to
+    // 2027-07-31 and may be extended once, so this path comes back. Restoring it
+    // is `SERVICE_PROVIDER_PERCENT` alone.
+    if sp_reward_amount == 0 {
+        tracing::info!("service provider pool is zero, skipping service provider rewards");
+        return Ok(());
+    }
 
     // The entire service-provider pool goes to the HeliumMobile Network Wallet.
     let network_share = proto::ServiceProviderReward {
