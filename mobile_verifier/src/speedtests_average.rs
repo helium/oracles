@@ -1,20 +1,17 @@
-use crate::speedtests::{self, Speedtest};
-use chrono::{DateTime, Utc};
+use crate::speedtests::Speedtest;
+use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use file_store_oracles::traits::MsgTimestamp;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::collections::HashMap;
 
 pub const SPEEDTEST_LAPSE: i64 = 48;
 const MIN_DOWNLOAD: u64 = mbps(30);
 const MIN_UPLOAD: u64 = mbps(2);
 const MAX_LATENCY: u32 = 100;
 pub const MIN_REQUIRED_SAMPLES: usize = 2;
-
-pub type EpochAverages = HashMap<PublicKeyBinary, SpeedtestAverage>;
 
 #[derive(Debug, Clone)]
 pub struct SpeedtestAverage {
@@ -200,33 +197,6 @@ impl SpeedtestTier {
         } else {
             Self::Failed
         }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct SpeedtestAverages {
-    pub averages: HashMap<PublicKeyBinary, SpeedtestAverage>,
-}
-
-impl SpeedtestAverages {
-    pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
-        self.averages.get(pub_key).cloned()
-    }
-
-    pub async fn aggregate_epoch_averages(
-        epoch_end: DateTime<Utc>,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<SpeedtestAverages, sqlx::Error> {
-        let averages: EpochAverages = speedtests::aggregate_epoch_speedtests(epoch_end, pool)
-            .await?
-            .into_iter()
-            .map(|(pub_key, speedtests)| {
-                let average = SpeedtestAverage::from(speedtests);
-                (pub_key, average)
-            })
-            .collect();
-
-        Ok(Self { averages })
     }
 }
 

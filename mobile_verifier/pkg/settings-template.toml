@@ -22,6 +22,36 @@ banning_authorized_keys = "key1,key2"
 # inventory table (see [trino]). Default is 1 hour.
 # gateway_refresh_interval = "1 hour"
 
+# How often the last-validated-location cache is reloaded from `poc.heartbeats`.
+# Default is 1 hour.
+#
+# Heartbeats that carry no location validation of their own inherit the hotspot's
+# last validated location from this cache. It is process-local, so this reload is
+# what picks up locations validated by another instance — during a rolling
+# deploy, for example. Keep it well under the 24-hour location validity window.
+#
+# The initial load at startup is mandatory: if it fails the service refuses to
+# start, rather than publishing a zero location-trust score for every hotspot
+# that had asserted a location. Later reloads are best-effort and retry.
+#
+# location_cache_refresh_interval = "1 hour"
+
+# Optional: mirror the rewarder's own `meta` state — `next_reward_epoch` and
+# `disable_complete_data_checks_until` — to a local JSON file.
+#
+# Postgres remains the source of truth and serves every read; the file is written
+# alongside it, at startup and after each epoch is rewarded, so a deployment can
+# be kept ready for the eventual cutover off Postgres. Nothing reads the mirror
+# yet. Writes go through a temp file + rename so a crash can't truncate it.
+#
+# `disable_complete_data_checks_until` is written as an RFC 3339 datetime rather
+# than the raw epoch seconds the `meta` table stores; omitting it in a
+# hand-written file means the Unix epoch, i.e. the checks always run.
+#
+# {"next_reward_epoch": 20321, "disable_complete_data_checks_until": "1970-01-01T00:00:00Z"}
+#
+# rewarder_state_file = "/var/lib/mobile-verifier/rewarder-state.json"
+
 [database]
 
 # Postgres Connection Information
@@ -29,24 +59,6 @@ url = "postgres://postgres:postgres@127.0.0.1:5432/mobile_verifier"
 
 # Max connections to the database.
 max_connections = 50
-
-[follower]
-
-# Local grpc url to node follower for rewards tracking and submission
-#[serde(with = "http_serde::uri", default = "default_url")]
-# url = http://127.0.0.1:8080
-
-# Start block to start streaming followed transactions from.
-block = 0
-
-# Connect timeout for follower in seconds. Default 5
-# connect = 5
-
-# RPC timeout for follower in seconds. Default 5
-# rpc = 5
-
-# batch size for gateway stream results. Default 100
-# batch = 100
 
 [ingest]
 
@@ -130,3 +142,20 @@ user = "mobile-verifier"
 # # type = "basic"
 # # username = "mobile-verifier"
 # # password = "..."
+
+# Iceberg catalog. REQUIRED.
+#
+# Heartbeats and speedtests are written here and nowhere else in a queryable
+# form — Postgres no longer stores them. They are read back through Trino to warm
+# the last-location and speedtest windows at startup, and to gate rewarding on
+# data currency, so an unconfigured catalog leaves the rewarder unable to fire.
+[iceberg_settings]
+catalog_uri = "http://iceberg-catalog:8181"
+catalog_name = "nova"
+warehouse = "s3://warehouse-bucket/iceberg"
+
+# [iceberg_settings.auth]
+# # (optional) OAuth2 / token config
+
+# [iceberg_settings.s3]
+# region = "us-west-2"

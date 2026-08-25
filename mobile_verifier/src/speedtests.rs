@@ -4,7 +4,7 @@ use crate::{
     Settings,
 };
 use crate::{GatewayResolution, GatewayResolver};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload, BucketClient,
@@ -14,15 +14,17 @@ use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestAvgValidity, SpeedtestIngestReportV1,
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use sqlx::{postgres::PgRow, FromRow, PgPool, PgTransaction, Row};
+use retainer::Cache;
+use sqlx::PgPool;
 use std::{
     collections::HashMap,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use task_manager::{ManagedTask, TaskManager};
@@ -36,26 +38,9 @@ const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 // Convert 300 megabits per second to bytes per second.
 const SPEEDTEST_MAX_BYTES_PER_SECOND: u64 = 300 * BYTES_PER_MEGABIT;
 
-pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
-
 #[derive(Debug, Clone)]
 pub struct Speedtest {
     pub report: CellSpeedtest,
-}
-
-impl FromRow<'_, PgRow> for Speedtest {
-    fn from_row(row: &PgRow) -> sqlx::Result<Speedtest> {
-        Ok(Self {
-            report: CellSpeedtest {
-                pubkey: row.get::<PublicKeyBinary, &str>("pubkey"),
-                serial: row.get::<String, &str>("serial_num"),
-                upload_speed: row.get::<i64, &str>("upload_speed") as u64,
-                download_speed: row.get::<i64, &str>("download_speed") as u64,
-                timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
-                latency: row.get::<i32, &str>("latency") as u32,
-            },
-        })
-    }
 }
 
 // ── SpeedtestDaemon ───────────────────────────────────────────────────────────
@@ -63,25 +48,28 @@ impl FromRow<'_, PgRow> for Speedtest {
 pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
+    recent_speedtests: RecentSpeedtests,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
     verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
-    iceberg_writer: Option<iceberg::SpeedtestWriter>,
-    speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
+    iceberg_writer: iceberg::SpeedtestWriter,
+    speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
 where
     GIR: GatewayResolver,
 {
+    #[expect(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
         bucket_client: BucketClient,
+        trino: trino_client::Client,
         gateway_resolver: GIR,
-        iceberg_writer: Option<iceberg::SpeedtestWriter>,
-        speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
+        iceberg_writer: iceberg::SpeedtestWriter,
+        speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
             &settings.cache,
@@ -111,6 +99,7 @@ where
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
+            RecentSpeedtests::from_trino(&trino).await,
             gateway_resolver,
             speedtests,
             speedtests_avg,
@@ -127,18 +116,21 @@ where
             .build())
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
+        recent_speedtests: RecentSpeedtests,
         gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
         verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
-        iceberg_writer: Option<iceberg::SpeedtestWriter>,
-        speedtest_avg_iceberg_writer: Option<iceberg::SpeedtestAvgWriter>,
+        iceberg_writer: iceberg::SpeedtestWriter,
+        speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
     ) -> Self {
         Self {
             pool,
             gateway_info_resolver,
+            recent_speedtests,
             speedtests,
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
@@ -173,6 +165,9 @@ where
     ) -> anyhow::Result<()> {
         tracing::info!("Processing speedtest file {}", file.file_info.key);
         let write_id = file.file_info.key.clone();
+        // Speedtests themselves are no longer stored in Postgres; the
+        // transaction exists only so the file-info poller can record this file
+        // as processed.
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
 
@@ -184,31 +179,27 @@ where
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
             if result == SpeedtestResult::SpeedtestValid {
-                save_speedtest(&speedtest_report.report, &mut transaction).await?;
-                let latest_speedtests = get_latest_speedtests_for_pubkey(
-                    &speedtest_report.report.pubkey,
-                    speedtest_report.report.timestamp,
-                    &mut transaction,
-                )
-                .await?;
+                let latest_speedtests = self
+                    .recent_speedtests
+                    .push(Speedtest {
+                        report: speedtest_report.report.clone(),
+                    })
+                    .await;
                 let average = SpeedtestAverage::from(latest_speedtests);
                 average.write(&self.speedtest_avg_file_sink).await?;
 
-                if self.iceberg_writer.is_some() {
-                    iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
+                iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
+
+                let avg_record = iceberg::IcebergSpeedtestAvg::from(&average);
+                if average.validity == SpeedtestAvgValidity::Valid {
+                    iceberg_avg_records.push(avg_record);
+                } else {
+                    invalid_iceberg_avg_records.push(iceberg::IcebergInvalidSpeedtestAvg::new(
+                        avg_record,
+                        average.validity,
+                    ));
                 }
-                if self.speedtest_avg_iceberg_writer.is_some() {
-                    let avg_record = iceberg::IcebergSpeedtestAvg::from(&average);
-                    if average.validity == SpeedtestAvgValidity::Valid {
-                        iceberg_avg_records.push(avg_record);
-                    } else {
-                        invalid_iceberg_avg_records.push(iceberg::IcebergInvalidSpeedtestAvg::new(
-                            avg_record,
-                            average.validity,
-                        ));
-                    }
-                }
-            } else if self.iceberg_writer.is_some() {
+            } else {
                 invalid_iceberg_records.push(iceberg::IcebergInvalidSpeedtest::new(
                     iceberg::IcebergSpeedtest::from(&speedtest_report),
                     result,
@@ -219,16 +210,12 @@ where
                 .await?;
         }
 
-        if let Some(writer) = self.iceberg_writer.as_ref() {
-            writer
-                .write(&write_id, iceberg_records, invalid_iceberg_records)
-                .await?;
-        }
-        if let Some(writer) = self.speedtest_avg_iceberg_writer.as_ref() {
-            writer
-                .write(&write_id, iceberg_avg_records, invalid_iceberg_avg_records)
-                .await?;
-        }
+        self.iceberg_writer
+            .write(&write_id, iceberg_records, invalid_iceberg_records)
+            .await?;
+        self.speedtest_avg_iceberg_writer
+            .write(&write_id, iceberg_avg_records, invalid_iceberg_avg_records)
+            .await?;
 
         self.speedtest_avg_file_sink.commit().await?;
         self.verified_speedtest_file_sink.commit().await?;
@@ -289,90 +276,287 @@ where
     }
 }
 
-pub async fn save_speedtest(
-    speedtest: &CellSpeedtest,
-    exec: &mut PgTransaction<'_>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        insert into speedtests (pubkey, upload_speed, download_speed, latency, serial_num, timestamp)
-        values ($1, $2, $3, $4, $5, $6)
-        on conflict (pubkey, timestamp) do nothing
-        "#,
-    )
-    .bind(&speedtest.pubkey)
-    .bind(speedtest.upload_speed as i64)
-    .bind(speedtest.download_speed as i64)
-    .bind(speedtest.latency as i32)
-    .bind(&speedtest.serial)
-    .bind(speedtest.timestamp)
-    .execute(&mut **exec)
-    .await?;
-    Ok(())
+/// The rolling window of a hotspot's most recent speedtests, held in memory.
+///
+/// Speedtests are no longer written to Postgres, so the running average that
+/// accompanies each report can't be recovered with a per-report `SELECT`
+/// anymore. This keeps the same window the old query produced — up to
+/// `SPEEDTEST_AVG_MAX_DATA_POINTS` samples within [`SPEEDTEST_LAPSE`] hours —
+/// per hotspot instead, warmed once at startup from `poc.speedtests` in Trino so
+/// a restart doesn't reset every hotspot to a single-sample average.
+///
+/// Entries expire on their own after [`SPEEDTEST_LAPSE`] hours of inactivity, so
+/// hotspots that stop reporting fall out without an explicit purge.
+#[derive(Clone)]
+pub struct RecentSpeedtests {
+    windows: Arc<Cache<PublicKeyBinary, Vec<Speedtest>>>,
 }
 
-pub async fn get_latest_speedtests_for_pubkey(
-    pubkey: &PublicKeyBinary,
-    timestamp: DateTime<Utc>,
-    exec: &mut PgTransaction<'_>,
-) -> Result<Vec<Speedtest>, sqlx::Error> {
-    let speedtests = sqlx::query_as::<_, Speedtest>(
-        r#"
-        SELECT *
-        FROM speedtests
-        WHERE pubkey = $1
-            AND timestamp >= $2
-            AND timestamp <= $3
-        ORDER BY timestamp DESC
-        LIMIT $4
-        "#,
-    )
-    .bind(pubkey)
-    .bind(timestamp - chrono::Duration::hours(SPEEDTEST_LAPSE))
-    .bind(timestamp)
-    .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
-    .fetch_all(&mut **exec)
-    .await?;
-    Ok(speedtests)
-}
-
-pub async fn aggregate_epoch_speedtests(
-    epoch_end: DateTime<Utc>,
-    exec: &PgPool,
-) -> Result<EpochSpeedTests, sqlx::Error> {
-    let mut speedtests = EpochSpeedTests::new();
-    // use latest speedtest which are no older than N hours, defined by SPEEDTEST_LAPSE
-    let start = epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
-    // pull the last N most recent speedtests from prior to the epoch end for each pubkey
-    let mut rows = sqlx::query_as::<_, Speedtest>(
-        "select * from (
-            SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial_num, row_number()
-            over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp >= $1 and timestamp < $2
-        ) as tmp
-        where count <= $3"
-    )
-    .bind(start)
-    .bind(epoch_end)
-    .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
-    .fetch(exec);
-    // collate the returned speedtests based on pubkey
-    while let Some(speedtest) = rows.try_next().await? {
-        speedtests
-            .entry(speedtest.report.pubkey.clone())
-            .or_default()
-            .push(speedtest);
+impl RecentSpeedtests {
+    pub fn new() -> Self {
+        let windows = Arc::new(Cache::new());
+        let windows_clone = windows.clone();
+        tokio::spawn(async move {
+            windows_clone
+                .monitor(4, 0.25, Duration::from_secs(60 * 60))
+                .await
+        });
+        Self { windows }
     }
-    Ok(speedtests)
+
+    /// An empty cache warmed with each hotspot's most recent speedtests.
+    ///
+    /// A warm-up failure is not fatal — windows refill from live reports; until
+    /// they do, averages are computed over fewer samples than usual.
+    pub async fn from_trino(trino: &trino_client::Client) -> Self {
+        let cache = Self::new();
+        match cache.warm(trino).await {
+            Ok(loaded) => tracing::info!(loaded, "warmed speedtest windows from trino"),
+            Err(err) => tracing::error!(
+                ?err,
+                "failed to warm speedtest windows; continuing with empty windows"
+            ),
+        }
+        cache
+    }
+
+    async fn warm(&self, trino: &trino_client::Client) -> anyhow::Result<usize> {
+        let since = Utc::now() - chrono::Duration::hours(SPEEDTEST_LAPSE);
+        let rows =
+            iceberg::speedtest::recent_speedtests(trino, since, SPEEDTEST_AVG_MAX_DATA_POINTS)
+                .await?;
+
+        let mut windows: HashMap<PublicKeyBinary, Vec<Speedtest>> = HashMap::new();
+        for row in rows {
+            let pubkey: PublicKeyBinary = match row.hotspot_pubkey.parse() {
+                Ok(pubkey) => pubkey,
+                Err(err) => {
+                    tracing::warn!(
+                        pubkey = row.hotspot_pubkey,
+                        ?err,
+                        "skipping unparsable hotspot key while warming speedtest windows"
+                    );
+                    continue;
+                }
+            };
+            windows.entry(pubkey.clone()).or_default().push(Speedtest {
+                report: CellSpeedtest {
+                    pubkey,
+                    serial: row.serial,
+                    timestamp: row.timestamp.with_timezone(&Utc),
+                    upload_speed: row.upload_speed,
+                    download_speed: row.download_speed,
+                    latency: row.latency,
+                },
+            });
+        }
+
+        let loaded = windows.len();
+        for (pubkey, mut window) in windows {
+            sort_and_cap(&mut window);
+            self.store(pubkey, window).await;
+        }
+        Ok(loaded)
+    }
+
+    /// Record `speedtest` and return the window used to average it: the most
+    /// recent samples at or before its own timestamp, within
+    /// [`SPEEDTEST_LAPSE`] hours of it.
+    ///
+    /// Mirrors the old `get_latest_speedtests_for_pubkey` query, which ran after
+    /// the insert and so always saw the report it was averaging.
+    pub async fn push(&self, speedtest: Speedtest) -> Vec<Speedtest> {
+        let pubkey = speedtest.report.pubkey.clone();
+        let timestamp = speedtest.report.timestamp;
+
+        let mut known = match self.windows.get(&pubkey).await {
+            Some(existing) => existing.clone(),
+            None => Vec::new(),
+        };
+
+        // The old table had a `(pubkey, timestamp)` unique constraint and
+        // ignored conflicting inserts; do the same rather than double-count a
+        // replayed report.
+        if !known.iter().any(|s| s.report.timestamp == timestamp) {
+            known.push(speedtest);
+        }
+        known.sort_by(|a, b| b.report.timestamp.cmp(&a.report.timestamp));
+
+        // The average covers this report and the ones preceding it. Selecting
+        // before capping matters for a report that arrives late: it can be older
+        // than everything already cached, and would otherwise be trimmed out of
+        // the very window meant to average it.
+        let oldest = timestamp - chrono::Duration::hours(SPEEDTEST_LAPSE);
+        let window: Vec<Speedtest> = known
+            .iter()
+            .filter(|s| s.report.timestamp >= oldest && s.report.timestamp <= timestamp)
+            .take(SPEEDTEST_AVG_MAX_DATA_POINTS)
+            .cloned()
+            .collect();
+
+        known.truncate(SPEEDTEST_AVG_MAX_DATA_POINTS);
+        self.store(pubkey, known).await;
+
+        window
+    }
+
+    async fn store(&self, pubkey: PublicKeyBinary, window: Vec<Speedtest>) {
+        self.windows
+            .insert(
+                pubkey,
+                window,
+                Duration::from_secs(SPEEDTEST_LAPSE as u64 * 60 * 60),
+            )
+            .await;
+    }
 }
 
-pub async fn clear_speedtests(
-    tx: &mut PgTransaction<'_>,
-    epoch_end: &DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    let oldest_ts = *epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
-    sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
-        .bind(oldest_ts)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
+impl Default for RecentSpeedtests {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Newest first, capped at the number of samples an average uses.
+fn sort_and_cap(window: &mut Vec<Speedtest>) {
+    window.sort_by(|a, b| b.report.timestamp.cmp(&a.report.timestamp));
+    window.truncate(SPEEDTEST_AVG_MAX_DATA_POINTS);
+}
+
+#[cfg(test)]
+mod recent_speedtests_tests {
+    use super::*;
+    use chrono::{DateTime, Duration as ChronoDuration};
+
+    fn hotspot(n: u8) -> PublicKeyBinary {
+        PublicKeyBinary::from(vec![n])
+    }
+
+    fn speedtest(pubkey: &PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
+        Speedtest {
+            report: CellSpeedtest {
+                pubkey: pubkey.clone(),
+                serial: "serial".to_string(),
+                timestamp,
+                upload_speed: 10 * BYTES_PER_MEGABIT,
+                download_speed: 100 * BYTES_PER_MEGABIT,
+                latency: 25,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn window_accumulates_newest_first() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        cache
+            .push(speedtest(&pubkey, now - ChronoDuration::hours(2)))
+            .await;
+        let window = cache
+            .push(speedtest(&pubkey, now - ChronoDuration::hours(1)))
+            .await;
+
+        assert_eq!(2, window.len());
+        assert_eq!(now - ChronoDuration::hours(1), window[0].report.timestamp);
+        assert_eq!(now - ChronoDuration::hours(2), window[1].report.timestamp);
+    }
+
+    #[tokio::test]
+    async fn window_is_capped_at_the_average_sample_count() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        let mut window = Vec::new();
+        for minutes in (1..=(SPEEDTEST_AVG_MAX_DATA_POINTS as i64 + 3)).rev() {
+            window = cache
+                .push(speedtest(&pubkey, now - ChronoDuration::minutes(minutes)))
+                .await;
+        }
+
+        assert_eq!(SPEEDTEST_AVG_MAX_DATA_POINTS, window.len());
+    }
+
+    #[tokio::test]
+    async fn replaying_a_report_does_not_double_count_it() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        cache.push(speedtest(&pubkey, now)).await;
+        let window = cache.push(speedtest(&pubkey, now)).await;
+
+        assert_eq!(1, window.len());
+    }
+
+    #[tokio::test]
+    async fn window_excludes_samples_outside_the_lapse() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        cache
+            .push(speedtest(
+                &pubkey,
+                now - ChronoDuration::hours(SPEEDTEST_LAPSE + 1),
+            ))
+            .await;
+        let window = cache.push(speedtest(&pubkey, now)).await;
+
+        assert_eq!(1, window.len(), "stale sample should not be averaged");
+        assert_eq!(now, window[0].report.timestamp);
+    }
+
+    #[tokio::test]
+    async fn window_excludes_samples_newer_than_the_report() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        cache.push(speedtest(&pubkey, now)).await;
+        // A late-arriving report is averaged against what preceded *it*.
+        let window = cache
+            .push(speedtest(&pubkey, now - ChronoDuration::hours(1)))
+            .await;
+
+        assert_eq!(1, window.len());
+        assert_eq!(now - ChronoDuration::hours(1), window[0].report.timestamp);
+    }
+
+    /// A report can arrive after newer ones have already been cached. It must
+    /// still appear in its own average rather than being trimmed away by the
+    /// window cap.
+    #[tokio::test]
+    async fn a_late_report_is_averaged_with_what_preceded_it() {
+        let now = Utc::now();
+        let pubkey = hotspot(1);
+        let cache = RecentSpeedtests::new();
+
+        // Fill the window with newer reports.
+        for minutes in (1..=SPEEDTEST_AVG_MAX_DATA_POINTS as i64).rev() {
+            cache
+                .push(speedtest(&pubkey, now - ChronoDuration::minutes(minutes)))
+                .await;
+        }
+
+        let late = now - ChronoDuration::hours(1);
+        let window = cache.push(speedtest(&pubkey, late)).await;
+
+        assert_eq!(1, window.len());
+        assert_eq!(late, window[0].report.timestamp);
+    }
+
+    #[tokio::test]
+    async fn windows_are_kept_per_hotspot() {
+        let now = Utc::now();
+        let cache = RecentSpeedtests::new();
+
+        cache.push(speedtest(&hotspot(1), now)).await;
+        let window = cache.push(speedtest(&hotspot(2), now)).await;
+
+        assert_eq!(1, window.len());
+        assert_eq!(hotspot(2), window[0].report.pubkey);
+    }
 }

@@ -36,6 +36,7 @@ async fn test_dc_rewards() -> anyhow::Result<()> {
     seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
 
     // run data-transfer rewards, reading burned sessions from Trino
     rewarder::reward_dc(
@@ -43,7 +44,8 @@ async fn test_dc_rewards() -> anyhow::Result<()> {
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -96,13 +98,15 @@ async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
     // nothing to distribute against.
     let harness = common::setup_iceberg().await?;
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
 
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -139,12 +143,14 @@ async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
     write_sessions(&harness, &sessions).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -200,12 +206,14 @@ async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
 
     let price_info = default_price_info();
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         price_info.clone(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -247,12 +255,14 @@ async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
     write_sessions(&harness, &sessions).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -324,12 +334,14 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
@@ -364,12 +376,14 @@ async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     seed_data_sessions(reward_info.epoch_period.start, &harness).await?;
 
     let trino = trino_client::Client::from_client(harness.owned_trino().await?);
+    let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
         mobile_rewards_client,
         &reward_info,
         default_price_info(),
-        None,
+        &reward_writers,
+        "test-epoch",
     )
     .await?;
 
