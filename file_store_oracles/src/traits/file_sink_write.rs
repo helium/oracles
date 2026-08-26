@@ -337,3 +337,8 @@ impl_file_sink!(
     FileType::EnabledCarriersInfoReport.to_str(),
     "enabled_carriers_report"
 );
+impl_file_sink!(
+    poc_mobile::DataTransferMultiplierTicketIngestReportV1,
+    FileType::DataTransferMultiplierTicketIngestReport.to_str(),
+    "data_transfer_multiplier_ticket_ingest_report"
+);

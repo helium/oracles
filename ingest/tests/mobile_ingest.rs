@@ -1,9 +1,11 @@
 use chrono::{TimeZone, Utc};
 use common::generate_keypair;
+use file_store_oracles::mobile::data_transfer_multiplier::MAX_CLOCK_DRIFT;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CarrierIdV2, DataTransferRadioAccessTechnology, RadioUsageCarrierDataTransferInfoV2,
-    RadioUsageCarrierTransferInfo, RadioUsageSamplingCarrierDataTransferInfoV1,
+    CarrierIdV2, DataTransferMultiplierTicketReqV1, DataTransferRadioAccessTechnology,
+    RadioUsageCarrierDataTransferInfoV2, RadioUsageCarrierTransferInfo,
+    RadioUsageSamplingCarrierDataTransferInfoV1,
 };
 use ingest::AuthorizedKeys;
 use std::str::FromStr;
@@ -464,6 +466,194 @@ async fn cbrs_data_transfer_after() -> anyhow::Result<()> {
         .await?;
 
     assert!(client.is_data_transfer_rx_empty()?);
+
+    trigger.trigger();
+    Ok(())
+}
+
+// ── HIP-150: data transfer multiplier tickets ───────────────────────────────
+
+#[tokio::test]
+async fn submit_data_transfer_multiplier_ticket() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let now = Utc::now().timestamp_millis() as u64;
+    let response = client
+        .submit_multiplier_ticket(pubkey.clone().into(), "1.5", now)
+        .await?;
+
+    let report = client.multiplier_ticket_recv().await?;
+    assert_eq!(report.received_timestamp_ms, response.timestamp_ms);
+
+    let ticket = report.report.expect("inner report");
+    assert_eq!(PublicKeyBinary::from(ticket.hotspot_pubkey), pubkey);
+    assert_eq!(ticket.timestamp_ms, now);
+
+    // Ingest persists the multiplier verbatim — it does not parse, normalize or
+    // range-check it. That is the packet verifier's job, so that a rejection is
+    // recorded in a verified report rather than vanishing at the boundary.
+    assert_eq!(ticket.multiplier.expect("multiplier").value, "1.5");
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// The multiplier allow-list is separate from the carrier one, so a permissive
+/// carrier verifier must not let a ticket through. `AuthorizedKeys::default()`
+/// has empty sets for both.
+#[tokio::test]
+async fn multiplier_ticket_rejects_unauthorized_signer() -> anyhow::Result<()> {
+    let (mut client, trigger) =
+        common::setup_mobile_with_verifier(AuthorizedKeys::default()).await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let now = Utc::now().timestamp_millis() as u64;
+    let res = client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", now)
+        .await;
+
+    assert!(
+        res.is_err(),
+        "ticket from an unauthorized signer must be rejected"
+    );
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn multiplier_ticket_rejects_bad_signature() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let req = DataTransferMultiplierTicketReqV1 {
+        hotspot_pubkey: pubkey.into(),
+        multiplier: Some(helium_proto::Decimal {
+            value: "1.5".to_string(),
+        }),
+        timestamp_ms: Utc::now().timestamp_millis() as u64,
+        message: "unsigned".to_string(),
+        signer_pubkey: client.signer_pubkey(),
+        signature: vec![1, 2, 3],
+    };
+
+    let res = client.send_multiplier_ticket(req).await;
+    assert!(res.is_err(), "ticket with a bad signature must be rejected");
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// A signature never expires, so a ticket captured off the wire stays valid
+/// forever without a freshness window. Ingest refuses one older than the
+/// configured limit.
+#[tokio::test]
+async fn multiplier_ticket_rejects_stale_timestamp() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let stale = (Utc::now()
+        - chrono::Duration::from_std(common::TICKET_MAX_AGE)?
+        - chrono::Duration::minutes(1))
+    .timestamp_millis() as u64;
+
+    let res = client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", stale)
+        .await;
+
+    assert!(
+        res.is_err(),
+        "ticket older than the window must be rejected"
+    );
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// A ticket dated further ahead than a clock could plausibly drift is refused —
+/// otherwise post-dating would buy an attacker an arbitrarily long replay
+/// window.
+#[tokio::test]
+async fn multiplier_ticket_rejects_future_timestamp() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let future = (Utc::now() + chrono::Duration::hours(1)).timestamp_millis() as u64;
+
+    let res = client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", future)
+        .await;
+
+    assert!(res.is_err(), "future-dated ticket must be rejected");
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// Clients do not share a clock with ingest. A ticket stamped slightly ahead is
+/// an honest client with a drifting clock, not an attack, and must be accepted.
+#[tokio::test]
+async fn multiplier_ticket_tolerates_client_clock_drift() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let drifted = (Utc::now() + chrono::Duration::from_std(MAX_CLOCK_DRIFT)?
+        - chrono::Duration::seconds(5))
+    .timestamp_millis() as u64;
+
+    client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", drifted)
+        .await?;
+
+    let report = client.multiplier_ticket_recv().await?;
+    assert_eq!(report.report.expect("inner").timestamp_ms, drifted);
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// The far side of the allowance. Without this the drift test above would pass
+/// just as well if the tolerance were unbounded.
+#[tokio::test]
+async fn multiplier_ticket_rejects_drift_beyond_the_allowance() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let too_far =
+        (Utc::now() + chrono::Duration::from_std(MAX_CLOCK_DRIFT)? + chrono::Duration::minutes(1))
+            .timestamp_millis() as u64;
+
+    let res = client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", too_far)
+        .await;
+
+    assert!(
+        res.is_err(),
+        "drift beyond the allowance must still be rejected"
+    );
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// A ticket right at the edge of the window is still accepted — pins that the
+/// comparison is inclusive and that the window is not accidentally zero.
+#[tokio::test]
+async fn multiplier_ticket_accepts_timestamp_inside_window() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let inside = (Utc::now() - chrono::Duration::from_std(common::TICKET_MAX_AGE)?
+        + chrono::Duration::minutes(1))
+    .timestamp_millis() as u64;
+
+    client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", inside)
+        .await?;
+
+    let report = client.multiplier_ticket_recv().await?;
+    assert_eq!(report.report.expect("inner").timestamp_ms, inside);
 
     trigger.trigger();
     Ok(())

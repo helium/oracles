@@ -6,12 +6,13 @@ use file_store_oracles::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     BanIngestReportV1, BanReqV1, BanRespV1, CarrierIdV2, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
-    DataTransferSessionReqV1, DataTransferSessionRespV1, EnabledCarriersInfoReportV1,
-    EnabledCarriersInfoReqV1, EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1,
-    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsIngestReportV2, RadioUsageStatsReqV1,
-    RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
+    DataTransferEvent, DataTransferMultiplierTicketIngestReportV1,
+    DataTransferMultiplierTicketReqV1, DataTransferMultiplierTicketRespV1,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+    DataTransferSessionRespV1, EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1,
+    EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    RadioUsageCarrierTransferInfo, RadioUsageStatsIngestReportV1, RadioUsageStatsIngestReportV2,
+    RadioUsageStatsReqV1, RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
     UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
@@ -36,10 +37,19 @@ use tonic::{
 };
 use triggered::Trigger;
 
+/// Freshness window the test server runs with. Wide enough that a ticket
+/// stamped "now" always passes; tests that exercise the window set an explicit
+/// timestamp rather than sleeping.
+pub const TICKET_MAX_AGE: Duration = Duration::from_secs(600);
+
 struct MockAuthorizationClient;
 
 impl AuthorizationVerifier for MockAuthorizationClient {
     fn is_authorized(&self, _pubkey: &PublicKeyBinary, _role: NetworkKeyRole) -> bool {
+        true
+    }
+
+    fn is_ticket_signer(&self, _pubkey: &PublicKeyBinary) -> bool {
         true
     }
 }
@@ -84,6 +94,7 @@ pub async fn setup_mobile_with_verifier<AV: AuthorizationVerifier>(
         tokio::sync::mpsc::channel(10);
     let (ban_tx, ban_rx) = tokio::sync::mpsc::channel(10);
     let (enabled_carriers_tx, enabled_carriers_rx) = tokio::sync::mpsc::channel(10);
+    let (multiplier_ticket_tx, multiplier_ticket_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
@@ -103,6 +114,8 @@ pub async fn setup_mobile_with_verifier<AV: AuthorizationVerifier>(
             FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
             FileSinkClient::new(ban_tx, "noop"),
             FileSinkClient::new(enabled_carriers_tx, "enabled_carriers_sink"),
+            FileSinkClient::new(multiplier_ticket_tx, "multiplier_ticket_sink"),
+            TICKET_MAX_AGE,
             Network::MainNet,
             socket_addr,
             api_token,
@@ -124,6 +137,7 @@ pub async fn setup_mobile_with_verifier<AV: AuthorizationVerifier>(
         ban_rx,
         data_transfer_rx,
         enabled_carriers_rx,
+        multiplier_ticket_rx,
     )
     .await;
 
@@ -147,6 +161,8 @@ pub struct TestClient {
     ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
     data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
     enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
+    multiplier_ticket_rx:
+        Receiver<file_store::file_sink::Message<DataTransferMultiplierTicketIngestReportV1>>,
 }
 
 impl TestClient {
@@ -175,6 +191,9 @@ impl TestClient {
             file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
         >,
         enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
+        multiplier_ticket_rx: Receiver<
+            file_store::file_sink::Message<DataTransferMultiplierTicketIngestReportV1>,
+        >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -193,6 +212,7 @@ impl TestClient {
             ban_file_sink_rx,
             data_transfer_rx,
             enabled_carriers_rx,
+            multiplier_ticket_rx,
         }
     }
 
@@ -376,6 +396,68 @@ impl TestClient {
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
         }
+    }
+
+    /// The public key this client signs with, for tests that build a request
+    /// by hand instead of going through a `submit_*` helper.
+    pub fn signer_pubkey(&self) -> Vec<u8> {
+        self.key_pair.public_key().into()
+    }
+
+    pub async fn multiplier_ticket_recv(
+        mut self,
+    ) -> anyhow::Result<DataTransferMultiplierTicketIngestReportV1> {
+        match timeout(Duration::from_secs(2), self.multiplier_ticket_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    /// Submit a ticket signed by the client's keypair. `timestamp_ms` is
+    /// explicit so freshness tests can stamp a ticket in the past or future
+    /// without sleeping.
+    pub async fn submit_multiplier_ticket(
+        &mut self,
+        hotspot_pubkey: Vec<u8>,
+        multiplier: &str,
+        timestamp_ms: u64,
+    ) -> anyhow::Result<DataTransferMultiplierTicketRespV1> {
+        let mut req = DataTransferMultiplierTicketReqV1 {
+            hotspot_pubkey,
+            multiplier: Some(helium_proto::Decimal {
+                value: multiplier.to_string(),
+            }),
+            timestamp_ms,
+            message: "test ticket".to_string(),
+            signer_pubkey: self.key_pair.public_key().into(),
+            signature: vec![],
+        };
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        self.send_multiplier_ticket(req).await
+    }
+
+    /// Submit a ticket verbatim, without re-signing — for tests that need a
+    /// tampered or deliberately mis-signed request.
+    pub async fn send_multiplier_ticket(
+        &mut self,
+        req: DataTransferMultiplierTicketReqV1,
+    ) -> anyhow::Result<DataTransferMultiplierTicketRespV1> {
+        let mut request = Request::new(req);
+        request
+            .metadata_mut()
+            .insert("authorization", self.authorization.clone());
+
+        let res = self
+            .client
+            .submit_data_transfer_multiplier_ticket(request)
+            .await?;
+        Ok(res.into_inner())
     }
 
     pub async fn submit_ban(&mut self, hotspot_pubkey: Vec<u8>) -> anyhow::Result<BanRespV1> {
