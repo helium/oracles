@@ -57,6 +57,11 @@ impl From<ValidDataTransferSession> for proto::ValidDataTransferSession {
             last_timestamp: v.last_timestamp.encode_timestamp_millis(),
             rewardable_bytes: v.rewardable_bytes,
             burn_timestamp: v.burn_timestamp.encode_timestamp_millis(),
+            // HIP-150: populated once mobile-packet-verifier applies multipliers.
+            // Absent means no multiplier was in force, which is what every
+            // session is until then — so this preserves current behaviour
+            // exactly rather than asserting a 1x that was never looked up.
+            multiplier: None,
         }
     }
 }

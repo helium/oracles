@@ -31,6 +31,27 @@ network = "mainnet"
 # Ignored in "chain" mode.
 carrier_authorized_keys = "key1,key2"
 
+# HIP-150. Comma-separated b58 public keys authorized to issue data transfer
+# multiplier tickets. Deliberately separate from carrier_authorized_keys, so a
+# carrier key cannot grant a hotspot a reward multiplier.
+#
+# Unlike carrier_authorized_keys this may be empty, and defaults to empty: the
+# oracle release ships before any ticket can be issued. Empty fails closed —
+# every ticket is rejected — and warns at startup.
+#
+# data_transfer_multiplier_authorized_keys = "key1,key2"
+
+# HIP-150. How old a ticket's signed timestamp may be before ingest refuses it.
+# A signature never expires, so this is what stops a ticket captured off the
+# wire from being replayed later. Defaults to 10 minutes.
+#
+# A ticket stamped slightly in the future is treated as current rather than
+# refused, since clients do not share a clock with ingest. That allowance is a
+# constant shared with the packet verifier, not a setting: the two check
+# freshness against the same timestamp and must not be configured apart.
+#
+# data_transfer_multiplier_ticket_max_age = "10 minutes"
+
 [output]
 # Output bucket for ingested data
 
