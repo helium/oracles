@@ -45,6 +45,11 @@ carrier_authorized_keys = "key1,key2"
 # A signature never expires, so this is what stops a ticket captured off the
 # wire from being replayed later. Defaults to 10 minutes.
 #
+# A ticket stamped slightly in the future is treated as current rather than
+# refused, since clients do not share a clock with ingest. That allowance is a
+# constant shared with the packet verifier, not a setting: the two check
+# freshness against the same timestamp and must not be configured apart.
+#
 # data_transfer_multiplier_ticket_max_age = "10 minutes"
 
 [output]

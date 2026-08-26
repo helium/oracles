@@ -2,6 +2,7 @@ use crate::{authorization::AuthorizationVerifier, Settings};
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store_oracles::mobile::data_transfer_multiplier::MAX_CLOCK_DRIFT;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
@@ -204,18 +205,34 @@ where
         Ok(())
     }
 
-    /// HIP-150: refuse a ticket dated in the future, or older than the
-    /// configured window.
+    /// HIP-150: refuse a ticket older than the configured window, or dated
+    /// further ahead than a client's clock could plausibly drift.
     ///
     /// A signature never expires, so without this a ticket captured off the
     /// wire stays usable forever — including after the grant it carries has
     /// been superseded. The packet verifier checks freshness again when it
     /// verifies; this keeps replays out of the pipeline in the first place.
+    ///
+    /// Clients do not share a clock with us, so a ticket stamped a little ahead
+    /// is treated as current rather than rejected — see [`MAX_CLOCK_DRIFT`].
+    /// Beyond that it is refused: post-dating must not buy an attacker a longer
+    /// replay window than an honest client gets.
     fn verify_ticket_freshness(&self, signed_ms: u64, received_ms: u64) -> VerifyResult<()> {
-        let Some(age_ms) = received_ms.checked_sub(signed_ms) else {
-            return Err(Status::invalid_argument(
-                "ticket timestamp_ms is in the future",
-            ));
+        let age_ms = match received_ms.checked_sub(signed_ms) {
+            Some(age_ms) => age_ms,
+            // Stamped ahead of us. Within the drift allowance it counts as
+            // brand new; the subtraction below is what would have underflowed.
+            None => {
+                let drift_ms = signed_ms.saturating_sub(received_ms);
+                if Duration::from_millis(drift_ms) > MAX_CLOCK_DRIFT {
+                    return Err(Status::invalid_argument(format!(
+                        "ticket is dated {}s in the future, beyond the {}s clock drift allowance",
+                        drift_ms / 1000,
+                        MAX_CLOCK_DRIFT.as_secs()
+                    )));
+                }
+                0
+            }
         };
 
         let max_age = self.data_transfer_multiplier_ticket_max_age;

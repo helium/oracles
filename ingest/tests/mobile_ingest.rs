@@ -1,5 +1,6 @@
 use chrono::{TimeZone, Utc};
 use common::generate_keypair;
+use file_store_oracles::mobile::data_transfer_multiplier::MAX_CLOCK_DRIFT;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferMultiplierTicketReqV1, DataTransferRadioAccessTechnology,
@@ -570,9 +571,9 @@ async fn multiplier_ticket_rejects_stale_timestamp() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A future-dated ticket is refused outright rather than treated as maximally
-/// fresh — otherwise post-dating would buy an attacker an arbitrarily long
-/// replay window.
+/// A ticket dated further ahead than a clock could plausibly drift is refused —
+/// otherwise post-dating would buy an attacker an arbitrarily long replay
+/// window.
 #[tokio::test]
 async fn multiplier_ticket_rejects_future_timestamp() -> anyhow::Result<()> {
     let (mut client, trigger) = common::setup_mobile().await?;
@@ -585,6 +586,52 @@ async fn multiplier_ticket_rejects_future_timestamp() -> anyhow::Result<()> {
         .await;
 
     assert!(res.is_err(), "future-dated ticket must be rejected");
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// Clients do not share a clock with ingest. A ticket stamped slightly ahead is
+/// an honest client with a drifting clock, not an attack, and must be accepted.
+#[tokio::test]
+async fn multiplier_ticket_tolerates_client_clock_drift() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let drifted = (Utc::now() + chrono::Duration::from_std(MAX_CLOCK_DRIFT)?
+        - chrono::Duration::seconds(5))
+    .timestamp_millis() as u64;
+
+    client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", drifted)
+        .await?;
+
+    let report = client.multiplier_ticket_recv().await?;
+    assert_eq!(report.report.expect("inner").timestamp_ms, drifted);
+
+    trigger.trigger();
+    Ok(())
+}
+
+/// The far side of the allowance. Without this the drift test above would pass
+/// just as well if the tolerance were unbounded.
+#[tokio::test]
+async fn multiplier_ticket_rejects_drift_beyond_the_allowance() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let too_far =
+        (Utc::now() + chrono::Duration::from_std(MAX_CLOCK_DRIFT)? + chrono::Duration::minutes(1))
+            .timestamp_millis() as u64;
+
+    let res = client
+        .submit_multiplier_ticket(pubkey.into(), "1.5", too_far)
+        .await;
+
+    assert!(
+        res.is_err(),
+        "drift beyond the allowance must still be rejected"
+    );
 
     trigger.trigger();
     Ok(())
