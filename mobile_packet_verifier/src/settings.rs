@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{banning, routing::RoutingKeys};
+use crate::{banning, multiplier, routing::RoutingKeys};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -69,6 +69,8 @@ pub struct Settings {
 
     /// Settings for Banning
     pub banning: banning::BanSettings,
+    /// HIP-150 data transfer multiplier tickets.
+    pub multiplier: multiplier::MultiplierSettings,
 
     pub iceberg_settings: Option<helium_iceberg::Settings>,
 }
@@ -138,6 +140,26 @@ impl Settings {
             )
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    /// Keys authorized to issue HIP-150 multiplier tickets.
+    ///
+    /// May be empty, unlike [`Self::routing_keys`]: the release ships before any
+    /// ticket can be issued. An empty set rejects every ticket, and
+    /// `multiplier::create_managed_task` warns about it at startup.
+    pub fn ticket_signers(&self) -> anyhow::Result<multiplier::TicketSigners> {
+        let mut keys = HashSet::new();
+        for key in self.multiplier.authorized_keys.split(',') {
+            let key = key.trim();
+            if key.is_empty() {
+                continue;
+            }
+            let key = PublicKeyBinary::from_str(key)
+                .with_context(|| format!("settings parsing ticket signer: {key}"))?;
+            keys.insert(key);
+        }
+
+        Ok(multiplier::TicketSigners::from_iter(keys))
     }
 
     pub fn routing_keys(&self) -> anyhow::Result<RoutingKeys> {
