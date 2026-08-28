@@ -13,7 +13,9 @@ use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
 use serde::{Deserialize, Serialize};
 use trino_rust_client::Trino;
 
-use file_store_oracles::mobile::data_transfer_multiplier::VerifiedDataTransferMultiplierTicketReport;
+use file_store_oracles::mobile::data_transfer_multiplier::{
+    ticket_status_string, VerifiedDataTransferMultiplierTicketReport,
+};
 
 use crate::IcebergDecimal;
 
@@ -53,7 +55,10 @@ pub struct IcebergMultiplierTicket {
     pub multiplier: Option<MultiplierDecimal>,
     pub signer: String,
     pub message: String,
-    /// The verdict, as the proto enum's string name. Rejected tickets are kept.
+    /// The verdict: `valid`, `invalid_signer`, `invalid_multiplier`,
+    /// `invalid_hotspot_key` or `invalid_timestamp`. Rejected tickets are kept.
+    /// See `ticket_status_string` for why these are not the proto enum's own
+    /// names.
     pub status: String,
 }
 
@@ -115,7 +120,7 @@ impl From<&VerifiedDataTransferMultiplierTicketReport> for IcebergMultiplierTick
                 .and_then(|m| MultiplierDecimal::try_from(m).ok()),
             signer: ticket.signer_pubkey.to_string(),
             message: ticket.message.clone(),
-            status: verified.status.as_str_name().to_string(),
+            status: ticket_status_string(verified.status).to_string(),
         }
     }
 }

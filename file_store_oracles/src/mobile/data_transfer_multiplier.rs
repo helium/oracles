@@ -40,6 +40,32 @@ pub mod proto {
 
 pub use proto::VerifiedDataTransferMultiplierTicketStatus;
 
+/// The verdict as a short string, for the stored record and for metric labels.
+///
+/// prost's own `as_str_name()` gives the full proto enum name —
+/// `verified_data_transfer_multiplier_ticket_status_valid` — which is 44
+/// characters restating the column the value sits in. Trino has no enum type,
+/// so this string *is* what a person queries against, and
+/// `status = 'valid'` beats the alternative.
+///
+/// Same reasoning as `carrier_id_string` in `helium_iceberg_oracles`, which
+/// already does this for `CarrierIdV2` for the same reason.
+///
+/// Spelled out rather than derived by stripping a prefix, so a new variant is a
+/// compile error here rather than a surprise in the data. Nothing parses these
+/// back into the enum; if that changes, this needs an inverse.
+pub fn ticket_status_string(status: VerifiedDataTransferMultiplierTicketStatus) -> &'static str {
+    use VerifiedDataTransferMultiplierTicketStatus as Status;
+
+    match status {
+        Status::Valid => "valid",
+        Status::InvalidSigner => "invalid_signer",
+        Status::InvalidMultiplier => "invalid_multiplier",
+        Status::InvalidHotspotKey => "invalid_hotspot_key",
+        Status::InvalidTimestamp => "invalid_timestamp",
+    }
+}
+
 /// Smallest multiplier the oracles accept.
 ///
 /// Operating policy, not wire format: HIP-150's 1-to-5 figures are starting
@@ -396,6 +422,27 @@ impl From<VerifiedDataTransferMultiplierTicketReport>
 mod tests {
     use super::*;
     use rust_decimal::dec;
+
+    /// These strings are a stored data format, not a display detail: they land
+    /// in `data_transfer.multiplier_ticket_history.status` and in a metric
+    /// label. Changing one silently reclassifies history, so pin them exactly
+    /// rather than asserting a shape.
+    #[test]
+    fn status_strings_are_stable() {
+        use VerifiedDataTransferMultiplierTicketStatus as Status;
+
+        for (status, expected) in [
+            (Status::Valid, "valid"),
+            (Status::InvalidSigner, "invalid_signer"),
+            (Status::InvalidMultiplier, "invalid_multiplier"),
+            (Status::InvalidHotspotKey, "invalid_hotspot_key"),
+            (Status::InvalidTimestamp, "invalid_timestamp"),
+        ] {
+            assert_eq!(ticket_status_string(status), expected);
+            // The point of the mapping: prost's own name restates the column.
+            assert_ne!(ticket_status_string(status), status.as_str_name());
+        }
+    }
 
     fn dec_proto(s: &str) -> proto::Decimal {
         proto::Decimal {

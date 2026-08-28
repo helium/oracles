@@ -15,8 +15,9 @@ use std::{ops::ControlFlow, time::Duration};
 use chrono::Utc;
 use file_store::file_info_poller::FileInfoStream;
 use file_store_oracles::mobile::data_transfer_multiplier::{
-    proto::VerifiedDataTransferMultiplierTicketReportV1, DataTransferMultiplier,
-    DataTransferMultiplierTicketReport, VerifiedDataTransferMultiplierTicketReport,
+    proto::VerifiedDataTransferMultiplierTicketReportV1, ticket_status_string,
+    DataTransferMultiplier, DataTransferMultiplierTicketReport,
+    VerifiedDataTransferMultiplierTicketReport,
     VerifiedDataTransferMultiplierTicketStatus as Status, MAX_CLOCK_DRIFT,
 };
 use futures::StreamExt;
@@ -115,7 +116,7 @@ impl TicketIngestor {
                 granted.push(grant);
             }
 
-            let status = verified.status.as_str_name();
+            let status = ticket_status_string(verified.status);
             let proto = VerifiedDataTransferMultiplierTicketReportV1::from(verified);
             self.verified_sink
                 .write(proto, &[("status", status)])
@@ -152,7 +153,7 @@ impl TicketIngestor {
         if !verified.is_valid() {
             tracing::warn!(
                 hotspot_pubkey = %verified.hotspot_pubkey(),
-                status = status.as_str_name(),
+                status = ticket_status_string(status),
                 "rejecting data transfer multiplier ticket"
             );
         }
