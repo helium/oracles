@@ -104,7 +104,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].dc_to_burn(), bytes_to_dc(2_000));
+    assert_eq!(pending[0].dc_to_burn()?, bytes_to_dc(2_000));
 
     Ok(())
 }

@@ -1,6 +1,7 @@
 pub mod common;
 
 pub mod accumulate_sessions;
+pub mod apply_multiplier;
 pub mod banning;
 pub mod burn_metric;
 pub mod burner;

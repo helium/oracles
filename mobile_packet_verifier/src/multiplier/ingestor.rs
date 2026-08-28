@@ -1,20 +1,23 @@
-//! Reads ticket files from s3, rules on each ticket, records the verdict.
+//! Reads ticket files from s3, decides whether each ticket is valid, and
+//! records the result.
 //!
-//! Every ticket produces a verified report — accepted or rejected — so the
-//! public record shows refusals as well as grants. Both also land in the
-//! append-only history table, tagged with the verdict.
+//! Every ticket produces a verified report, accepted or rejected, so refusals
+//! are on the record too. Every ticket also gets a row in the Iceberg history
+//! table, tagged with the verdict.
 //!
-//! Nothing here holds mutable state: this module only appends. What is
-//! *currently* in force is derived from those rows separately, by
-//! [`super::inventory`].
+//! Accepted tickets also go to Postgres, via [`super::db`], which is what the
+//! burn joins against. Rejected ones do not, because a refusal grants nothing.
+//!
+//! Nothing here holds state between files. It reads, decides, and appends.
 
 use std::{ops::ControlFlow, time::Duration};
 
 use chrono::Utc;
 use file_store::file_info_poller::FileInfoStream;
 use file_store_oracles::mobile::data_transfer_multiplier::{
-    proto::VerifiedDataTransferMultiplierTicketReportV1, DataTransferMultiplier,
-    DataTransferMultiplierTicketReport, VerifiedDataTransferMultiplierTicketReport,
+    proto::VerifiedDataTransferMultiplierTicketReportV1, ticket_status_string,
+    DataTransferMultiplier, DataTransferMultiplierTicketReport,
+    VerifiedDataTransferMultiplierTicketReport,
     VerifiedDataTransferMultiplierTicketStatus as Status, MAX_CLOCK_DRIFT,
 };
 use futures::StreamExt;
@@ -27,11 +30,15 @@ use crate::{
     iceberg::{IcebergMultiplierTicket, MultiplierTicketWriter},
 };
 
-use super::{TicketSigners, VerifiedTicketSink};
+use super::{
+    db::{self, GrantedMultiplier},
+    TicketSigners, VerifiedTicketSink,
+};
 
 pub struct TicketIngestor {
-    /// Only for the file poller's own "which files have I processed" bookkeeping
-    /// — no ticket data is stored in Postgres.
+    /// Holds both the file poller's bookkeeping and the granted multipliers.
+    /// They are written in one transaction, so a file is never marked processed
+    /// without its grants.
     pool: PgPool,
     report_rx: Receiver<FileInfoStream<DataTransferMultiplierTicketReport>>,
     verified_sink: VerifiedTicketSink,
@@ -88,28 +95,35 @@ impl TicketIngestor {
         let file = file_info_stream.file_info.key.clone();
         tracing::info!(%file, "processing data transfer multiplier tickets");
 
-        // The transaction records only that this file was processed; the
-        // tickets themselves go to s3 and Iceberg.
+        // One transaction covers both "this file was processed" and the grants
+        // it produced, so a crash cannot leave the first without the second.
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
         let mut history = Vec::new();
+        let mut granted = Vec::new();
 
         while let Some(report) = stream.next().await {
             let verified = self.verify(report).await?;
 
-            // Every ticket gets a history row, refusals included — a value the
-            // column cannot hold lands as NULL, with the status saying why.
+            // Refusals get a history row too. A multiplier the column cannot
+            // hold is stored as NULL, and the status says why.
             if self.history_writer.is_some() {
                 history.push(IcebergMultiplierTicket::from(&verified));
             }
 
-            let status = verified.status.as_str_name();
+            if let Some(grant) = granted_multiplier(&verified) {
+                granted.push(grant);
+            }
+
+            let status = ticket_status_string(verified.status);
             let proto = VerifiedDataTransferMultiplierTicketReportV1::from(verified);
             self.verified_sink
                 .write(proto, &[("status", status)])
                 .await?;
         }
+
+        db::save(&mut txn, &granted).await?;
 
         // Keyed on the file, so reprocessing one cannot duplicate its rows.
         if let Some(writer) = self.history_writer.as_ref() {
@@ -139,12 +153,45 @@ impl TicketIngestor {
         if !verified.is_valid() {
             tracing::warn!(
                 hotspot_pubkey = %verified.hotspot_pubkey(),
-                status = status.as_str_name(),
+                status = ticket_status_string(status),
                 "rejecting data transfer multiplier ticket"
             );
         }
 
         Ok(verified)
+    }
+}
+
+/// The grant a verified ticket makes, or `None` if it makes none.
+///
+/// Only tickets that passed [`ticket_status`] grant anything. That check is what
+/// proves the multiplier is present and in range, so this is the one place the
+/// `Option` is unwrapped without looking again.
+///
+/// A valid ticket whose multiplier will not convert is dropped rather than
+/// guessed at. That needs `ticket_status` and `DataTransferMultiplier` to
+/// disagree, which they should not, so it is logged as an error.
+pub fn granted_multiplier(
+    verified: &VerifiedDataTransferMultiplierTicketReport,
+) -> Option<GrantedMultiplier> {
+    if !verified.is_valid() {
+        return None;
+    }
+
+    let ticket = &verified.report.report;
+    match ticket.multiplier.map(DataTransferMultiplier::new) {
+        Some(Ok(multiplier)) => Some(GrantedMultiplier {
+            hotspot_pubkey: ticket.hotspot_pubkey.clone(),
+            multiplier,
+            effective_timestamp: ticket.timestamp,
+        }),
+        _ => {
+            tracing::error!(
+                hotspot_pubkey = %ticket.hotspot_pubkey,
+                "ticket passed verification but its multiplier will not convert"
+            );
+            None
+        }
     }
 }
 
