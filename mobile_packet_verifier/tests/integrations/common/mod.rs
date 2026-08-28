@@ -11,7 +11,6 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
         iceberg::invalid_session::table_definition()?,
         iceberg::burned_session::table_definition()?,
         iceberg::multiplier_ticket_history::table_definition()?,
-        iceberg::multiplier_ticket_inventory::table_definition()?,
         hotspot_inventory::table_definition()?,
     ])
     .await?;

@@ -5,8 +5,8 @@ use serde::Serialize;
 // `data_transfer` schemas live in `helium-iceberg-oracles`; re-exported here so
 // existing `iceberg::*` paths keep resolving.
 pub use helium_iceberg_oracles::data_transfer::{
-    burned_session, invalid_session, multiplier_ticket_history, multiplier_ticket_inventory,
-    session, IcebergBurnedDataTransferSession, IcebergDataTransferSession,
+    burned_session, invalid_session, multiplier_ticket_history, session,
+    IcebergBurnedDataTransferSession, IcebergDataTransferSession,
     IcebergInvalidDataTransferSession, IcebergMultiplierTicket, NAMESPACE, REASON_COLUMN,
 };
 
@@ -45,14 +45,6 @@ pub async fn get_writers(settings: &helium_iceberg::Settings) -> anyhow::Result<
         .create_table_if_not_exists(multiplier_ticket_history::table_definition()?)
         .await?;
 
-    // The inventory is maintained in place by a Trino MERGE, not by a writer —
-    // created here only so the merge has a target. The returned writer is
-    // deliberately dropped.
-    let _ = catalog
-        .create_table_if_not_exists::<multiplier_ticket_inventory::IcebergMultiplierInventory>(
-            multiplier_ticket_inventory::table_definition()?,
-        )
-        .await?;
     Ok(Writers {
         session: session_writer.boxed(),
         invalid_session: invalid_session_writer.boxed(),

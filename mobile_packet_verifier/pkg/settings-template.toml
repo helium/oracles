@@ -154,12 +154,11 @@ region = "us-west-2"
 
 # HIP-150 data transfer multiplier tickets
 #
-# Verified tickets are written to s3 and to the append-only
-# data_transfer.multiplier_ticket_history table. No ticket data is stored in
-# Postgres.
-# A periodic job merges that history into
-# data_transfer.multiplier_ticket_inventory, which is what is currently in
-# force.
+# Every ticket ruled on is written to s3 and to the append-only
+# data_transfer.multiplier_ticket_history table, refusals included.
+#
+# Granted multipliers are also written to the data_transfer_multipliers table in
+# Postgres, which is what the burn joins against when it prices sessions.
 #
 [multiplier]
 
@@ -168,24 +167,17 @@ region = "us-west-2"
 # Checked here as well as at ingest: the two services are deployed and
 # configured separately, and it is this verdict that lands on the record.
 #
-# May be empty, and is by default — no ticket can be issued until a key is
-# provisioned. Empty rejects every ticket and warns at startup.
+# Empty by default, which rejects every ticket and warns at startup. Nothing can
+# be granted until a signer is provisioned.
 #
 # authorized_keys = "key1,key2"
 
 # How old a ticket's signed timestamp may be, measured against when ingest
-# received it, before it is refused. A second check of what ingest already
-# checked, configured separately so a mistake in ingest's window does not
-# silently widen the replay window everywhere.
+# received it, before it is refused. Configured separately from ingest's own
+# window so that a mistake there does not widen the replay window everywhere.
 # Default: 10 minutes
 #
 # ticket_max_age = "10 minutes"
-
-# How often to merge the history into the inventory table. Nothing in the burn
-# depends on the inventory, so a slow cadence is fine.
-# Default: 15 minutes
-#
-# inventory_refresh_interval = "15 minutes"
 
 # How far back do we read ticket files?
 # Default: UNIX_EPOCH

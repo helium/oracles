@@ -1,12 +1,12 @@
 //! `data_transfer.multiplier_ticket_history` — every HIP-150 ticket ever seen.
 //!
 //! Append-only, one row per ticket received, accepted or not. HIP-150 requires
-//! every multiplier in force to be externally auditable; recording refusals too
-//! means the record answers "why is this hotspot not multiplied" as well as
+//! every multiplier in force to be externally auditable, and recording refusals
+//! too means the record answers "why is this hotspot not multiplied" as well as
 //! "why is it".
 //!
-//! This is the log. For "what is current", see
-//! [`super::multiplier_ticket_inventory`].
+//! This is the audit record. What the burn actually charges against is the
+//! `data_transfer_multipliers` table in mobile-packet-verifier's Postgres.
 
 use chrono::{DateTime, FixedOffset};
 use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
@@ -69,9 +69,23 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             FieldDefinition::required_string("message"),
             FieldDefinition::required_string("status"),
         ])
-        .with_partition(PartitionDefinition::day(
-            "received_timestamp",
-            "received_timestamp_day",
+        // Bucketed on the hotspot, because that is how this table gets read:
+        // "what is this hotspot on now", or "what has it ever been granted".
+        // Both want every row for one key, which a date partition cannot prune.
+        //
+        // Four buckets, not more. The eligible population is small -- HIP-150
+        // puts candidate venues at 2.7% of earning locations, and enrollment
+        // needs an agreement and custodial ownership on top of that -- and each
+        // one gets a handful of tickets. Splitting a table this size further
+        // buys no pruning worth measuring and costs a file per bucket on every
+        // write.
+        //
+        // The count can be raised later. Iceberg keeps existing files on their
+        // old spec, reads span both, and `EXECUTE optimize` handles the mix.
+        .with_partition(PartitionDefinition::bucket(
+            "hotspot_pubkey",
+            "hotspot_pubkey_bucket",
+            4,
         ))
         .build()
 }

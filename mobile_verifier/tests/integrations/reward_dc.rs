@@ -410,6 +410,10 @@ impl DataSession {
             download_bytes: self.download_bytes,
             rewardable_bytes: self.rewardable_bytes,
             num_dcs: self.num_dcs,
+            // A row as written before HIP-150, so these also cover the
+            // backward-compatible path: rewards distribute pro-rata of num_dcs
+            // whether or not a multiplier produced it.
+            multiplier: None,
             first_timestamp: self.timestamp.into(),
             last_timestamp: self.timestamp.into(),
             burn_timestamp: self.timestamp.into(),

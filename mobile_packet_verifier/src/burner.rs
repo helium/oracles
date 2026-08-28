@@ -101,8 +101,10 @@ where
 
         for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
             let total_dcs = payer_pending_burn.total_dcs;
-            let payer = payer_pending_burn.payer;
-            let sessions = payer_pending_burn.sessions;
+            let payer = payer_pending_burn.payer.clone();
+            // Groups for the record, the per-file rows behind them for the move.
+            let sessions = payer_pending_burn.sessions();
+            let rows = payer_pending_burn.rows;
 
             let payer_balance = self.solana.payer_balance(&payer).await?;
 
@@ -118,7 +120,7 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature())
+            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature(), &rows)
                 .await
                 .context("adding pending txns and moving sessions")?;
             match self.solana.submit_transaction(&txn).await {
@@ -238,7 +240,10 @@ async fn handle_transaction_success(
 
     // Delete from the data transfer session and write out to S3
     pending_burns::delete_for_payer(pool, &payer).await?;
-    pending_burns::decrement_metric(&payer, total_dcs);
+    // The payer has no rows left, so 0 is exact. Setting rather than
+    // subtracting the burned amount because that only lands on 0 while the two
+    // figures agree, and `accumulate` counts differently from the burn.
+    pending_burns::set_metric(&payer, 0);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
     write_burned_data_transfer_sessions(sessions, valid_sessions, iceberg_writer).await?;
@@ -251,10 +256,34 @@ async fn write_burned_data_transfer_sessions(
     file_sink: &FileSinkClient<proto::ValidDataTransferSession>,
     iceberg_sink: Option<&BurnedDataTransferWriter>,
 ) -> anyhow::Result<()> {
+    // Fallible now: a session whose multiplier cannot be applied has no price,
+    // and a burned record without one would be a lie about what was charged.
+    // This runs after the burn has settled, so it cannot prevent the spend — it
+    // surfaces as a write failure, which is the pre-existing behaviour for any
+    // failure on this path.
     let sessions = sessions
         .into_iter()
-        .map(ValidDataTransferSession::from)
-        .collect::<Vec<_>>();
+        .map(ValidDataTransferSession::try_from)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    // DC burned, split by the multiplier that produced it.
+    //
+    // `burned` counts what the transaction charged, which is the right number
+    // but says nothing about where it came from. This splits the same total, so
+    // summing it back up gives `burned` again, and grouping by multiplier shows
+    // how much of the burn is coming from ticketed hotspots.
+    //
+    // Both burn paths pass through here, so this counts a burn once, after it
+    // has settled. The multiplier is normalized, so `1.5` and `1.50` are one
+    // series rather than two.
+    for session in &sessions {
+        metrics::counter!(
+            "burned_dc_by_multiplier",
+            "payer" => session.payer.to_string(),
+            "multiplier" => session.multiplier.to_string(),
+        )
+        .increment(session.num_dcs);
+    }
 
     file_sink.write_all(sessions.clone()).await?;
 

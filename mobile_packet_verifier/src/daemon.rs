@@ -391,7 +391,6 @@ impl Cmd {
             ticket_resolver,
             &settings.cache,
             multiplier_ticket_writer,
-            trino_client::Client::from_settings(&settings.trino)?,
         )
         .await?;
 

@@ -100,7 +100,11 @@ pub enum MultiplierError {
 ///
 /// The inner value is private and every constructor validates, so holding one
 /// *is* the proof it is in range — callers never re-check.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// Serializes as the underlying decimal, so a record carrying one reads as the
+/// number rather than a wrapper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(transparent)]
 pub struct DataTransferMultiplier(Decimal);
 
 impl DataTransferMultiplier {

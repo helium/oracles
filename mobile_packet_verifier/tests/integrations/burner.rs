@@ -126,6 +126,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         &payer_one,
         1_000,
         &confirmed_signature,
+        &[],
         Utc::now() - chrono::Duration::minutes(2),
     )
     .await?;
@@ -138,6 +139,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         &payer_two,
         500,
         &unconfirmed_signature,
+        &[],
         Utc::now() - chrono::Duration::minutes(2),
     )
     .await?;
@@ -168,7 +170,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_burn = &burns[0];
     assert_eq!(payer_burn.payer, payer_two);
     assert_eq!(payer_burn.total_dcs, bytes_to_dc(2_000));
-    assert_eq!(payer_burn.sessions.len(), 1);
+    assert_eq!(payer_burn.sessions().len(), 1);
 
     let iceberg_burns = burned_session::get_all(harness.trino()).await?;
     assert_eq!(iceberg_burns.len(), 1, "1 of 2 burns made it");
@@ -204,6 +206,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         &payer,
         1_000,
         &signature,
+        &[],
         Utc::now() - chrono::Duration::minutes(2),
     )
     .await?;
@@ -249,7 +252,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         payer_burn.total_dcs,
         bytes_to_dc(5_000) + bytes_to_dc(5_000)
     );
-    assert_eq!(payer_burn.sessions.len(), 2);
+    assert_eq!(payer_burn.sessions().len(), 2);
 
     Ok(())
 }
@@ -282,6 +285,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         &payer,
         1_000,
         &signature,
+        &[],
         Utc::now() - chrono::Duration::minutes(2),
     )
     .await?;
@@ -371,6 +375,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         &payer,
         1_000,
         &signature,
+        &[],
         Utc::now() - chrono::Duration::minutes(2),
     )
     .await?;
