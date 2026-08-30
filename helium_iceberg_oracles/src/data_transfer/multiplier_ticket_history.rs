@@ -69,7 +69,12 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             FieldDefinition::required_timestamptz("signed_timestamp"),
             FieldDefinition::required_timestamptz("received_timestamp"),
             FieldDefinition::required_timestamptz("verified_timestamp"),
-            FieldDefinition::required_decimal("multiplier", MULTIPLIER_PRECISION, MULTIPLIER_SCALE),
+            // Optional because a refused ticket may carry no usable multiplier
+            // at all, and the row still has to record the refusal. A required
+            // column rejects the write instead — arrow refuses a null in a
+            // non-nullable field at flush — which fails the file's transaction
+            // and leaves the poller retrying it forever.
+            FieldDefinition::optional_decimal("multiplier", MULTIPLIER_PRECISION, MULTIPLIER_SCALE),
             FieldDefinition::required_string("signer"),
             FieldDefinition::required_string("message"),
             FieldDefinition::required_string("status"),
