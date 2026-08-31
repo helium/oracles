@@ -4032,6 +4032,7 @@ name = "helium-iceberg-oracles"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bigdecimal",
  "chrono",
  "file-store-oracles",
  "helium-iceberg",

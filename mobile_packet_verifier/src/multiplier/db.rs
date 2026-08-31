@@ -9,6 +9,8 @@
 //! Append-only, because the burn asks what was in force when the data moved, not
 //! what is in force now. See [`crate::pending_burns::get_all`].
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use file_store_oracles::mobile::data_transfer_multiplier::DataTransferMultiplier;
 use helium_crypto::PublicKeyBinary;
@@ -32,6 +34,19 @@ pub struct GrantedMultiplier {
 ///
 /// Keyed on `(hotspot_pubkey, effective_timestamp)`, so reprocessing a file
 /// rewrites the same rows instead of adding to them.
+///
+/// `granted` is deduplicated on that key before the insert. `ON CONFLICT` only
+/// resolves a collision with a row already in the table — Postgres refuses a
+/// statement that proposes the same key twice in one command, with "ON CONFLICT
+/// DO UPDATE command cannot affect row a second time", and that would abort the
+/// whole file's transaction. One file can carry the same key twice easily
+/// enough: a client that retransmits a signed ticket sends the same
+/// `(hotspot, timestamp)` again, and both copies land in the same ingest roll.
+///
+/// Later wins, matching what `ON CONFLICT DO UPDATE` does across files, so a
+/// duplicate resolves the same way whether or not it shares a file with the
+/// grant it supersedes. [`crate::pending_burns::save_data_transfer_sessions`]
+/// merges its own batch ahead of an upsert for the same reason.
 pub async fn save(
     txn: &mut Transaction<'_, Postgres>,
     granted: &[GrantedMultiplier],
@@ -40,12 +55,21 @@ pub async fn save(
         return Ok(());
     }
 
-    let hotspot_pubkeys: Vec<String> = granted
+    // `HashMap` from an iterator of pairs keeps the last value for a repeated
+    // key, which is the "later wins" above.
+    let deduped: Vec<&GrantedMultiplier> = granted
+        .iter()
+        .map(|g| ((&g.hotspot_pubkey, g.effective_timestamp), g))
+        .collect::<HashMap<_, _>>()
+        .into_values()
+        .collect();
+
+    let hotspot_pubkeys: Vec<String> = deduped
         .iter()
         .map(|g| g.hotspot_pubkey.to_string())
         .collect();
-    let multipliers: Vec<Decimal> = granted.iter().map(|g| g.multiplier.as_decimal()).collect();
-    let effective: Vec<DateTime<Utc>> = granted.iter().map(|g| g.effective_timestamp).collect();
+    let multipliers: Vec<Decimal> = deduped.iter().map(|g| g.multiplier.as_decimal()).collect();
+    let effective: Vec<DateTime<Utc>> = deduped.iter().map(|g| g.effective_timestamp).collect();
 
     sqlx::query(
         r#"

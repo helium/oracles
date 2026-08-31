@@ -825,6 +825,113 @@ mod which_grant_wins {
         Ok(())
     }
 
+    /// One file can carry the same ticket twice — a client that retransmits a
+    /// signed ticket resends the same `(hotspot, timestamp)`, and both copies
+    /// land in the same ingest roll. They reach `db::save` as one batch.
+    ///
+    /// Postgres refuses a statement proposing the same conflict key twice
+    /// ("ON CONFLICT DO UPDATE command cannot affect row a second time"), which
+    /// would abort the file's whole transaction and leave the poller retrying
+    /// it forever. So the batch is deduplicated before the insert.
+    #[sqlx::test]
+    async fn a_ticket_repeated_within_one_file_is_not_an_error(pool: PgPool) -> anyhow::Result<()> {
+        let gw = gateway(1);
+        let issued = Utc::now() - Duration::hours(1);
+
+        let repeated = |value| GrantedMultiplier {
+            hotspot_pubkey: gw.clone(),
+            multiplier: DataTransferMultiplier::new(value).expect("valid multiplier"),
+            effective_timestamp: issued,
+        };
+
+        let mut txn = pool.begin().await?;
+        db::save(&mut txn, &[repeated(dec!(1.5)), repeated(dec!(1.5))]).await?;
+        txn.commit().await?;
+
+        let stored: Vec<rust_decimal::Decimal> = sqlx::query_scalar(
+            "SELECT multiplier FROM data_transfer_multipliers WHERE hotspot_pubkey = $1",
+        )
+        .bind(gw.to_string())
+        .fetch_all(&pool)
+        .await?;
+
+        assert_eq!(stored, vec![dec!(1.5)], "one grant, recorded once");
+
+        Ok(())
+    }
+
+    /// The same key twice in a batch with *different* values resolves the way it
+    /// would across two files: the later one wins. Otherwise a duplicate would
+    /// mean something different depending on whether it shared an ingest roll
+    /// with the grant it supersedes.
+    #[sqlx::test]
+    async fn the_last_grant_in_a_batch_wins(pool: PgPool) -> anyhow::Result<()> {
+        let gw = gateway(1);
+        let issued = Utc::now() - Duration::hours(1);
+
+        let at_issued = |value| GrantedMultiplier {
+            hotspot_pubkey: gw.clone(),
+            multiplier: DataTransferMultiplier::new(value).expect("valid multiplier"),
+            effective_timestamp: issued,
+        };
+
+        let mut txn = pool.begin().await?;
+        db::save(&mut txn, &[at_issued(dec!(5)), at_issued(dec!(1.5))]).await?;
+        txn.commit().await?;
+
+        let stored: Vec<rust_decimal::Decimal> = sqlx::query_scalar(
+            "SELECT multiplier FROM data_transfer_multipliers WHERE hotspot_pubkey = $1",
+        )
+        .bind(gw.to_string())
+        .fetch_all(&pool)
+        .await?;
+
+        assert_eq!(stored, vec![dec!(1.5)], "the later grant in the batch wins");
+
+        Ok(())
+    }
+
+    /// Deduplication is on the whole key, not just the hotspot: two grants for
+    /// one hotspot at different instants are two distinct rows and must both
+    /// survive the batch.
+    #[sqlx::test]
+    async fn distinct_instants_are_not_collapsed(pool: PgPool) -> anyhow::Result<()> {
+        let gw = gateway(1);
+        let now = Utc::now();
+
+        let at = |value, effective| GrantedMultiplier {
+            hotspot_pubkey: gw.clone(),
+            multiplier: DataTransferMultiplier::new(value).expect("valid multiplier"),
+            effective_timestamp: effective,
+        };
+
+        let mut txn = pool.begin().await?;
+        db::save(
+            &mut txn,
+            &[
+                at(dec!(5), now - Duration::hours(3)),
+                at(dec!(1.5), now - Duration::hours(1)),
+            ],
+        )
+        .await?;
+        txn.commit().await?;
+
+        let stored: Vec<rust_decimal::Decimal> = sqlx::query_scalar(
+            r#"
+            SELECT multiplier FROM data_transfer_multipliers
+            WHERE hotspot_pubkey = $1
+            ORDER BY effective_timestamp
+            "#,
+        )
+        .bind(gw.to_string())
+        .fetch_all(&pool)
+        .await?;
+
+        assert_eq!(stored, vec![dec!(5), dec!(1.5)], "both grants kept");
+
+        Ok(())
+    }
+
     /// Values survive Postgres `NUMERIC` unchanged, including one that a float
     /// would mangle. The multiplier decides what a payer is charged, so an
     /// approximation here is a wrong bill.

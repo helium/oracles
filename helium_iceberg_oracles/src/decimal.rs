@@ -16,6 +16,7 @@
 
 use std::str::FromStr;
 
+use bigdecimal::RoundingMode;
 use serde::{de::DeserializeSeed, Deserialize, Deserializer, Serialize, Serializer};
 use trino_rust_client::{
     types::{Context, Decimal as TrinoDecimal},
@@ -26,9 +27,22 @@ use trino_rust_client::{
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IcebergDecimal<const P: usize, const S: usize>(TrinoDecimal<P, S>);
 
-#[derive(thiserror::Error, Debug)]
-#[error("invalid decimal: {0}")]
-pub struct ParseDecimalError(String);
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum ParseDecimalError {
+    #[error("invalid decimal: {0}")]
+    Unparseable(String),
+    /// The value is too large for the column it is destined for.
+    ///
+    /// Separate from [`Self::Unparseable`] because the two mean different
+    /// things to whoever is looking: one is a malformed value, the other a
+    /// well-formed value that this column cannot hold.
+    #[error("decimal {value} does not fit decimal({precision}, {scale})")]
+    OutOfRange {
+        value: String,
+        precision: usize,
+        scale: usize,
+    },
+}
 
 impl<const P: usize, const S: usize> IcebergDecimal<P, S> {
     pub fn as_string(&self) -> String {
@@ -39,10 +53,47 @@ impl<const P: usize, const S: usize> IcebergDecimal<P, S> {
 impl<const P: usize, const S: usize> FromStr for IcebergDecimal<P, S> {
     type Err = ParseDecimalError;
 
+    /// Parses *and* range-checks against `P` and `S`.
+    ///
+    /// The range check is not redundant. `TrinoDecimal`'s own `FromStr` is a
+    /// `BigDecimal` parse that ignores both const parameters, so a value far
+    /// too large for the column parses happily here and fails much later —
+    /// when `arrow-json` decodes the row into a `Decimal128(P, S)` and reports
+    /// `parse decimal overflow`. That is a bad place to find out: it fails
+    /// mid-write, taking whatever transaction the write was part of with it.
+    /// Refusing here gives the caller a value it can act on.
+    ///
+    /// Excess *scale* is deliberately not refused. Arrow truncates it, as
+    /// Trino would, so `1.5000001` into a `decimal(9, 6)` column stores as
+    /// `1.500000`. Only magnitude is unrecoverable.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        TrinoDecimal::from_str(s)
-            .map(Self)
-            .map_err(|_| ParseDecimalError(s.to_string()))
+        let inner = TrinoDecimal::<P, S>::from_str(s)
+            .map_err(|_| ParseDecimalError::Unparseable(s.to_string()))?;
+
+        // Rescaling to the column's scale first is what makes `digits()` the
+        // precision the column actually needs: it counts the unscaled integer,
+        // so it only answers the right question once the scale matches.
+        //
+        // `Down` (truncate toward zero), not `HalfUp`, because that is what
+        // arrow does — verified against `arrow-json`, which accepts
+        // `999.9999996` into a `decimal(9, 6)` by dropping the trailing digit.
+        // Rounding up here instead would carry it to `1000.000000`, ten digits,
+        // and refuse a value the writer would have taken.
+        let digits = inner
+            .clone()
+            .into_bigdecimal()
+            .with_scale_round(S as i64, RoundingMode::Down)
+            .digits();
+
+        if digits > P as u64 {
+            return Err(ParseDecimalError::OutOfRange {
+                value: s.to_string(),
+                precision: P,
+                scale: S,
+            });
+        }
+
+        Ok(Self(inner))
     }
 }
 
@@ -150,7 +201,70 @@ mod tests {
 
     #[test]
     fn rejects_nonsense() {
-        assert!(Multiplier::from_str("").is_err());
-        assert!(Multiplier::from_str("abc").is_err());
+        assert!(matches!(
+            Multiplier::from_str("").unwrap_err(),
+            ParseDecimalError::Unparseable(_)
+        ));
+        assert!(matches!(
+            Multiplier::from_str("abc").unwrap_err(),
+            ParseDecimalError::Unparseable(_)
+        ));
+    }
+
+    /// The bug this guards: `TrinoDecimal`'s `FromStr` ignores `P` and `S`, so
+    /// without a check here an unstorable value parses fine and only fails
+    /// later, inside `arrow-json`, with `parse decimal overflow` — mid-write,
+    /// where it fails the enclosing transaction rather than the caller.
+    ///
+    /// `decimal(9, 6)` leaves three digits ahead of the point, so anything from
+    /// 1000 up cannot be stored.
+    #[test]
+    fn rejects_values_too_large_for_the_column() {
+        for input in ["1000", "12345678901234", "1E+20", "-1000"] {
+            assert!(
+                matches!(
+                    Multiplier::from_str(input).unwrap_err(),
+                    ParseDecimalError::OutOfRange { .. }
+                ),
+                "{input} must be refused, not deferred to the writer"
+            );
+        }
+    }
+
+    /// The boundary, so the check above is a real edge rather than a blanket
+    /// refusal of anything large.
+    ///
+    /// The last case is the one that pins the rounding mode. Arrow truncates
+    /// the extra digit and stores `999.999999`; rounding it up here instead
+    /// would make this a refusal and lose a value the writer would have taken.
+    /// Checked against `arrow-json` directly — every input in this test and in
+    /// `rejects_values_too_large_for_the_column` was run through the real
+    /// decoder, and the verdicts match.
+    #[test]
+    fn accepts_right_up_to_the_boundary() {
+        for input in ["999.999999", "-999.999999", "0", "999.9999996"] {
+            assert!(
+                Multiplier::from_str(input).is_ok(),
+                "{input} fits decimal(9, 6) and must not be refused"
+            );
+        }
+    }
+
+    /// Scale is not magnitude: arrow truncates extra fractional digits rather
+    /// than failing, so refusing them here would drop values the column can
+    /// perfectly well hold.
+    #[test]
+    fn tolerates_more_scale_than_the_column_keeps() {
+        let decimal = Multiplier::try_from(dec!(1.5000001)).expect("scale is not fatal");
+        assert_eq!(decimal.as_string(), "1.5000001");
+    }
+
+    /// The path the ticket history actually uses. `try_from(...).ok()` has to
+    /// yield `None` for an unstorable multiplier — that is what lets the row be
+    /// written with a null and the refusal recorded.
+    #[test]
+    fn try_from_reports_none_for_an_unstorable_value() {
+        assert!(Multiplier::try_from(dec!(1.5)).is_ok());
+        assert!(Multiplier::try_from(dec!(10000000000)).ok().is_none());
     }
 }

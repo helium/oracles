@@ -36,6 +36,12 @@ anyhow = { version = "1", features = ["backtrace"] }
 async-stream = "0.3"
 async-trait = "*"
 base64 = ">=0.21"
+# Must stay semver-compatible with the `bigdecimal` that `trino-rust-client`
+# depends on: `IcebergDecimal` inspects the `BigDecimal` inside a
+# `trino_rust_client::types::Decimal`, so a major-version split would be two
+# incompatible types. Cargo unifies them today; a mismatch is a compile error,
+# not a silent one.
+bigdecimal = "0.4"
 bincode = "1"
 blake3 = "*"
 bs58 = { version = "0.5.1", features = ["check"] }

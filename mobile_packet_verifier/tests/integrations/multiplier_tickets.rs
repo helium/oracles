@@ -350,3 +350,88 @@ mod verdict {
         Ok(())
     }
 }
+
+/// Writing a ruled-on ticket to the Iceberg history table.
+///
+/// The audit record has to hold refusals, and a refused ticket is exactly the
+/// one that may carry no multiplier the column can store. That makes the null
+/// case ordinary here, not an edge.
+mod history_rows {
+    use super::*;
+    use mobile_packet_verifier::iceberg::{multiplier_ticket_history, IcebergMultiplierTicket};
+
+    async fn write(row: IcebergMultiplierTicket) -> anyhow::Result<Vec<IcebergMultiplierTicket>> {
+        let harness = common::setup_iceberg().await?;
+        let writer = harness
+            .get_table_writer::<IcebergMultiplierTicket>(multiplier_ticket_history::TABLE_NAME)
+            .await?;
+
+        writer.write(vec![row]).await?;
+
+        multiplier_ticket_history::get_all(harness.trino()).await
+    }
+
+    /// A ticket with no usable multiplier stores a null and keeps its verdict.
+    ///
+    /// The `multiplier` column has to be optional for this. Arrow refuses a null
+    /// in a non-nullable field when it flushes the batch, which fails the write,
+    /// which fails the transaction the file was being processed in — so the
+    /// poller retries the same file forever and no ticket is ever recorded.
+    #[tokio::test]
+    async fn a_refused_ticket_with_no_multiplier_still_writes() -> anyhow::Result<()> {
+        let now = Utc::now();
+        let verified = verified(
+            ticket_with(&hotspot(1), None, now, now),
+            Status::InvalidMultiplier,
+        );
+
+        let rows = write(IcebergMultiplierTicket::from(&verified)).await?;
+
+        assert_eq!(rows.len(), 1, "the refusal is on the record");
+        assert!(rows[0].multiplier.is_none(), "no multiplier to record");
+        assert_eq!(rows[0].status, "invalid_multiplier");
+
+        Ok(())
+    }
+
+    /// A multiplier too large for `decimal(9, 6)` is refused while the row is
+    /// built, so it lands as a null instead of failing the flush with `parse
+    /// decimal overflow`.
+    #[tokio::test]
+    async fn a_multiplier_too_large_for_the_column_writes_as_null() -> anyhow::Result<()> {
+        let now = Utc::now();
+        let verified = verified(
+            ticket_with(&hotspot(1), Some(dec!(10000000000)), now, now),
+            Status::InvalidMultiplier,
+        );
+
+        let rows = write(IcebergMultiplierTicket::from(&verified)).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].multiplier.is_none(),
+            "an unstorable value must not reach the column"
+        );
+
+        Ok(())
+    }
+
+    /// The ordinary case, so the two above are about nulls rather than the table
+    /// accepting anything at all.
+    #[tokio::test]
+    async fn a_granted_ticket_records_its_multiplier() -> anyhow::Result<()> {
+        let now = Utc::now();
+        let verified = verified(ticket(&hotspot(1), dec!(1.5), now, now), Status::Valid);
+
+        let rows = write(IcebergMultiplierTicket::from(&verified)).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].multiplier.as_ref().map(|m| m.as_string()),
+            Some("1.500000".to_string())
+        );
+        assert_eq!(rows[0].status, "valid");
+
+        Ok(())
+    }
+}

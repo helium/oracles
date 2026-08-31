@@ -50,8 +50,9 @@ pub struct IcebergMultiplierTicket {
     /// `None` when the ticket carried no usable multiplier — absent,
     /// unparseable, or too large for the column. `status` records that it was
     /// refused, but not which of the three it was; all three are
-    /// `invalid_multiplier`. A value that is merely out of range *is* stored,
-    /// so the record shows what was asked for.
+    /// `invalid_multiplier`. A value that merely falls outside HIP-150's 1-to-5
+    /// range but still fits the column *is* stored, so the record shows what
+    /// was asked for.
     pub multiplier: Option<MultiplierDecimal>,
     pub signer: String,
     pub message: String,
