@@ -36,6 +36,12 @@ anyhow = { version = "1", features = ["backtrace"] }
 async-stream = "0.3"
 async-trait = "*"
 base64 = ">=0.21"
+# Must stay semver-compatible with the `bigdecimal` that `trino-rust-client`
+# depends on: `IcebergDecimal` inspects the `BigDecimal` inside a
+# `trino_rust_client::types::Decimal`, so a major-version split would be two
+# incompatible types. Cargo unifies them today; a mismatch is a compile error,
+# not a silent one.
+bigdecimal = "0.4"
 bincode = "1"
 blake3 = "*"
 bs58 = { version = "0.5.1", features = ["check"] }
@@ -168,6 +174,10 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # beacon = { path = "../proto/beacon" }
 
 [patch.'https://github.com/helium/proto']
-# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "gateway-info-v4" }
-# beacon = { git = "https://www.github.com/helium/proto.git", branch = "gateway-info-v4" }
-# msg-signature = { git = "https://www.github.com/helium/proto.git", branch = "gateway-info-v4" }
+# HIP-150: the data transfer multiplier ticket messages live on proto's
+# mj/hip-150 (helium/proto#483) and are not on master yet.
+# REVERT BEFORE MERGING mj/hip-150 TO main — a feature-branch patch must not
+# reach main. Tracked on the pre-deploy checklist.
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
+# beacon = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
+# msg-signature = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }

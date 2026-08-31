@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod event_ids;
 pub mod gateway;
 pub mod iceberg;
+pub mod multiplier;
 pub mod pending_burns;
 pub mod pending_txns;
 pub mod routing;

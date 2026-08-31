@@ -2,15 +2,18 @@ use crate::{authorization::AuthorizationVerifier, Settings};
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store_oracles::mobile::data_transfer_multiplier::MAX_CLOCK_DRIFT;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile::{
     self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
-    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionRespV1, EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1,
-    EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    DataTransferMultiplierTicketIngestReportV1, DataTransferMultiplierTicketReqV1,
+    DataTransferMultiplierTicketRespV1, DataTransferRadioAccessTechnology,
+    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
+    EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1, EnabledCarriersInfoRespV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsIngestReportV2,
@@ -29,7 +32,7 @@ use helium_proto::services::{
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
 use helium_proto_crypto::MsgVerify;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{
     metadata::{Ascii, MetadataValue},
@@ -58,6 +61,10 @@ pub struct GrpcServer<AV> {
     subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
     ban_sink: FileSinkClient<BanIngestReportV1>,
     enabled_carriers_sink: FileSinkClient<EnabledCarriersInfoReportV1>,
+    data_transfer_multiplier_ticket_sink:
+        FileSinkClient<DataTransferMultiplierTicketIngestReportV1>,
+    /// How old a ticket's signed timestamp may be before it is refused.
+    data_transfer_multiplier_ticket_max_age: Duration,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -107,6 +114,10 @@ where
         subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
         ban_sink: FileSinkClient<BanIngestReportV1>,
         enabled_carriers_sink: FileSinkClient<EnabledCarriersInfoReportV1>,
+        data_transfer_multiplier_ticket_sink: FileSinkClient<
+            DataTransferMultiplierTicketIngestReportV1,
+        >,
+        data_transfer_multiplier_ticket_max_age: Duration,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -129,6 +140,8 @@ where
             subscriber_mapping_activity_sink,
             ban_sink,
             enabled_carriers_sink,
+            data_transfer_multiplier_ticket_sink,
+            data_transfer_multiplier_ticket_max_age,
             required_network,
             address,
             api_token,
@@ -175,6 +188,62 @@ where
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         Ok((public_key, event))
+    }
+
+    /// HIP-150: is this key authorized to issue data transfer multiplier
+    /// tickets? Separate from the carrier allow-list, so a carrier key cannot
+    /// grant a hotspot a reward multiplier.
+    fn verify_known_ticket_signer(&self, public_key: PublicKey) -> VerifyResult<()> {
+        let public_key_bin = PublicKeyBinary::from(public_key);
+        if !self
+            .authorization_verifier
+            .is_ticket_signer(&public_key_bin)
+        {
+            tracing::error!(%public_key_bin, "unauthorized multiplier ticket signer");
+            return Err(Status::permission_denied("unauthorized ticket signer"));
+        }
+        Ok(())
+    }
+
+    /// HIP-150: refuse a ticket older than the configured window, or dated
+    /// further ahead than a client's clock could plausibly drift.
+    ///
+    /// A signature never expires, so without this a ticket captured off the
+    /// wire stays usable forever — including after the grant it carries has
+    /// been superseded. The packet verifier checks freshness again when it
+    /// verifies; this keeps replays out of the pipeline in the first place.
+    ///
+    /// Clients do not share a clock with us, so a ticket stamped a little ahead
+    /// is treated as current rather than rejected — see [`MAX_CLOCK_DRIFT`].
+    /// Beyond that it is refused: post-dating must not buy an attacker a longer
+    /// replay window than an honest client gets.
+    fn verify_ticket_freshness(&self, signed_ms: u64, received_ms: u64) -> VerifyResult<()> {
+        let age_ms = match received_ms.checked_sub(signed_ms) {
+            Some(age_ms) => age_ms,
+            // Stamped ahead of us. Within the drift allowance it counts as
+            // brand new; the subtraction below is what would have underflowed.
+            None => {
+                let drift_ms = signed_ms.saturating_sub(received_ms);
+                if Duration::from_millis(drift_ms) > MAX_CLOCK_DRIFT {
+                    return Err(Status::invalid_argument(format!(
+                        "ticket is dated {}s in the future, beyond the {}s clock drift allowance",
+                        drift_ms / 1000,
+                        MAX_CLOCK_DRIFT.as_secs()
+                    )));
+                }
+                0
+            }
+        };
+
+        let max_age = self.data_transfer_multiplier_ticket_max_age;
+        if Duration::from_millis(age_ms) > max_age {
+            return Err(Status::invalid_argument(format!(
+                "ticket is {}s old, older than the {}s limit",
+                age_ms / 1000,
+                max_age.as_secs()
+            )));
+        }
+        Ok(())
     }
 
     fn verify_known_carrier_key(&self, public_key: PublicKey) -> VerifyResult<()> {
@@ -676,6 +745,43 @@ where
             timestamp_ms: received_timestamp_ms,
         }))
     }
+
+    async fn submit_data_transfer_multiplier_ticket(
+        &self,
+        request: Request<DataTransferMultiplierTicketReqV1>,
+    ) -> GrpcResult<DataTransferMultiplierTicketRespV1> {
+        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
+
+        // Cheapest check first, before any signature work.
+        self.verify_ticket_freshness(event.timestamp_ms, received_timestamp_ms)?;
+
+        let (signer, event) = self
+            .verify_public_key(&event.signer_pubkey)
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))?;
+        self.verify_known_ticket_signer(signer)?;
+
+        // The multiplier itself is not parsed here. Ingest verifies who sent
+        // this and when, then persists it verbatim; the packet verifier owns
+        // whether the multiplier is acceptable and records that verdict in a
+        // verified report, so a rejection is as auditable as a grant.
+        let report = DataTransferMultiplierTicketIngestReportV1 {
+            received_timestamp_ms,
+            report: Some(event),
+        };
+
+        _ = self
+            .data_transfer_multiplier_ticket_sink
+            .write(report, [])
+            .await;
+
+        Ok(Response::new(DataTransferMultiplierTicketRespV1 {
+            timestamp_ms: received_timestamp_ms,
+        }))
+    }
 }
 
 fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
@@ -838,6 +944,16 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     )
     .await?;
 
+    let (data_transfer_multiplier_ticket_sink, data_transfer_multiplier_ticket_server) =
+        DataTransferMultiplierTicketIngestReportV1::file_sink(
+            &settings.cache,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let (subscriber_mapping_activity_sink, subscriber_mapping_activity_server) =
         SubscriberMappingActivityIngestReportV1::file_sink(
             &settings.cache,
@@ -873,6 +989,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         subscriber_mapping_activity_sink,
         ban_sink,
         enabled_carriers_sink,
+        data_transfer_multiplier_ticket_sink,
+        settings.data_transfer_multiplier_ticket_max_age,
         settings.network,
         settings.listen_addr,
         api_token,
@@ -903,6 +1021,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(subscriber_mapping_activity_server)
         .add_task(ban_server)
         .add_task(enabled_carriers_server)
+        .add_task(data_transfer_multiplier_ticket_server)
         .add_task(grpc_server)
         .build()
         .start()

@@ -9,3 +9,6 @@
 //! `mobile-verifier`. Single-owner tables stay in their owning crate.
 
 pub mod data_transfer;
+pub mod decimal;
+
+pub use decimal::IcebergDecimal;

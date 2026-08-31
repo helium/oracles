@@ -151,3 +151,47 @@ bucket = "helium-mainnet-mobile-verified"
 # Region for bucket. Defaults to below
 #
 region = "us-west-2"
+
+# HIP-150 data transfer multiplier tickets
+#
+# Every ticket ruled on is written to s3 and to the append-only
+# data_transfer.multiplier_ticket_history table, refusals included.
+#
+# Granted multipliers are also written to the data_transfer_multipliers table in
+# Postgres, which is what the burn joins against when it prices sessions.
+#
+[multiplier]
+
+# Comma-separated b58 public keys authorized to issue tickets.
+#
+# Checked here as well as at ingest: the two services are deployed and
+# configured separately, and it is this verdict that lands on the record.
+#
+# Empty by default, which rejects every ticket and warns at startup. Nothing can
+# be granted until a signer is provisioned.
+#
+# authorized_keys = "key1,key2"
+
+# How old a ticket's signed timestamp may be, measured against when ingest
+# received it, before it is refused. Configured separately from ingest's own
+# window so that a mistake there does not widen the replay window everywhere.
+# Default: 10 minutes
+#
+# ticket_max_age = "10 minutes"
+
+# How far back do we read ticket files?
+# Default: UNIX_EPOCH
+#
+# start_after = "2024-12-15 01:00:00Z"
+
+# Ingest bucket details for data transfer multiplier tickets
+#
+[multiplier.input_bucket]
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "helium-mainnet-mobile-ingest"
+
+# Region for bucket. Defaults to below
+#
+region = "us-west-2"

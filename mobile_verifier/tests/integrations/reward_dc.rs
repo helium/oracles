@@ -268,9 +268,10 @@ async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
     Ok(())
 }
 
-// HIP-149 sizes data transfer as the residual of `hnt_rewards_issued` after a flat
-// 24% service-provider cut, so the 3× cap (which moves HNT into delegation) and the
-// backstop (which re-emits it) land entirely on the data-transfer pool. The two
+// Data transfer is the residual of `hnt_rewards_issued` after the flat
+// service-provider cut — zero under HIP-150 — so the 3× cap (which moves HNT into
+// delegation) and the backstop (which re-emits it) land entirely on the
+// data-transfer pool. The two
 // tests below drive a capped and a backstopped epoch end-to-end and assert the
 // distributed pool shrinks / grows accordingly — the only place that wiring is
 // exercised at the integration level (the split math itself is unit-tested in
@@ -278,18 +279,17 @@ async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
 // independently of `hip_149_reward_pools` so they can't pass by mirroring a bug in
 // the code under test.
 
-/// A round 1e12-bone pool. The 24% SP cut (240e9) clears the 45e9 subscriber floor,
-/// and the residual data-transfer pools land on clean numbers.
+/// A round 1e12-bone pool, so the data-transfer pools land on clean numbers.
 const SPLIT_TEST_EMISSIONS: u64 = 1_000_000_000_000;
 /// Baseline (6% delegation) data-transfer pool at [`SPLIT_TEST_EMISSIONS`]:
-/// 94% issued (940e9) − 24% SP (240e9). The cap shrinks below this; the backstop
-/// grows above it.
-const BASELINE_DATA_POOL: u64 = 700_000_000_000;
+/// 94% issued (940e9), all of it (HIP-150: the SP allocation is contributed to
+/// this pool). The cap shrinks below this; the backstop grows above it.
+/// Pre-HIP-150 this was 700e9 — 940e9 less a 24% SP cut of 240e9.
+const BASELINE_DATA_POOL: u64 = 940_000_000_000;
 
 /// [`reward_info_24_hours`] with the on-chain split overridden. `hnt_issued` is what
 /// the chain handed this rewarder; `delegation` is paid to veHNT holders on-chain.
-/// Emissions are their sum, so the service-provider pool (a flat 24% of emissions)
-/// stays fixed while only the issued/delegation split moves.
+/// Emissions are their sum, so only the issued/delegation split moves.
 fn reward_info_with_split(hnt_issued: u64, delegation: u64) -> EpochRewardInfo {
     let mut reward_info = reward_info_24_hours();
     reward_info.epoch_emissions = Decimal::from(hnt_issued + delegation);
@@ -299,13 +299,14 @@ fn reward_info_with_split(hnt_issued: u64, delegation: u64) -> EpochRewardInfo {
 }
 
 /// Data-transfer pool computed *independently* of `hip_149_reward_pools` (the code
-/// the production path uses), via plain integer math: SP takes a flat floored 24%
-/// of total emissions, data transfer is the rest of the issued HNT.
+/// the production path uses).
+///
+/// HIP-150 Decision 3: the service-provider allocation is contributed to the
+/// deployer pool, so data transfer is the entire issued HNT. Before HIP-150 this
+/// subtracted a floored 24% of total emissions; when the contribution ends that
+/// subtraction comes back.
 fn expected_data_transfer_pool(reward_info: &EpochRewardInfo) -> u64 {
-    let emissions = reward_info.epoch_emissions.to_u64().unwrap();
-    let hnt_issued = reward_info.hnt_rewards_issued.to_u64().unwrap();
-    let service_provider = (emissions as u128 * 24 / 100) as u64;
-    hnt_issued - service_provider
+    reward_info.hnt_rewards_issued.to_u64().unwrap()
 }
 
 #[tokio::test]
@@ -313,8 +314,8 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     // 3× cap moved 14% of emissions out of the data bucket into delegation:
-    // delegation 6%+14%=20%, issued HNT 80%. SP holds at 24%, so data transfer
-    // absorbs the whole cut (70% → 56%).
+    // delegation 6%+14%=20%, issued HNT 80%. Data transfer takes the whole issued
+    // amount (HIP-150), so it absorbs the entire cut (94% → 80%).
     let reward_info = reward_info_with_split(
         SPLIT_TEST_EMISSIONS * 80 / 100,
         SPLIT_TEST_EMISSIONS * 20 / 100,
@@ -339,7 +340,7 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     // The whole pool is distributed, and it is the cap-shrunk residual.
     let realized = rewards.dc_transfer_sum() + rewards.unallocated_sum();
     assert_eq!(realized, expected_data_transfer_pool(&reward_info));
-    assert_eq!(realized, 560_000_000_000, "80% issued − 24% SP");
+    assert_eq!(realized, 800_000_000_000, "80% issued, no SP cut");
     assert!(
         realized < BASELINE_DATA_POOL,
         "cap must shrink the data-transfer pool below baseline"
@@ -353,8 +354,8 @@ async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     // Backstop re-emitted HNT into the data bucket: issued HNT rises to 98%
-    // (delegation 2%). SP still holds at 24%, so data transfer absorbs the boost
-    // (70% → 74%).
+    // (delegation 2%). Data transfer takes the whole issued amount (HIP-150), so
+    // it absorbs the entire boost (94% → 98%).
     let reward_info = reward_info_with_split(
         SPLIT_TEST_EMISSIONS * 98 / 100,
         SPLIT_TEST_EMISSIONS * 2 / 100,
@@ -379,7 +380,7 @@ async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     // The whole pool is distributed, and it is the backstop-grown residual.
     let realized = rewards.dc_transfer_sum() + rewards.unallocated_sum();
     assert_eq!(realized, expected_data_transfer_pool(&reward_info));
-    assert_eq!(realized, 740_000_000_000, "98% issued − 24% SP");
+    assert_eq!(realized, 980_000_000_000, "98% issued, no SP cut");
     assert!(
         realized > BASELINE_DATA_POOL,
         "backstop must grow the data-transfer pool above baseline"
@@ -409,6 +410,10 @@ impl DataSession {
             download_bytes: self.download_bytes,
             rewardable_bytes: self.rewardable_bytes,
             num_dcs: self.num_dcs,
+            // A row as written before HIP-150, so these also cover the
+            // backward-compatible path: rewards distribute pro-rata of num_dcs
+            // whether or not a multiplier produced it.
+            multiplier: None,
             first_timestamp: self.timestamp.into(),
             last_timestamp: self.timestamp.into(),
             burn_timestamp: self.timestamp.into(),

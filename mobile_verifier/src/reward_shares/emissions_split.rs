@@ -1,4 +1,4 @@
-//! HIP-149 sub-DAO reward split.
+//! Sub-DAO reward split.
 //!
 //! Each epoch the chain hands the rewarder two figures via [`EpochRewardInfo`]:
 //! `epoch_emissions` (the 100% total) and `hnt_rewards_issued` (the slice this
@@ -7,26 +7,31 @@
 //!
 //! The rewarder splits `hnt_rewards_issued` into two pools:
 //!
-//! * **Service providers** — a flat 24% of *total* emissions. HIP-149 keeps this
-//!   fixed regardless of the cap/backstop.
+//! * **Service providers** — a flat [`SERVICE_PROVIDER_PERCENT`] of *total*
+//!   emissions, fixed regardless of the cap/backstop.
 //! * **Data transfer** — the *residual*: `hnt_rewards_issued − service_provider`.
 //!
-//! Making data transfer the residual (rather than a fixed 70%) is what keeps the
-//! split exact under HIP-149. The 3× cap moves HNT out of the data bucket and
+//! **Under HIP-150 the service-provider percent is zero**, so data transfer is
+//! the whole issued amount. The split is kept rather than collapsed because the
+//! contribution is a suspension with an end date (2027-07-31, extendable once),
+//! not a retirement — see [`SERVICE_PROVIDER_PERCENT`]. Everything below
+//! describes the mechanism that governs both states.
+//!
+//! Making data transfer the residual (rather than a fixed percentage of its own)
+//! is what keeps the split exact. The 3× cap moves HNT out of the data bucket and
 //! into delegation, shrinking `hnt_rewards_issued`; the backstop re-emits HNT
-//! into it, growing `hnt_rewards_issued`. A fixed `0.70 × emissions` would
+//! into it, growing `hnt_rewards_issued`. A fixed percentage of emissions would
 //! over-allocate when earnings run over the cap (minting HNT that was moved to
 //! delegators) and under-allocate when they fall under the backstop (stranding
-//! the re-emitted HNT). The residual
-//! instead absorbs the shift — and the sub-bone dropped when flooring the
-//! service-provider 24% — so
+//! the re-emitted HNT). The residual instead absorbs the shift — and the sub-bone
+//! dropped when flooring the service-provider share — so
 //!
 //! ```text
 //! service_provider + data_transfer == floor(hnt_rewards_issued)
 //! ```
 //!
-//! holds exactly, every epoch. The proptests below pin that invariant across the
-//! full input range.
+//! holds exactly, every epoch, at any percent. The proptests below pin that
+//! invariant across the full input range.
 
 use crate::rewarder::EpochRewardInfo;
 use rust_decimal::Decimal;
@@ -43,6 +48,10 @@ pub struct RewardPools {
 
 /// Split an epoch's `hnt_rewards_issued` into the service-provider and
 /// data-transfer pools (see module docs).
+///
+/// The split mechanism is HIP-149's and is unchanged; HIP-150 sets
+/// [`SERVICE_PROVIDER_PERCENT`] to zero, which makes data transfer the whole
+/// issued amount.
 pub fn hip_149_reward_pools(reward_info: &EpochRewardInfo) -> RewardPools {
     split(reward_info.epoch_emissions, reward_info.hnt_rewards_issued)
 }
@@ -53,13 +62,14 @@ pub fn hip_149_reward_pools(reward_info: &EpochRewardInfo) -> RewardPools {
 fn split(total_emissions: Decimal, hnt_rewards_issued: Decimal) -> RewardPools {
     let hnt = floor_to_u64(hnt_rewards_issued);
 
-    // Service providers take a flat 24% of *total* emissions, floored. We never
-    // round *up* — that is what guarantees the service-provider pool can't push
-    // the distributed total past `hnt_rewards_issued`. The `.min(hnt)` clamp
-    // keeps the residual non-negative even if the chain ever reported delegation
-    // above 76% of total (beyond what the 3× cap can produce, since it can move
-    // at most the 70% data bucket): in that case service providers simply take
-    // whatever HNT was issued.
+    // Service providers take a flat `SERVICE_PROVIDER_PERCENT` of *total*
+    // emissions, floored. We never round *up* — that is what guarantees the
+    // service-provider pool can't push the distributed total past
+    // `hnt_rewards_issued`. The `.min(hnt)` clamp keeps the residual non-negative
+    // if the chain ever reported delegation so high that the percent exceeds what
+    // was issued: in that case service providers simply take whatever HNT there
+    // was. Dormant while the percent is zero (HIP-150), and kept for when the
+    // contribution ends.
     let service_provider = floor_to_u64(total_emissions * SERVICE_PROVIDER_PERCENT).min(hnt);
 
     // Data transfer is the residual. `service_provider <= hnt`, so this never
@@ -90,13 +100,14 @@ mod tests {
     }
 
     #[test]
-    fn baseline_6pct_delegation_is_70_24() {
-        // total = 100, delegation = 6 → hnt = 94. SP = 24, data = 70.
+    fn baseline_6pct_delegation_gives_data_the_whole_94() {
+        // total = 100, delegation = 6 → hnt = 94. HIP-150: SP = 0, so data takes
+        // all 94 — the 70 it had under HIP-149 plus the 24 SP contributed.
         assert_eq!(
             run(100, 94),
             RewardPools {
-                service_provider: 24,
-                data_transfer: 70
+                service_provider: 0,
+                data_transfer: 94
             }
         );
     }
@@ -104,12 +115,12 @@ mod tests {
     #[test]
     fn cap_shrinks_data_only() {
         // 3× cap moved 14 from data → delegation: delegation 6+14=20, hnt = 80.
-        // SP stays at 24% of total; data absorbs the whole 14 (70 → 56).
+        // Data absorbs the whole cut.
         assert_eq!(
             run(100, 80),
             RewardPools {
-                service_provider: 24,
-                data_transfer: 56
+                service_provider: 0,
+                data_transfer: 80
             }
         );
     }
@@ -117,36 +128,37 @@ mod tests {
     #[test]
     fn backstop_grows_data_only() {
         // Backstop re-emitted HNT into the data bucket: hnt = 98 (> 94).
-        // SP unchanged; data absorbs the boost (70 → 74).
+        // Data absorbs the boost.
         assert_eq!(
             run(100, 98),
             RewardPools {
-                service_provider: 24,
-                data_transfer: 74
+                service_provider: 0,
+                data_transfer: 98
             }
         );
     }
 
     #[test]
-    fn no_delegation_gives_sp_24_data_76() {
+    fn no_delegation_gives_data_everything() {
         assert_eq!(
             run(100, 100),
             RewardPools {
-                service_provider: 24,
-                data_transfer: 76
+                service_provider: 0,
+                data_transfer: 100
             }
         );
     }
 
     #[test]
-    fn extreme_cap_clamps_sp_to_issued_hnt() {
-        // Out-of-spec: only 20 HNT issued though 24% of total would be 24. SP
-        // takes all 20, data is 0 — still accounts for exactly `hnt`.
+    fn far_below_baseline_issuance_still_accounts_exactly() {
+        // Out-of-spec: only 20 HNT issued against 100 emitted. At percent 0 the
+        // `.min(hnt)` clamp is dormant and data simply takes what was issued.
+        // (Under a non-zero percent this is the case where SP would be clamped.)
         assert_eq!(
             run(100, 20),
             RewardPools {
-                service_provider: 20,
-                data_transfer: 0
+                service_provider: 0,
+                data_transfer: 20
             }
         );
     }
@@ -198,12 +210,14 @@ mod tests {
             prop_assert!(pools.data_transfer <= hnt);
         }
 
-        /// Service providers get a flat 24% of *total* emissions, independent of
-        /// how the cap/backstop split that total between hnt and delegation —
-        /// except in the out-of-spec regime where less than 24% was issued, where
-        /// SP is clamped to what's available.
+        /// Service providers get a flat `SERVICE_PROVIDER_PERCENT` of *total*
+        /// emissions, independent of how the cap/backstop split that total between
+        /// hnt and delegation — except in the out-of-spec regime where less than
+        /// that percent was issued, where SP is clamped to what's available.
+        /// Percent-agnostic: `expected_sp` reads the same constant, so this keeps
+        /// holding when the HIP-150 contribution ends and the percent returns.
         #[test]
-        fn service_provider_is_24pct_of_total(
+        fn service_provider_matches_configured_percent(
             hnt in 0u64..=MAX_BONES,
             delegation in 0u64..=MAX_BONES,
         ) {
@@ -215,7 +229,8 @@ mod tests {
         /// Holding total emissions fixed, data transfer tracks issued HNT
         /// one-for-one — the cap (less hnt) shrinks it, the backstop (more hnt)
         /// grows it — while the service-provider pool is unchanged, as long as a
-        /// full 24% of total was issued (clamp not engaged).
+        /// full `SERVICE_PROVIDER_PERCENT` of total was issued (clamp not
+        /// engaged).
         #[test]
         fn data_tracks_hnt_one_for_one_with_sp_fixed(
             (total, hnt_a, hnt_b) in (1u64..=MAX_BONES).prop_flat_map(|total| {
@@ -230,6 +245,24 @@ mod tests {
                 a.data_transfer as i128 - b.data_transfer as i128,
                 hnt_a as i128 - hnt_b as i128
             );
+        }
+
+        /// HIP-150 Decision 3: with the service-provider contribution active, the
+        /// data-transfer pool is the *entire* issued amount and nothing is held
+        /// back. Distinct from `never_over_or_under_allocates_hnt`, which only
+        /// pins that the two pools sum to it — this pins which pool gets it.
+        ///
+        /// This test is specific to the suspension: when the contribution ends and
+        /// `SERVICE_PROVIDER_PERCENT` returns to a non-zero value, delete it. The
+        /// invariant tests above are the ones that hold in both states.
+        #[test]
+        fn hip_150_data_transfer_takes_the_whole_issued_amount(
+            hnt in 0u64..=MAX_BONES,
+            delegation in 0u64..=MAX_BONES,
+        ) {
+            let pools = run(hnt + delegation, hnt);
+            prop_assert_eq!(pools.service_provider, 0);
+            prop_assert_eq!(pools.data_transfer, hnt);
         }
     }
 }

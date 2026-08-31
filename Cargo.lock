@@ -1715,17 +1715,17 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#e81cec790eca9a5bd3bebc8df78b4eb190949013"
+source = "git+https://github.com/helium/proto?branch=master#e01eabb3b9fc27eb27d0a080cefb8d406a5f29d7"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
 ]
 
@@ -1767,7 +1767,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3344,7 +3344,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "beacon",
  "blake3",
  "bs58",
@@ -3974,7 +3974,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d292d4e2852445cbb610b515543a56b10d4a6fad90cfd6d281fe870f628573e"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "byteorder",
  "ed25519-compact",
@@ -4032,11 +4032,15 @@ name = "helium-iceberg-oracles"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bigdecimal",
  "chrono",
  "file-store-oracles",
  "helium-iceberg",
  "helium-proto",
+ "rust_decimal",
  "serde",
+ "serde_json",
+ "thiserror 1.0.69",
  "trino-rust-client",
 ]
 
@@ -4051,7 +4055,7 @@ dependencies = [
  "angry-purple-tiger",
  "async-trait",
  "backon",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytemuck",
  "chrono",
@@ -4089,7 +4093,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#ba28806c19158db7e25e8a7f462a3c3cb2e7b85f"
+source = "git+https://github.com/helium/proto?branch=master#e01eabb3b9fc27eb27d0a080cefb8d406a5f29d7"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -5467,7 +5471,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "blake3",
  "bs58",
  "chrono",
@@ -5524,7 +5528,7 @@ version = "0.1.0"
 dependencies = [
  "angry-purple-tiger",
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "clap",
  "custom-tracing",
  "dialoguer",
@@ -5570,6 +5574,7 @@ dependencies = [
  "prost",
  "reqwest 0.12.28",
  "retainer",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5594,7 +5599,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "config",
@@ -5670,7 +5675,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#ba28806c19158db7e25e8a7f462a3c3cb2e7b85f"
+source = "git+https://github.com/helium/proto?branch=master#e01eabb3b9fc27eb27d0a080cefb8d406a5f29d7"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5678,7 +5683,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#ba28806c19158db7e25e8a7f462a3c3cb2e7b85f"
+source = "git+https://github.com/helium/proto?branch=master#e01eabb3b9fc27eb27d0a080cefb8d406a5f29d7"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -6587,7 +6592,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -6609,7 +6614,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -7225,7 +7230,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -12548,7 +12553,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
