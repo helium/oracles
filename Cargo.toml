@@ -178,6 +178,6 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # mj/hip-150 (helium/proto#483) and are not on master yet.
 # REVERT BEFORE MERGING mj/hip-150 TO main — a feature-branch patch must not
 # reach main. Tracked on the pre-deploy checklist.
-helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
-beacon = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
-msg-signature = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
+# beacon = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
+# msg-signature = { git = "https://www.github.com/helium/proto.git", branch = "mj/hip-150" }
