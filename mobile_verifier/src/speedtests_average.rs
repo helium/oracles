@@ -1,5 +1,5 @@
 use crate::speedtests::{self, Speedtest};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use file_store_oracles::traits::MsgTimestamp;
 use helium_crypto::PublicKeyBinary;
@@ -19,6 +19,14 @@ pub type EpochAverages = HashMap<PublicKeyBinary, SpeedtestAverage>;
 #[derive(Debug, Clone)]
 pub struct SpeedtestAverage {
     pub pubkey: PublicKeyBinary,
+    /// When this average was calculated, truncated to a whole second.
+    ///
+    /// Both sinks report this one value so that a row in s3 and its
+    /// counterpart in trino name the same instant. It is truncated because
+    /// `speedtest_avg.timestamp` in the proto is documented as seconds since
+    /// the epoch, which is the coarser of the two representations — trino's
+    /// column is microsecond-precision `timestamptz`.
+    pub calculated_at: DateTime<Utc>,
     pub window_size: usize,
     pub upload_speed_avg_bps: u64,
     pub download_speed_avg_bps: u64,
@@ -30,6 +38,13 @@ pub struct SpeedtestAverage {
 
 impl From<Vec<Speedtest>> for SpeedtestAverage {
     fn from(speedtests: Vec<Speedtest>) -> Self {
+        Self::new(speedtests, Utc::now())
+    }
+}
+
+impl SpeedtestAverage {
+    pub fn new(speedtests: Vec<Speedtest>, calculated_at: DateTime<Utc>) -> Self {
+        let calculated_at = calculated_at.trunc_subsecs(0);
         let mut id = vec![]; // eww!
         let mut window_size = 0;
         let mut sum_upload = 0;
@@ -63,6 +78,7 @@ impl From<Vec<Speedtest>> for SpeedtestAverage {
             let reward_multiplier = tier.into_multiplier();
             SpeedtestAverage {
                 pubkey: id.into(),
+                calculated_at,
                 window_size: window_size as usize,
                 upload_speed_avg_bps,
                 download_speed_avg_bps,
@@ -74,6 +90,7 @@ impl From<Vec<Speedtest>> for SpeedtestAverage {
         } else {
             SpeedtestAverage {
                 pubkey: id.into(),
+                calculated_at,
                 window_size: 0,
                 upload_speed_avg_bps: sum_upload,
                 download_speed_avg_bps: sum_download,
@@ -84,34 +101,37 @@ impl From<Vec<Speedtest>> for SpeedtestAverage {
             }
         }
     }
-}
 
-impl SpeedtestAverage {
+    /// The s3 (file sink) representation of this average.
+    pub fn to_proto(&self) -> proto::SpeedtestAvg {
+        proto::SpeedtestAvg {
+            pub_key: self.pubkey.clone().into(),
+            upload_speed_avg_bps: self.upload_speed_avg_bps,
+            download_speed_avg_bps: self.download_speed_avg_bps,
+            latency_avg_ms: self.latency_avg_ms,
+            timestamp: self.calculated_at.encode_timestamp(),
+            speedtests: self
+                .speedtests
+                .iter()
+                .map(|st| proto::Speedtest {
+                    timestamp: st.report.timestamp(),
+                    upload_speed_bps: st.report.upload_speed,
+                    download_speed_bps: st.report.download_speed,
+                    latency_ms: st.report.latency,
+                })
+                .collect(),
+            validity: self.validity as i32,
+            reward_multiplier: self.reward_multiplier.try_into().unwrap(),
+        }
+    }
+
     pub async fn write(
         &self,
         filesink: &FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<()> {
         filesink
             .write(
-                proto::SpeedtestAvg {
-                    pub_key: self.pubkey.clone().into(),
-                    upload_speed_avg_bps: self.upload_speed_avg_bps,
-                    download_speed_avg_bps: self.download_speed_avg_bps,
-                    latency_avg_ms: self.latency_avg_ms,
-                    timestamp: Utc::now().encode_timestamp(),
-                    speedtests: self
-                        .speedtests
-                        .iter()
-                        .map(|st| proto::Speedtest {
-                            timestamp: st.report.timestamp(),
-                            upload_speed_bps: st.report.upload_speed,
-                            download_speed_bps: st.report.download_speed,
-                            latency_ms: st.report.latency,
-                        })
-                        .collect(),
-                    validity: self.validity as i32,
-                    reward_multiplier: self.reward_multiplier.try_into().unwrap(),
-                },
+                self.to_proto(),
                 &[("validity", self.validity.as_str_name())],
             )
             .await?
@@ -390,6 +410,60 @@ mod test {
         );
     }
 
+    /// Both sinks must report the calculation instant identically: s3 carries
+    /// whole seconds, trino carries microseconds, so the shared value is
+    /// truncated to a second and the two agree exactly.
+    #[test]
+    fn average_timestamp_matches_between_s3_and_trino() {
+        let calculated_at = "2026-09-01T12:34:56.789012Z"
+            .parse::<DateTime<Utc>>()
+            .expect("parse");
+        let avg = SpeedtestAverage::new(
+            vec![speedtest(10, 100, 30), speedtest(10, 100, 30)],
+            calculated_at,
+        );
+
+        let s3 = avg.to_proto();
+        let trino = crate::iceberg::IcebergSpeedtestAvg::from(&avg);
+
+        assert_eq!(
+            s3.timestamp * 1_000_000,
+            trino.timestamp.timestamp_micros() as u64,
+            "s3 and trino must name the same instant"
+        );
+        assert_eq!(
+            s3.timestamp,
+            calculated_at.timestamp() as u64,
+            "the shared value is the calculation instant, truncated to a second"
+        );
+    }
+
+    /// Sample timestamps must name the same instant in both sinks.
+    ///
+    /// S3 can only carry whole seconds (`speedtest.timestamp` is documented as
+    /// seconds since the epoch) while trino stores microseconds. They agree
+    /// only because a speedtest's timestamp is decoded from the ingest report
+    /// with `to_timestamp()`, which zeroes the sub-second component — nothing
+    /// at this boundary enforces that. If the ingest report ever moves to
+    /// millisecond precision, every sample row silently diverges.
+    #[test]
+    fn sample_timestamps_match_between_s3_and_trino() {
+        let avg = SpeedtestAverage::from(vec![speedtest(10, 100, 30), speedtest(10, 100, 30)]);
+
+        let s3 = avg.to_proto();
+        let trino = crate::iceberg::IcebergSpeedtestAvg::from(&avg);
+
+        assert_eq!(s3.speedtests.len(), trino.speedtests.len());
+        assert!(!s3.speedtests.is_empty());
+        for (s3_sample, trino_sample) in s3.speedtests.iter().zip(trino.speedtests.iter()) {
+            assert_eq!(
+                s3_sample.timestamp * 1_000_000,
+                trino_sample.timestamp.timestamp_micros() as u64,
+                "sample timestamps name different instants"
+            );
+        }
+    }
+
     fn speedtest(upload: u64, download: u64, latency: u32) -> Speedtest {
         let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -397,7 +471,9 @@ mod test {
         Speedtest {
             report: CellSpeedtest {
                 pubkey,
-                timestamp: Utc::now(),
+                // Whole seconds, as `to_timestamp()` yields when a speedtest
+                // is decoded from its ingest report.
+                timestamp: Utc::now().trunc_subsecs(0),
                 serial: "".to_string(),
                 upload_speed: bytes_per_s(upload),
                 download_speed: bytes_per_s(download),
