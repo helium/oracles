@@ -15,6 +15,7 @@ members = [
   "mobile_config_cli",
   "mobile_packet_verifier",
   "mobile_verifier",
+  "multiplier_ticket_cli",
   "price",
   "price_tracker",
   "reward_index",

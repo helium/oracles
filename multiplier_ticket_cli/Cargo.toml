@@ -1,0 +1,24 @@
+[package]
+name = "multiplier-ticket-cli"
+version = "0.1.0"
+description = "Submit HIP-150 data transfer multiplier tickets to ingest"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+file-store-oracles = { path = "../file_store_oracles" }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true }
+prost = { workspace = true }
+rust_decimal = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tonic = { workspace = true }
+
+[dev-dependencies]
+helium-proto-crypto = { workspace = true }
+rand = { workspace = true }
