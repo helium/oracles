@@ -37,14 +37,27 @@ struct InventoryRow {
 }
 
 fn row(pub_key: &PublicKeyBinary, device_type: &str, asserted_hex: Option<&str>) -> InventoryRow {
-    // A fixed past instant; the resolver's `inserted_at <= now` fallback filter
-    // is satisfied by any past time.
+    // A fixed past instant, so normal lookups resolve this row as already onboarded.
     let inserted_at: DateTime<FixedOffset> = "2024-01-01T00:00:00Z".parse().unwrap();
     InventoryRow {
         pub_key: pub_key.to_string(),
         device_type: device_type.to_string(),
         asserted_hex: asserted_hex.map(str::to_string),
         inserted_at,
+    }
+}
+
+fn row_at(
+    pub_key: &PublicKeyBinary,
+    device_type: &str,
+    asserted_hex: Option<&str>,
+    inserted_at: DateTime<Utc>,
+) -> InventoryRow {
+    InventoryRow {
+        pub_key: pub_key.to_string(),
+        device_type: device_type.to_string(),
+        asserted_hex: asserted_hex.map(str::to_string),
+        inserted_at: inserted_at.into(),
     }
 }
 
@@ -169,6 +182,78 @@ async fn fallback_resolves_gateway_missing_from_snapshot() -> anyhow::Result<()>
     let never_seen = PublicKeyBinary::from(vec![42]);
     assert!(matches!(
         resolver.resolve_gateway(&never_seen, &now).await?,
+        GatewayResolution::GatewayNotFound
+    ));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn snapshot_respects_gateway_inserted_at() -> anyhow::Result<()> {
+    let h = harness().await?;
+    let gateway = PublicKeyBinary::from(vec![1]);
+    let inserted_at = Utc::now() - chrono::Duration::hours(1);
+
+    seed(
+        &h,
+        "initial",
+        vec![row_at(&gateway, "WIFI_OUTDOOR", None, inserted_at)],
+    )
+    .await?;
+    let resolver = resolver(&h).await?;
+
+    assert!(matches!(
+        resolver
+            .resolve_gateway(&gateway, &(inserted_at - chrono::Duration::seconds(1)))
+            .await?,
+        GatewayResolution::GatewayNotFound
+    ));
+    assert!(matches!(
+        resolver.resolve_gateway(&gateway, &inserted_at).await?,
+        GatewayResolution::GatewayNotAsserted
+    ));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn fallback_cache_respects_each_query_timestamp() -> anyhow::Result<()> {
+    let h = harness().await?;
+    let old_then_new = PublicKeyBinary::from(vec![1]);
+    let new_then_old = PublicKeyBinary::from(vec![2]);
+    let inserted_at = Utc::now() - chrono::Duration::hours(1);
+    let before = inserted_at - chrono::Duration::seconds(1);
+
+    let resolver = resolver(&h).await?;
+    seed(
+        &h,
+        "later",
+        vec![
+            row_at(&old_then_new, "WIFI_OUTDOOR", None, inserted_at),
+            row_at(&new_then_old, "WIFI_OUTDOOR", None, inserted_at),
+        ],
+    )
+    .await?;
+
+    assert!(matches!(
+        resolver.resolve_gateway(&old_then_new, &before).await?,
+        GatewayResolution::GatewayNotFound
+    ));
+    assert!(matches!(
+        resolver
+            .resolve_gateway(&old_then_new, &inserted_at)
+            .await?,
+        GatewayResolution::GatewayNotAsserted
+    ));
+
+    assert!(matches!(
+        resolver
+            .resolve_gateway(&new_then_old, &inserted_at)
+            .await?,
+        GatewayResolution::GatewayNotAsserted
+    ));
+    assert!(matches!(
+        resolver.resolve_gateway(&new_then_old, &before).await?,
         GatewayResolution::GatewayNotFound
     ));
 

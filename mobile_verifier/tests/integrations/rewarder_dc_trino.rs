@@ -25,6 +25,7 @@ fn make_burned_session(
         download_bytes: 0,
         rewardable_bytes,
         num_dcs,
+        multiplier: None,
         first_timestamp: burn.into(),
         last_timestamp: burn.into(),
         burn_timestamp: burn.into(),

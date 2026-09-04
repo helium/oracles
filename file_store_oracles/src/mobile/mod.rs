@@ -1,4 +1,5 @@
 pub mod coverage;
+pub mod data_transfer_multiplier;
 pub mod hex_boost;
 pub mod mobile_ban;
 pub mod mobile_radio_invalidated_threshold;

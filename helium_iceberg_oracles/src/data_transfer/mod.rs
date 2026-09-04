@@ -8,13 +8,17 @@
 //! - `invalid_sessions` — rejected sessions (same schema plus a `reason` column).
 //! - `burned_sessions` — sessions whose DC has been burned; the input to mobile
 //!   data-transfer rewards.
+//! - `multiplier_ticket_history` — every HIP-150 multiplier ticket seen,
+//!   accepted or refused. Append-only.
 
 pub mod burned_session;
 pub mod invalid_session;
+pub mod multiplier_ticket_history;
 pub mod session;
 
 pub use burned_session::IcebergBurnedDataTransferSession;
 pub use invalid_session::IcebergInvalidDataTransferSession;
+pub use multiplier_ticket_history::IcebergMultiplierTicket;
 pub use session::IcebergDataTransferSession;
 
 pub const NAMESPACE: &str = "data_transfer";

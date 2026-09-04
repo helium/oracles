@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset};
 use helium_iceberg::{
     FieldDefinition, FieldKind, PartitionDefinition, SortFieldDefinition, TableDefinition,
 };
@@ -74,7 +74,6 @@ pub async fn get_all(
 
 impl From<&InMemorySpeedtestAverage> for IcebergSpeedtestAvg {
     fn from(value: &InMemorySpeedtestAverage) -> Self {
-        let timestamp = Utc::now();
         let speedtests = value
             .speedtests
             .iter()
@@ -92,7 +91,7 @@ impl From<&InMemorySpeedtestAverage> for IcebergSpeedtestAvg {
             latency_avg_ms: value.latency_avg_ms,
             reward_multiplier: value.reward_multiplier.try_into().unwrap_or(0.0),
             sample_count: value.speedtests.len() as u32,
-            timestamp: timestamp.into(),
+            timestamp: value.calculated_at.into(),
             speedtests,
         }
     }

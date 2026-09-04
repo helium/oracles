@@ -104,7 +104,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].dc_to_burn(), bytes_to_dc(2_000));
+    assert_eq!(pending[0].dc_to_burn()?, bytes_to_dc(2_000));
 
     Ok(())
 }
@@ -804,7 +804,7 @@ async fn run_accumulate_sessions(
     iceberg_writer: Option<iceberg::DataTransferWriter>,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     // Mark each known gateway as present on-chain, comfortably before the
-    // reports' received timestamps so the `received_timestamp <=` check passes.
+    // reports' received timestamps so the `inserted_at <= query timestamp` check passes.
     let seed_ts = Utc::now() - Duration::hours(1);
     let rows = known_gateways
         .iter()

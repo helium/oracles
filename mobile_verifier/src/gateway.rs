@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use helium_crypto::PublicKeyBinary;
 use retainer::Cache;
 use task_manager::Periodic;
@@ -102,6 +102,18 @@ struct GatewayMeta {
     location: Option<u64>,
 }
 
+#[derive(Copy, Clone, Debug)]
+struct GatewayEntry {
+    inserted_at: DateTime<Utc>,
+    meta: GatewayMeta,
+}
+
+impl GatewayEntry {
+    fn resolve_at(&self, gateway_query_time: &DateTime<Utc>) -> Option<GatewayMeta> {
+        (self.inserted_at <= *gateway_query_time).then_some(self.meta)
+    }
+}
+
 impl GatewayMeta {
     fn resolution(&self) -> GatewayResolution {
         // Precedence matches the old mobile-config resolver: data-only first,
@@ -128,8 +140,8 @@ impl GatewayMeta {
 pub struct TrinoGatewayResolver {
     trino_client: trino_client::Client,
     inventory_table: String,
-    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayMeta>>>,
-    fallback_cache: Arc<Cache<PublicKeyBinary, Option<GatewayMeta>>>,
+    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayEntry>>>,
+    fallback_cache: Arc<Cache<PublicKeyBinary, Option<GatewayEntry>>>,
     refresh_interval: Duration,
     /// When the startup snapshot was loaded (`None` if the load failed). Seeds
     /// the refresher's first-refresh timing via [`TrinoGatewayResolver::refresher`].
@@ -211,31 +223,33 @@ impl TrinoGatewayResolver {
         gateway_query_time: &DateTime<Utc>,
     ) -> anyhow::Result<Option<GatewayMeta>> {
         // Fast path: the startup/refresh snapshot of every known gateway.
-        if let Some(meta) = self.known_gateways.read().unwrap().get(public_key).copied() {
-            return Ok(Some(meta));
+        if let Some(entry) = self.known_gateways.read().unwrap().get(public_key).copied() {
+            return Ok(entry.resolve_at(gateway_query_time));
         }
 
         // Miss: an unknown gateway, or one onboarded since the last refresh.
         // Fall back to a per-pubkey query, cached to avoid re-querying.
         if let Some(cached) = self.fallback_cache.get(public_key).await {
-            return Ok(*cached.value());
+            return Ok(cached
+                .value()
+                .and_then(|entry| entry.resolve_at(gateway_query_time)));
         }
 
-        let meta = self.query_gateway(public_key, gateway_query_time).await?;
+        let entry = self.query_gateway(public_key).await?;
         self.fallback_cache
-            .insert(public_key.clone(), meta, self.refresh_interval)
+            .insert(public_key.clone(), entry, self.refresh_interval)
             .await;
-        Ok(meta)
+        Ok(entry.and_then(|entry| entry.resolve_at(gateway_query_time)))
     }
 
     async fn query_gateway(
         &self,
         public_key: &PublicKeyBinary,
-        gateway_query_time: &DateTime<Utc>,
-    ) -> anyhow::Result<Option<GatewayMeta>> {
+    ) -> anyhow::Result<Option<GatewayEntry>> {
         use trino_rust_client::Trino;
         #[derive(Trino, serde::Serialize, serde::Deserialize)]
         struct Row {
+            inserted_at: DateTime<FixedOffset>,
             device_type: String,
             // Nullable: an unasserted gateway has a NULL `asserted_hex`.
             asserted_hex: Option<String>,
@@ -244,22 +258,22 @@ impl TrinoGatewayResolver {
         // The inventory table has one row per pubkey (unique index on `pub_key`).
         let stmt = trino_client::Statement::new(format!(
             r#"
-            SELECT device_type, asserted_hex
+            SELECT inserted_at, device_type, asserted_hex
             FROM {}
             WHERE pub_key = :address
-              AND inserted_at <= :timestamp
             "#,
             self.inventory_table
         ))
         .bind("address", public_key.to_string())
-        .bind("timestamp", *gateway_query_time)
         .typed::<Row>();
 
         let rows = self.trino_client.get_all(stmt).await?;
-        Ok(rows
-            .into_iter()
-            .next()
-            .and_then(|row| row_to_meta(&row.device_type, row.asserted_hex.as_deref())))
+        Ok(rows.into_iter().next().and_then(|row| {
+            row_to_meta(&row.device_type, row.asserted_hex.as_deref()).map(|meta| GatewayEntry {
+                inserted_at: row.inserted_at.with_timezone(&Utc),
+                meta,
+            })
+        }))
     }
 }
 
@@ -289,7 +303,7 @@ impl GatewayResolver for TrinoGatewayResolver {
 pub struct GatewaySnapshotRefresher {
     trino_client: trino_client::Client,
     inventory_table: String,
-    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayMeta>>>,
+    known_gateways: Arc<RwLock<HashMap<PublicKeyBinary, GatewayEntry>>>,
     refresh_interval: Duration,
     last_refresh: Option<Instant>,
 }
@@ -375,18 +389,19 @@ fn parse_asserted_location(asserted_hex: &str) -> Option<u64> {
 async fn load_known_gateways(
     trino_client: &trino_client::Client,
     inventory_table: &str,
-) -> anyhow::Result<HashMap<PublicKeyBinary, GatewayMeta>> {
+) -> anyhow::Result<HashMap<PublicKeyBinary, GatewayEntry>> {
     use trino_rust_client::Trino;
     #[derive(Trino, serde::Serialize, serde::Deserialize)]
     struct Row {
         pub_key: String,
+        inserted_at: DateTime<FixedOffset>,
         device_type: String,
         // Nullable: an unasserted gateway has a NULL `asserted_hex`.
         asserted_hex: Option<String>,
     }
 
     let stmt = trino_client::Statement::new(format!(
-        "SELECT pub_key, device_type, asserted_hex FROM {inventory_table}"
+        "SELECT pub_key, inserted_at, device_type, asserted_hex FROM {inventory_table}"
     ))
     .typed::<Row>();
     let rows = trino_client.get_all(stmt).await?;
@@ -401,7 +416,13 @@ async fn load_known_gateways(
             }
         };
         if let Some(meta) = row_to_meta(&row.device_type, row.asserted_hex.as_deref()) {
-            known.insert(pubkey, meta);
+            known.insert(
+                pubkey,
+                GatewayEntry {
+                    inserted_at: row.inserted_at.with_timezone(&Utc),
+                    meta,
+                },
+            );
         }
     }
     Ok(known)
@@ -410,6 +431,29 @@ async fn load_known_gateways(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_entry_respects_inserted_at() {
+        let inserted_at = Utc::now();
+        let entry = GatewayEntry {
+            inserted_at,
+            meta: GatewayMeta {
+                device_type: DeviceType::WifiOutdoor,
+                location: None,
+            },
+        };
+
+        assert!(entry
+            .resolve_at(&(inserted_at - chrono::Duration::seconds(1)))
+            .is_none());
+        assert!(matches!(
+            entry.resolve_at(&inserted_at),
+            Some(GatewayMeta {
+                device_type: DeviceType::WifiOutdoor,
+                location: None,
+            })
+        ));
+    }
 
     #[tokio::test]
     #[ignore = "manual query validation"]

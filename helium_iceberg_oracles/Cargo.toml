@@ -8,10 +8,16 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+bigdecimal = { workspace = true }
 chrono = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 helium-proto = { workspace = true }
 trino-rust-client = { workspace = true }
 
 helium-iceberg = { path = "../helium_iceberg", default-features = false }
 file-store-oracles = { path = "../file_store_oracles" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
