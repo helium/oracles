@@ -51,8 +51,9 @@ pub async fn aggregate_hotspot_data_sessions_to_dc(
 /// True when no burned sessions exist past the end of the reward period — i.e.
 /// the burn/write pipeline isn't current through the period we want to reward.
 ///
-/// Trino analogue of [`crate::rewarder::db::no_speedtests`] /
-/// [`crate::rewarder::db::no_wifi_heartbeats`].
+/// The sole data-currency gate in [`crate::rewarder::Rewarder::is_data_current`]:
+/// burned sessions are the only ingested input to the payout, so they are the
+/// only pipeline whose staleness could make a reward wrong.
 pub async fn no_burned_sessions(
     trino: &trino_client::Client,
     reward_period: &Range<DateTime<Utc>>,

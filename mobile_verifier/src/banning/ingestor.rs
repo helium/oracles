@@ -16,7 +16,7 @@ use file_store_oracles::{
 };
 use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
-use sqlx::{PgConnection, PgPool};
+use sqlx::PgPool;
 use task_manager::{ChannelConsumer, ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -25,8 +25,6 @@ use crate::{
     iceberg, Settings,
 };
 
-use super::db;
-
 // ── BanIngestor ───────────────────────────────────────────────────────────────
 
 pub struct BanIngestor {
@@ -34,7 +32,7 @@ pub struct BanIngestor {
     authorized_keys: AuthorizedKeys,
     report_rx: Receiver<FileInfoStream<BanReport>>,
     verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
-    iceberg_writer: Option<iceberg::BanWriter>,
+    iceberg_writer: iceberg::BanWriter,
 }
 
 impl ChannelConsumer for BanIngestor {
@@ -63,7 +61,7 @@ impl BanIngestor {
         bucket_client: BucketClient,
         authorized_keys: AuthorizedKeys,
         settings: &Settings,
-        iceberg_writer: Option<iceberg::BanWriter>,
+        iceberg_writer: iceberg::BanWriter,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_sink, verified_sink_server) = VerifiedBanIngestReportV1::file_sink(
             settings.store_base_path(),
@@ -102,7 +100,7 @@ impl BanIngestor {
         authorized_keys: AuthorizedKeys,
         report_rx: Receiver<FileInfoStream<BanReport>>,
         verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
-        iceberg_writer: Option<iceberg::BanWriter>,
+        iceberg_writer: iceberg::BanWriter,
     ) -> Self {
         Self {
             pool,
@@ -120,6 +118,8 @@ impl BanIngestor {
         let write_id = file_info_stream.file_info.key.clone();
         tracing::info!(file = %write_id, "processing");
 
+        // Bans are not stored locally; the transaction exists only so the
+        // file-info poller can record this file as processed.
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
@@ -127,18 +127,15 @@ impl BanIngestor {
         let mut invalid_iceberg_records = vec![];
 
         while let Some(report) = stream.next().await {
-            let verified_report =
-                process_ban_report(&mut txn, &self.authorized_keys, report).await?;
-            if self.iceberg_writer.is_some() {
-                let record = iceberg::IcebergBan::from(&verified_report);
-                if verified_report.is_valid() {
-                    iceberg_records.push(record);
-                } else {
-                    invalid_iceberg_records.push(iceberg::IcebergInvalidBan::new(
-                        record,
-                        verified_report.status,
-                    ));
-                }
+            let verified_report = process_ban_report(&self.authorized_keys, report);
+            let record = iceberg::IcebergBan::from(&verified_report);
+            if verified_report.is_valid() {
+                iceberg_records.push(record);
+            } else {
+                invalid_iceberg_records.push(iceberg::IcebergInvalidBan::new(
+                    record,
+                    verified_report.status,
+                ));
             }
             let status = verified_report.status.as_str_name();
             self.verified_sink
@@ -146,11 +143,9 @@ impl BanIngestor {
                 .await?;
         }
 
-        if let Some(writer) = self.iceberg_writer.as_ref() {
-            writer
-                .write(&write_id, iceberg_records, invalid_iceberg_records)
-                .await?;
-        }
+        self.iceberg_writer
+            .write(&write_id, iceberg_records, invalid_iceberg_records)
+            .await?;
 
         self.verified_sink.commit().await?;
         txn.commit().await?;
@@ -159,23 +154,21 @@ impl BanIngestor {
     }
 }
 
-pub async fn process_ban_report(
-    conn: &mut PgConnection,
+/// Stamp a ban report with whether its submitter was authorized to issue bans.
+///
+/// The verdict is the whole product: the report is republished for
+/// mobile-packet-verifier to act on, and nothing is recorded locally.
+pub fn process_ban_report(
     auth_verifier: &impl AuthorizationVerifier,
     report: BanReport,
-) -> anyhow::Result<VerifiedBanReport> {
+) -> VerifiedBanReport {
     let status = get_verified_status(auth_verifier, &report.report.ban_pubkey);
 
-    let verified_report = VerifiedBanReport {
+    VerifiedBanReport {
         verified_timestamp: Utc::now(),
         report,
         status,
-    };
-
-    if verified_report.is_valid() {
-        db::update_hotspot_ban(conn, &verified_report).await?;
     }
-    Ok(verified_report)
 }
 
 fn get_verified_status(

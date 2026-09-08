@@ -1,6 +1,5 @@
-use crate::rewarder::{self, EpochInfo};
+use crate::rewarder::{EpochInfo, RewarderState};
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Postgres};
 
 const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";
 const DATA_TRANSFER_REWARDS_SCALE: &str = "data_transfer_rewards_scale";
@@ -9,8 +8,8 @@ const DATA_TRANSFER_ACTUAL_PRICE_PER_GB: &str = "data_transfer_actual_price_per_
 const DATA_TRANSFER_REWARDED_GATEWAYS: &str = "data_transfer_rewarded_gateways";
 const MAPPERS_REWARDED: &str = "mappers_rewarded";
 
-pub async fn initialize(db: &Pool<Postgres>) -> anyhow::Result<()> {
-    let next_reward_epoch = rewarder::next_reward_epoch(db).await?;
+pub async fn initialize(state: &RewarderState) -> anyhow::Result<()> {
+    let next_reward_epoch = state.next_reward_epoch().await?;
     let epoch_period: EpochInfo = next_reward_epoch.into();
     last_rewarded_end_time(epoch_period.period.start);
     Ok(())

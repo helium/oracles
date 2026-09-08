@@ -6,7 +6,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult,
 };
-use mobile_verifier::speedtests::{SpeedtestDaemon, BYTES_PER_MEGABIT};
+use mobile_verifier::speedtests::{RecentSpeedtests, SpeedtestDaemon, BYTES_PER_MEGABIT};
 use mobile_verifier::{GatewayResolution, GatewayResolver};
 use sqlx::{Pool, Postgres};
 
@@ -49,14 +49,18 @@ async fn speedtests_average_should_only_include_last_48_hours(
 
     // Drop the daemon when it's done running to close the channel
     {
+        let harness = common::setup_iceberg().await?;
+        let poc_writers = common::poc_writers(&harness).await?;
+
         let daemon = SpeedtestDaemon::new(
             pool.clone(),
+            RecentSpeedtests::new(),
             gateway_info_resolver,
             rx,
             speedtest_avg_client,
             verified_client,
-            None,
-            None,
+            poc_writers.speedtest,
+            poc_writers.speedtest_avg,
         );
 
         daemon.process_file(stream).await?;
@@ -81,14 +85,18 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
+
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
+        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
         speedtest_avg_client,
         verified_client,
-        None,
-        None,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
     );
 
     let speedtest_report = CellSpeedtestIngestReport {
@@ -121,14 +129,18 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
+
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
+        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
         speedtest_avg_client,
         verified_client,
-        None,
-        None,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with download speed > 300Mbits
@@ -162,14 +174,18 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
+
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
+        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
         speedtest_avg_client,
         verified_client,
-        None,
-        None,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with both speeds > 300Mbits
@@ -203,14 +219,18 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
+
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
+        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
         speedtest_avg_client,
         verified_client,
-        None,
-        None,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with both speeds within 300Mbits limit
@@ -244,14 +264,18 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
+
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
+        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
         speedtest_avg_client,
         verified_client,
-        None,
-        None,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with speeds exactly at 300Mbits limit
@@ -349,14 +373,18 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
 
     // Drop the daemon when it's done running to close the channel
     {
+        let harness = common::setup_iceberg().await?;
+        let poc_writers = common::poc_writers(&harness).await?;
+
         let daemon = SpeedtestDaemon::new(
             pool.clone(),
+            RecentSpeedtests::new(),
             gateway_info_resolver,
             rx,
             speedtest_avg_client,
             verified_client,
-            None,
-            None,
+            poc_writers.speedtest,
+            poc_writers.speedtest_avg,
         );
 
         daemon.process_file(stream).await?;

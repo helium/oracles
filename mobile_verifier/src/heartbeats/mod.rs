@@ -11,11 +11,9 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
-use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::PgTransaction;
-use std::{ops::Range, pin::pin, time};
+use std::{ops::Range, pin::pin};
 use uuid::Uuid;
 
 use self::last_location::{LastLocation, LocationCache};
@@ -96,7 +94,6 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         heartbeat: Heartbeat,
         cell_type: CellType,
@@ -224,7 +221,7 @@ impl ValidatedHeartbeat {
             None => {
                 if let Some(last_location) = last_location_cache
                     .get(&heartbeat.hotspot_key, heartbeat.timestamp)
-                    .await?
+                    .await
                 {
                     heartbeat.lat = last_location.lat;
                     heartbeat.lon = last_location.lon;
@@ -320,40 +317,13 @@ impl ValidatedHeartbeat {
             .await?;
         Ok(())
     }
-
-    pub async fn save(self, exec: &mut PgTransaction<'_>) -> anyhow::Result<()> {
-        let truncated_timestamp = self.truncated_timestamp()?;
-        sqlx::query(
-            r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, location_validation_timestamp, lat, lon)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
-            first_timestamp = EXCLUDED.first_timestamp,
-            coverage_object = EXCLUDED.coverage_object
-            "#,
-        )
-        .bind(self.heartbeat.hotspot_key)
-        .bind(self.cell_type)
-        .bind(self.heartbeat.timestamp)
-        .bind(truncated_timestamp)
-        .bind(self.heartbeat.coverage_object)
-        .bind(self.location_trust_score_multiplier)
-        .bind(self.distance_to_asserted)
-        .bind(self.heartbeat.location_validation_timestamp)
-        .bind(self.heartbeat.lat)
-        .bind(self.heartbeat.lon)
-        .execute(&mut **exec)
-        .await?;
-        Ok(())
-    }
 }
 
 pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
-    heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
-    transaction: &mut PgTransaction<'_>,
-    iceberg_ctx: Option<(&crate::iceberg::HeartbeatWriter, &str)>,
+    iceberg_writer: &crate::iceberg::HeartbeatWriter,
+    write_id: &str,
 ) -> anyhow::Result<()> {
     let mut iceberg_records = Vec::new();
     let mut invalid_iceberg_records = Vec::new();
@@ -361,49 +331,21 @@ pub(crate) async fn process_validated_heartbeats(
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 
-        if iceberg_ctx.is_some() {
-            let record = crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat);
-            if validated_heartbeat.is_valid() {
-                iceberg_records.push(record);
-            } else {
-                invalid_iceberg_records.push(crate::iceberg::IcebergInvalidHeartbeat::new(
-                    record,
-                    validated_heartbeat.validity,
-                ));
-            }
-        }
-
-        if !validated_heartbeat.is_valid() {
-            continue;
-        }
-
-        let key = validated_heartbeat.heartbeat.id()?;
-        if heartbeat_cache.get(&key).await.is_none() {
-            validated_heartbeat.save(&mut *transaction).await?;
-            heartbeat_cache
-                .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
-                .await;
+        let record = crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat);
+        if validated_heartbeat.is_valid() {
+            iceberg_records.push(record);
+        } else {
+            invalid_iceberg_records.push(crate::iceberg::IcebergInvalidHeartbeat::new(
+                record,
+                validated_heartbeat.validity,
+            ));
         }
     }
 
-    if let Some((writer, id)) = iceberg_ctx {
-        writer
-            .write(id, iceberg_records, invalid_iceberg_records)
-            .await
-            .context("writing heartbeats idempotently")?;
-    }
-
-    Ok(())
-}
-
-pub async fn clear_heartbeats(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
-        .bind(timestamp)
-        .execute(&mut **tx)
-        .await?;
+    iceberg_writer
+        .write(write_id, iceberg_records, invalid_iceberg_records)
+        .await
+        .context("writing heartbeats idempotently")?;
 
     Ok(())
 }

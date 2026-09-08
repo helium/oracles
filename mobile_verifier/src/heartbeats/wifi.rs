@@ -2,29 +2,28 @@ use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
     geofence::GeofenceValidator, heartbeats::LocationCache, iceberg, GatewayResolver, Settings,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::Duration;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, BucketClient,
 };
 use file_store_oracles::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
 use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
-use retainer::Cache;
 use sqlx::PgPool;
-use std::{
-    sync::Arc,
-    time::{self, Instant},
-};
+use std::time::Instant;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 pub struct WifiHeartbeatDaemon<GIR, GFV> {
     pool: PgPool,
+    /// Shared with the refresher task that reloads it (see
+    /// [`LocationCache::refresher`]).
+    location_cache: LocationCache,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     geofence: GFV,
-    iceberg_writer: Option<iceberg::HeartbeatWriter>,
+    iceberg_writer: iceberg::HeartbeatWriter,
 }
 
 impl<GIR, GFV> WifiHeartbeatDaemon<GIR, GFV>
@@ -32,15 +31,16 @@ where
     GIR: GatewayResolver,
     GFV: GeofenceValidator,
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
         bucket_client: BucketClient,
+        location_cache: LocationCache,
         gateway_resolver: GIR,
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
-        iceberg_writer: Option<iceberg::HeartbeatWriter>,
+        iceberg_writer: iceberg::HeartbeatWriter,
     ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
@@ -53,6 +53,7 @@ where
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
             pool,
+            location_cache,
             gateway_resolver,
             wifi_heartbeats,
             valid_heartbeats,
@@ -68,14 +69,16 @@ where
 
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
+        location_cache: LocationCache,
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
-        iceberg_writer: Option<iceberg::HeartbeatWriter>,
+        iceberg_writer: iceberg::HeartbeatWriter,
     ) -> Self {
         Self {
             pool,
+            location_cache,
             gateway_info_resolver,
             heartbeats,
             heartbeat_sink,
@@ -86,16 +89,6 @@ where
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting Wifi HeartbeatDaemon");
-        let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
-
-        let heartbeat_cache_clone = heartbeat_cache.clone();
-        tokio::spawn(async move {
-            heartbeat_cache_clone
-                .monitor(4, 0.25, time::Duration::from_secs(60 * 60 * 3))
-                .await
-        });
-
-        let location_cache = LocationCache::new(&self.pool);
 
         loop {
             tokio::select! {
@@ -106,11 +99,7 @@ where
                 }
                 Some(file) = self.heartbeats.recv() => {
                     let start = Instant::now();
-                    self.process_file(
-                        file,
-                        &heartbeat_cache,
-                        &location_cache
-                    ).await?;
+                    self.process_file(file).await?;
                     metrics::histogram!("wifi_heartbeat_processing_time")
                         .record(start.elapsed());
                 }
@@ -123,16 +112,16 @@ where
     async fn process_file(
         &self,
         file: FileInfoStream<WifiHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
-        location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
         tracing::info!(
             file_key = file.file_info.key,
             "Processing WIFI heartbeat file"
         );
+        // Heartbeats themselves are no longer stored in Postgres; the
+        // transaction exists only so the file-info poller can record this file
+        // as processed atomically with the rest of the batch.
         let mut transaction = self.pool.begin().await?;
         let write_id = file.file_info.key.clone();
-        let iceberg_ctx = self.iceberg_writer.as_ref().map(|w| (w, write_id.as_str()));
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let heartbeats = file
@@ -143,14 +132,13 @@ where
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
                 &self.gateway_info_resolver,
-                location_cache,
+                &self.location_cache,
                 &epoch,
                 &self.geofence,
             ),
-            heartbeat_cache,
             &self.heartbeat_sink,
-            &mut transaction,
-            iceberg_ctx,
+            &self.iceberg_writer,
+            &write_id,
         )
         .await?;
         self.heartbeat_sink.commit().await?;

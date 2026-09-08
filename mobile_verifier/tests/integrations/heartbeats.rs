@@ -2,14 +2,12 @@ use chrono::{DateTime, Duration, Utc};
 use file_store_oracles::wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
+use helium_proto::services::poc_mobile::LocationSource;
 use mobile_verifier::{
-    cell_type::CellType,
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, ValidatedHeartbeat},
 };
 use rust_decimal_macros::dec;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::common::GatewayClientAllOwnersValid;
@@ -26,8 +24,8 @@ impl GeofenceValidator for MockGeofence {
 /// The reworked `validate` sources radio type from the mobile-config device type
 /// (indoor here) and applies the HIP-119 asserted-distance trust curve to the
 /// distance between the heartbeat and the gateway's asserted location.
-#[sqlx::test]
-async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn ensure_lower_trust_score_for_distant_heartbeats() -> anyhow::Result<()> {
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
         .parse()
         .unwrap();
@@ -36,7 +34,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     // (and thus the trust multiplier) is measured from it.
     let asserted_latlng = LatLng::from("8c2681a3064d9ff".parse::<CellIndex>()?);
 
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new();
 
     let mk_heartbeat = |latlng: LatLng| WifiHeartbeatIngestReport {
         report: WifiHeartbeat {
@@ -90,44 +88,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         validate(past_latlng).await?.location_trust_score_multiplier,
         dec!(0.00)
     );
-
-    Ok(())
-}
-
-#[sqlx::test]
-async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
-    let coverage_object = Uuid::new_v4();
-    let heartbeat = ValidatedHeartbeat {
-        heartbeat: Heartbeat {
-            hotspot_key: "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
-                .parse()
-                .unwrap(),
-            operation_mode: true,
-            lat: 0.0,
-            lon: 0.0,
-            coverage_object: Some(coverage_object),
-            location_validation_timestamp: None,
-            timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
-            heartbeat_timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
-            location_source: LocationSource::Skyhook,
-        },
-        cell_type: CellType::SercommIndoor,
-        distance_to_asserted: Some(1000), // Cannot be null
-        asserted_location: None,
-        device_type: None,
-        location_trust_score_multiplier: dec!(1.0),
-        validity: HeartbeatValidity::Valid,
-    };
-
-    let mut transaction = pool.begin().await?;
-
-    heartbeat.save(&mut transaction).await?;
-
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wifi_heartbeats")
-        .fetch_one(&mut *transaction)
-        .await?;
-
-    assert_eq!(count, 1);
 
     Ok(())
 }

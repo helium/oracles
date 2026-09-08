@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use file_store_oracles::speedtest::CellSpeedtestIngestReport;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,48 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             SortFieldDefinition::ascending("received_timestamp"),
         ])
         .build()
+}
+
+/// Fetch the most recent speedtests per hotspot received at or after `since`,
+/// capped at `per_hotspot` rows each.
+///
+/// Warms [`crate::speedtests::RecentSpeedtests`] at startup so the first report
+/// after a restart still averages over a full window. The `ROW_NUMBER` filter is
+/// the Trino equivalent of the old per-pubkey `ORDER BY timestamp DESC LIMIT n`
+/// query against Postgres, run once for every hotspot at once.
+pub async fn recent_speedtests(
+    trino: &trino_client::Client,
+    since: DateTime<Utc>,
+    per_hotspot: usize,
+) -> anyhow::Result<Vec<IcebergSpeedtest>> {
+    let rows = trino
+        .get_all(recent_speedtests_statement(since, per_hotspot).typed::<IcebergSpeedtest>())
+        .await?;
+    Ok(rows)
+}
+
+fn recent_speedtests_statement(
+    since: DateTime<Utc>,
+    per_hotspot: usize,
+) -> trino_client::Statement {
+    // `per_hotspot` is a compile-time constant from the caller, not user input.
+    trino_client::Statement::new(format!(
+        "
+        SELECT hotspot_pubkey, serial, received_timestamp, timestamp,
+               upload_speed, download_speed, latency
+        FROM (
+            SELECT hotspot_pubkey, serial, received_timestamp, timestamp,
+                   upload_speed, download_speed, latency,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY hotspot_pubkey ORDER BY timestamp DESC
+                   ) AS rn
+            FROM {NAMESPACE}.{TABLE_NAME}
+            WHERE received_timestamp >= :since
+        )
+        WHERE rn <= {per_hotspot}
+        "
+    ))
+    .bind("since", since)
 }
 
 pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<IcebergSpeedtest>> {

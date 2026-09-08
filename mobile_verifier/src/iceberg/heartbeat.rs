@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use helium_iceberg::{FieldDefinition, PartitionDefinition, SortFieldDefinition, TableDefinition};
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,60 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
             SortFieldDefinition::ascending("received_timestamp"),
         ])
         .build()
+}
+
+/// The most recent validated location per hotspot, as of a lookback window.
+///
+/// Read side of the `location_validation_timestamp` columns written above. Used
+/// to warm [`crate::heartbeats::last_location::LocationCache`] at startup, which
+/// previously recovered this from the `wifi_heartbeats` Postgres table.
+#[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
+pub struct LatestValidatedLocation {
+    pub hotspot_pubkey: String,
+    pub location_validation_timestamp: DateTime<FixedOffset>,
+    pub received_timestamp: DateTime<FixedOffset>,
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Fetch the latest validated location for every hotspot that reported one at or
+/// after `since`.
+///
+/// One row per hotspot — the `ROW_NUMBER` filter is the Trino equivalent of the
+/// old query's `ORDER BY first_timestamp DESC LIMIT 1`. Rows whose validation
+/// timestamp has since gone stale are not filtered here; the cache applies its
+/// own 24-hour validity check per heartbeat (`LastLocation::still_valid`).
+pub async fn latest_validated_locations(
+    trino: &trino_client::Client,
+    since: DateTime<Utc>,
+) -> anyhow::Result<Vec<LatestValidatedLocation>> {
+    let rows = trino
+        .get_all(latest_validated_locations_statement(since).typed::<LatestValidatedLocation>())
+        .await?;
+    Ok(rows)
+}
+
+fn latest_validated_locations_statement(since: DateTime<Utc>) -> trino_client::Statement {
+    trino_client::Statement::new(format!(
+        "
+        SELECT hotspot_pubkey, location_validation_timestamp, received_timestamp, lat, lon
+        FROM (
+            SELECT hotspot_pubkey,
+                   location_validation_timestamp,
+                   received_timestamp,
+                   lat,
+                   lon,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY hotspot_pubkey ORDER BY received_timestamp DESC
+                   ) AS rn
+            FROM {NAMESPACE}.{TABLE_NAME}
+            WHERE received_timestamp >= :since
+              AND location_validation_timestamp IS NOT NULL
+        )
+        WHERE rn = 1
+        "
+    ))
+    .bind("since", since)
 }
 
 pub async fn get_all(trino: &trino_rust_client::Client) -> anyhow::Result<Vec<IcebergHeartbeat>> {

@@ -48,9 +48,30 @@ pub struct Settings {
     /// Trino inventory table (see [`crate::gateway`]).
     #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
     pub gateway_refresh_interval: Duration,
+    /// How often the last-validated-location cache is reloaded from
+    /// `poc.heartbeats` (see [`crate::heartbeats::last_location`]). The cache is
+    /// process-local, so this is what picks up locations validated by another
+    /// instance; keep it well under the 24-hour validity window.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_location_cache_refresh_interval"
+    )]
+    pub location_cache_refresh_interval: Duration,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
-    pub iceberg_settings: Option<helium_iceberg::Settings>,
+    /// Optional path to a local JSON file mirroring the rewarder's own `meta`
+    /// state — `next_reward_epoch` and `disable_complete_data_checks_until`.
+    /// Postgres remains the source of truth and serves every read; the file is
+    /// written alongside it so a deployment can be kept ready for the eventual
+    /// cutover. See [`crate::rewarder::meta_state`].
+    #[serde(default)]
+    pub rewarder_state_file: Option<PathBuf>,
+    /// Iceberg catalog. Required: heartbeats and speedtests are written here and
+    /// nowhere else in a queryable form, and they are read back through Trino to
+    /// warm the last-location and speedtest windows and to gate rewarding on
+    /// data currency. Without it those reads return nothing and the rewarder
+    /// never fires.
+    pub iceberg_settings: helium_iceberg::Settings,
     /// Trino query client. Required: each epoch the reward pipeline recovers the
     /// HNT price from on-chain deployer-cap data via Trino
     /// (`solana.public.dao_epoch_infos` joined to `sub_dao_epoch_infos`) instead
@@ -62,6 +83,10 @@ pub struct Settings {
     pub usa_and_mexico_geofence_regions: PathBuf,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
+}
+
+fn default_location_cache_refresh_interval() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
 fn default_fencing_resolution() -> u8 {
