@@ -32,9 +32,10 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         );
     }
 
-    let s3_client = settings.file_store.connect().await;
+    let (output_bucket, additional_output_buckets) = settings.output_buckets().await?;
     let (file_upload, file_upload_server) =
-        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
+        file_upload::FileUpload::with_additional_buckets(output_bucket, additional_output_buckets)
+            .await;
 
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
         &settings.cache,

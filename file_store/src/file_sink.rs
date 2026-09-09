@@ -20,10 +20,14 @@ use tokio::{
 
 pub const DEFAULT_SINK_ROLL_SECS: u64 = 3 * 60;
 
-#[cfg(not(test))]
-pub const SINK_CHECK_MILLIS: u64 = 60_000;
-#[cfg(test)]
-pub const SINK_CHECK_MILLIS: u64 = 50;
+/// Longest a sink waits between checks for a file that is due to roll. The
+/// check interval is the configured roll time capped at this, so a sink told to
+/// roll every few seconds actually does — before this was a flat 60s, a
+/// `roll_time` shorter than the interval was silently rounded up to it, and the
+/// tests had to override the constant under `cfg(test)` to observe a roll at
+/// all. At or above 60s (every deployment: the default roll time is 3 minutes,
+/// ingest configures 15) the interval is unchanged.
+pub const MAX_SINK_CHECK_MILLIS: u64 = 60_000;
 
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
@@ -303,7 +307,13 @@ impl<T: prost::Message> FileSink<T> {
             self.target_path.display()
         );
 
-        let mut rollover_timer = time::interval(Duration::from_millis(SINK_CHECK_MILLIS));
+        let check_interval = self
+            .rolling_sink
+            .roll_time()
+            .min(Duration::from_millis(MAX_SINK_CHECK_MILLIS))
+            // `interval` panics on a zero period.
+            .max(Duration::from_millis(1));
+        let mut rollover_timer = time::interval(check_interval);
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
 
         loop {

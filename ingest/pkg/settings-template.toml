@@ -52,14 +52,49 @@ carrier_authorized_keys = "key1,key2"
 #
 # data_transfer_multiplier_ticket_max_age = "10 minutes"
 
-[output]
-# Output bucket for ingested data
+# Name of the bucket ingested files are written to. Required. Its credentials,
+# region and endpoint come from [file_store] below.
+output_bucket = "ingest-bucket"
 
-# Name of bucket to write details to. Required
+# Optional. Additional buckets that each receive a byte-for-byte copy of every
+# file written to output_bucket, under the same key. Leave them out entirely to
+# write only to output_bucket.
 #
-bucket = "ingest-bucket"
+# Each entry is keyed by a name you choose — that name is what shows up in log
+# lines and config errors — and is fully self-contained: it inherits nothing
+# from [file_store]. That is deliberate, and it is what lets a mirror live on a
+# different provider than output_bucket. Borrowing the S3 account's region or
+# key pair for a Cloudflare R2 bucket would only build a client that can
+# authenticate against neither.
+#
+# A file is removed from the local cache only once every bucket has it: if one
+# bucket keeps failing, the file stays on disk rather than that copy being lost.
+#
+# Mirroring an S3 output_bucket to R2. region is "auto" for R2, and the key pair
+# is an R2 API token, not the AWS one:
+#
+# [additional_output_buckets.r2]
+# bucket = "ingest-bucket-mirror"
+# endpoint = "https://<account_id>.r2.cloudflarestorage.com"
+# region = "auto"
+# access_key_id = "<r2 access key id>"
+# secret_access_key = "<r2 secret access key>"
+#
+# Credentials do not have to live in this file. Every setting can come from the
+# environment instead, prefixed with INGEST__ and nested with __ — note the
+# double underscore after the prefix too:
+#
+#   INGEST__ADDITIONAL_OUTPUT_BUCKETS__R2__SECRET_ACCESS_KEY=<r2 secret>
+#
+# Set both access_key_id and secret_access_key or neither. With only one of
+# them the S3 client silently ignores both and falls back to the ambient AWS
+# credential chain, which cannot authenticate against R2 — so ingest refuses to
+# start on a half-configured entry rather than failing every upload later.
 
-# Region for bucket. Defaults to below
+[file_store]
+# AWS settings for output_bucket. Additional buckets above do NOT read these.
+
+# Region for the bucket. Defaults to below
 #
 # region = "us-west-2"
 
