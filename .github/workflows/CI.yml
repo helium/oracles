@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
     branches: ["main"]
+    # A dbt-only change has no Rust to build; .github/workflows/dbt.yml covers
+    # dbt/. Should a dbt model ever read an oracle-written table, that workflow
+    # gains a trigger on the Rust defining it -- see the note in its `paths`.
+    paths-ignore:
+      - "dbt/**"
   push:
     branches: ["main"]
     tags: ["*"]

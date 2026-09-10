@@ -1,0 +1,11 @@
+target/
+dbt_packages/
+logs/
+.user.yml
+.venv/
+
+# The repo root ignores *.json globally (../.gitignore), which would silently
+# drop any dbt fixture or seed in JSON. Re-include them here. The build
+# directories above are ignored as directories, so git never descends into them
+# and this cannot pull in artefacts.
+!*.json

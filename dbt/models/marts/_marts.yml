@@ -1,0 +1,49 @@
+version: 2
+
+# Every mart declares two things: the schema it belongs to (in the model's own
+# config -- the schema of the data it summarises, not a shared `analytics`
+# bucket) and its grain, as a test. These are the assertions that catch a
+# source schema change turning a rollup into a fan-out: if an upstream change
+# splits what used to be one row per key, the grain test fails loudly instead of
+# every downstream count quietly doubling.
+
+models:
+  - name: enabled_carriers_inventory
+    description: >
+      Current carrier enablement per hotspot -- which carriers are turned on,
+      which are in demand-sampling, and the firmware that reported it. One row
+      per hotspot, being its latest report; the full history is beside it in
+      `hotspots.enabled_carriers_history`.
+
+      Columns track the source's, including any added upstream
+      (`on_schema_change='append_new_columns'`), so this is deliberately not an
+      exhaustive column list. Only the grain and the fields a consumer joins on
+      are pinned here.
+    columns:
+      - name: hotspot_pubkey
+        description: The grain. One row per hotspot.
+        tests: [not_null, unique]
+      - name: received_timestamp
+        description: >
+          When ingest received the winning report. Authoritative clock, and the
+          source's partition key -- the incremental watermark is built on it.
+        tests: [not_null]
+      - name: timestamp
+        description: >
+          Clock supplied by the reporting device: the moment whose state this
+          row describes. Decides which report wins within a hotspot, and is not
+          to be used as a watermark -- see the model's header.
+        tests: [not_null]
+      - name: enabled_carriers
+        description: >
+          array(varchar). Nullable, and a null is not an empty array: absent
+          means the report carried no list, empty means it carried one with
+          nothing in it.
+      - name: sampling_enabled_carriers
+        description: array(varchar). Carriers in a demand-sampling window. Nullable, as above.
+      - name: file_ts
+        description: Ingest file the winning row came from.
+        tests: [not_null]
+      - name: record_index
+        description: Offset of the winning record within that file.
+        tests: [not_null]
