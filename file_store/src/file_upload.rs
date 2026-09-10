@@ -1,7 +1,8 @@
-use crate::{error::ChannelError, BucketClient, Result};
-use futures::StreamExt;
+use crate::{error::ChannelError, BucketClient, Error, Result};
+use futures::{stream, StreamExt};
 use metrics::Label;
 use std::{
+    io::ErrorKind,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -25,20 +26,19 @@ pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
         .map_err(|_| ChannelError::upload_closed(file))
 }
 
-#[derive(Debug, Clone)]
-pub struct FileUpload {
-    pub sender: MessageSender,
-    completion_rx: watch::Receiver<u64>,
-}
-
-pub struct FileUploadServer {
-    messages: UnboundedReceiverStream<PathBuf>,
-    /// Every bucket a file is written to. Always at least one; each gets the
-    /// same key and the same bytes.
-    buckets: Vec<BucketClient>,
-    completion_tx: std::sync::Arc<watch::Sender<u64>>,
-    max_retries: u8,
-    retry_wait: Duration,
+/// Somewhere a rolled file can be handed off to be stored.
+///
+/// A sink does not know, and does not need to know, whether its output goes to
+/// one bucket or several. It hands the file over; from that point the uploader
+/// owns it, including removing it once it is safely stored.
+///
+/// Implemented by [`FileUpload`] for a single bucket and [`MultiFileUpload`]
+/// for several. A [`crate::file_sink::FileSink`] is generic over this, and the
+/// concrete type is inferred from the uploader handed to
+/// [`crate::FileSinkBuilder::new`], so no caller has to name it.
+#[async_trait::async_trait]
+pub trait FileUploader: Send + Sync {
+    async fn upload_file(&self, file: &Path) -> Result;
 }
 
 const DEFAULT_MAX_RETRIES: u8 = 5;
@@ -50,8 +50,8 @@ const DEFAULT_RETRY_WAIT: Duration = Duration::from_secs(10);
 /// One increment per file per bucket, once that bucket has either stored the
 /// file or exhausted its retries — not one per attempt. A bucket that quietly
 /// stops accepting files is otherwise invisible from the outside: the uploader
-/// keeps the local copy and logs an error, while the service goes on serving
-/// traffic and looking healthy. Alert on `status="error"` per bucket.
+/// keeps its copy and logs an error, while the service goes on serving traffic
+/// and looking healthy. Alert on `status="error"` per bucket.
 pub const UPLOAD_METRIC: &str = "file_store_upload";
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
@@ -64,31 +64,58 @@ fn upload_counter(bucket: &str, status: Label) -> metrics::Counter {
     )
 }
 
+/// Uploads files to a single bucket.
+///
+/// Built with [`FileUpload::from_bucket_client`] it uploads files from wherever
+/// they are handed to it, and the sink that wrote them is responsible for
+/// re-queueing anything left behind.
+///
+/// Built with [`FileUpload::staged_in`] it instead owns a directory: files live
+/// there until the bucket has them, it is the only thing that removes them, and
+/// it re-queues whatever it finds there at startup. That is what lets several
+/// uploaders share one rolled file without racing each other to delete it, and
+/// is required to put one under a [`MultiFileUpload`].
+#[derive(Debug, Clone)]
+pub struct FileUpload {
+    pub sender: MessageSender,
+    completion_rx: watch::Receiver<u64>,
+    dir: Option<PathBuf>,
+}
+
+pub struct FileUploadServer {
+    messages: UnboundedReceiverStream<PathBuf>,
+    bucket: BucketClient,
+    dir: Option<PathBuf>,
+    completion_tx: std::sync::Arc<watch::Sender<u64>>,
+    max_retries: u8,
+    retry_wait: Duration,
+}
+
 impl FileUpload {
     pub async fn new(client: crate::Client, bucket: String) -> (Self, FileUploadServer) {
         Self::from_bucket_client(BucketClient { client, bucket }).await
     }
 
-    pub async fn from_bucket_client(bucket_client: BucketClient) -> (Self, FileUploadServer) {
-        Self::with_additional_buckets(bucket_client, vec![]).await
+    /// An uploader that stores files wherever they are handed to it.
+    pub async fn from_bucket_client(bucket: BucketClient) -> (Self, FileUploadServer) {
+        Self::build(bucket, None)
     }
 
-    /// Uploads every file to `bucket` and, byte for byte and under the same
-    /// key, to each of `additional_buckets`.
+    /// An uploader that owns `dir`, created if missing.
     ///
-    /// A local file is only deleted once every bucket has it, so a bucket that
-    /// is failing never costs the others their copy. Nothing re-queues a file
-    /// whose upload was abandoned, so a file left behind stays in the cache
-    /// directory until the process restarts — [`crate::file_sink::FileSink`]
-    /// rescans that directory on startup and queues what it finds.
-    pub async fn with_additional_buckets(
+    /// Files handed to it are expected to live there, it removes them once the
+    /// bucket has them, and at startup it re-queues whatever is still there.
+    /// Required to place an uploader under a [`MultiFileUpload`].
+    pub async fn staged_in(
         bucket: BucketClient,
-        additional_buckets: Vec<BucketClient>,
-    ) -> (Self, FileUploadServer) {
-        let mut buckets = Vec::with_capacity(1 + additional_buckets.len());
-        buckets.push(bucket);
-        buckets.extend(additional_buckets);
+        dir: impl AsRef<Path>,
+    ) -> Result<(Self, FileUploadServer)> {
+        let dir = dir.as_ref().to_path_buf();
+        fs::create_dir_all(&dir).await?;
+        Ok(Self::build(bucket, Some(dir)))
+    }
 
+    fn build(bucket: BucketClient, dir: Option<PathBuf>) -> (Self, FileUploadServer) {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (completion_tx, completion_rx) = watch::channel(0u64);
         let completion_tx = std::sync::Arc::new(completion_tx);
@@ -96,10 +123,12 @@ impl FileUpload {
             Self {
                 sender,
                 completion_rx,
+                dir: dir.clone(),
             },
             FileUploadServer {
                 messages: UnboundedReceiverStream::new(receiver),
-                buckets,
+                bucket,
+                dir,
                 completion_tx,
                 max_retries: DEFAULT_MAX_RETRIES,
                 retry_wait: DEFAULT_RETRY_WAIT,
@@ -107,14 +136,21 @@ impl FileUpload {
         )
     }
 
-    /// Creates a `FileUpload` from a raw sender with a no-op completion tracker.
-    /// Useful in tests that inspect the raw upload channel directly.
+    /// Creates a `FileUpload` from a raw sender with a no-op completion tracker
+    /// and no directory. Useful in tests that inspect the raw upload channel
+    /// directly and never run the server.
     pub fn from_sender(sender: MessageSender) -> Self {
         let (_tx, rx) = watch::channel(0u64);
         Self {
             sender,
             completion_rx: rx,
+            dir: None,
         }
+    }
+
+    /// The directory this uploader owns, if it was given one.
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
     }
 
     pub async fn upload_file(&self, file: &Path) -> Result {
@@ -123,22 +159,25 @@ impl FileUpload {
             .map_err(|_| ChannelError::upload_closed(file))
     }
 
-    /// Returns the total number of upload attempts that have finished
-    /// (success, skipped, or exhausted retries).
-    ///
-    /// Counted per file, not per bucket: one file fanned out to three buckets
-    /// counts once, when the last bucket is done with it.
+    /// Returns the number of files this uploader has finished with (stored,
+    /// skipped, or given up on).
     pub fn completed_uploads(&self) -> u64 {
         *self.completion_rx.borrow()
     }
 
-    /// Waits until at least `n` upload attempts have completed in total
-    /// (success, skipped, or exhausted retries).
+    /// Waits until at least `n` files have been finished with.
     /// Intended for test use to synchronize on upload completion without
     /// blocking or changing production flows.
     pub async fn wait_for_uploads_at_least(&self, n: u64) {
         let mut rx = self.completion_rx.clone();
         let _ = rx.wait_for(|&count| count >= n).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl FileUploader for FileUpload {
+    async fn upload_file(&self, file: &Path) -> Result {
+        FileUpload::upload_file(self, file).await
     }
 }
 
@@ -149,13 +188,12 @@ impl ManagedTask for FileUploadServer {
 }
 
 impl FileUploadServer {
-    /// The buckets this server writes each file to, in configured order.
-    pub fn buckets(&self) -> Vec<&str> {
-        self.buckets.iter().map(|b| b.bucket.as_str()).collect()
+    pub fn bucket(&self) -> &str {
+        &self.bucket.bucket
     }
 
-    /// Overrides how hard a single bucket is retried before the file is
-    /// abandoned. Intended for tests, which cannot afford to sit through the
+    /// Overrides how hard the bucket is retried before a file is left for the
+    /// next startup. Intended for tests, which cannot afford to sit through the
     /// production backoff to observe what happens when a bucket never accepts
     /// the file.
     pub fn with_retry_policy(mut self, max_retries: u8, retry_wait: Duration) -> Self {
@@ -165,80 +203,196 @@ impl FileUploadServer {
     }
 
     pub async fn run(self, shutdown: triggered::Listener) -> Result {
-        let bucket_names = self.buckets().join(", ");
-        tracing::info!("starting file uploader {bucket_names}");
-
-        // Seed both series per bucket so a bucket that has never failed reports
-        // zero rather than being absent. Without this an alert cannot tell "no
-        // failures" from "this uploader is not reporting at all".
-        for bucket in self.buckets() {
-            upload_counter(bucket, OK_LABEL).increment(0);
-            upload_counter(bucket, ERROR_LABEL).increment(0);
-        }
-
         let Self {
             messages,
-            buckets,
+            bucket,
+            dir,
             completion_tx,
             max_retries,
             retry_wait,
         } = self;
-        let buckets = &buckets;
-        let completion_tx = &completion_tx;
-        let bucket_names = &bucket_names;
 
-        let uploads = messages.for_each_concurrent(5, |path| async move {
-            let path_str = path.display();
-            if !path.exists() {
-                tracing::warn!("ignoring absent file {path_str}");
-                completion_tx.send_modify(|n| *n += 1);
-                return;
-            }
-            if !path.is_file() {
-                tracing::warn!("ignoring non file {path_str}");
-                completion_tx.send_modify(|n| *n += 1);
-                return;
-            }
+        let bucket_name = bucket.bucket.clone();
+        tracing::info!("starting file uploader {bucket_name}");
 
-            // Fan the same file out to every bucket. Each bucket re-reads it
-            // from disk, so all of them get identical bytes under an identical
-            // key.
-            let all_stored = futures::future::join_all(
-                buckets
-                    .iter()
-                    .map(|bucket| put_with_retries(bucket, &path, max_retries, retry_wait)),
-            )
-            .await
-            .into_iter()
-            .all(|stored| stored);
+        // Seed both series so a bucket that has never failed reports zero
+        // rather than being absent. Without this an alert cannot tell "no
+        // failures" from "this uploader is not reporting at all".
+        upload_counter(&bucket_name, OK_LABEL).increment(0);
+        upload_counter(&bucket_name, ERROR_LABEL).increment(0);
 
-            if all_stored {
-                match fs::remove_file(&path).await {
-                    Ok(()) => {
-                        tracing::info!("stored {path_str} in {bucket_names}");
-                    }
-                    Err(err) => {
-                        tracing::error!("failed to remove uploaded file {path_str}: {err:?}");
-                    }
+        // Whatever is already in our own directory is ours to finish: files
+        // from a run that ended before this bucket had them. Queued ahead of new
+        // work so a backlog drains first.
+        let staged = match &dir {
+            Some(dir) => {
+                let staged = staged_files(dir).await?;
+                if !staged.is_empty() {
+                    tracing::info!(
+                        "{bucket_name} resuming {} staged file(s) from {}",
+                        staged.len(),
+                        dir.display()
+                    );
                 }
-            } else {
-                // Keeping the file is what makes a partial fan-out recoverable:
-                // an operator still has the bytes that one of the buckets never
-                // received.
-                tracing::error!("keeping {path_str}: not stored in every bucket");
+                staged
             }
+            // An uploader without a directory of its own does not own the files
+            // it is handed, so it has nothing to resume — the sink that wrote
+            // them re-queues those.
+            None => Vec::new(),
+        };
 
-            completion_tx.send_modify(|n| *n += 1);
-        });
+        let bucket = &bucket;
+        let completion_tx = &completion_tx;
+        let bucket_name = &bucket_name;
+
+        let uploads =
+            stream::iter(staged)
+                .chain(messages)
+                .for_each_concurrent(5, |path| async move {
+                    let path_str = path.display();
+                    if !path.exists() {
+                        // Already handled — a file can reach the queue twice,
+                        // once from the startup scan and once from a sink that
+                        // re-staged it.
+                        tracing::debug!("ignoring absent file {path_str}");
+                        completion_tx.send_modify(|n| *n += 1);
+                        return;
+                    }
+                    if !path.is_file() {
+                        tracing::warn!("ignoring non file {path_str}");
+                        completion_tx.send_modify(|n| *n += 1);
+                        return;
+                    }
+
+                    if put_with_retries(bucket, &path, max_retries, retry_wait).await {
+                        match fs::remove_file(&path).await {
+                            Ok(()) => tracing::info!("stored {path_str} in {bucket_name}"),
+                            Err(err) => tracing::error!(
+                                "failed to remove uploaded file {path_str}: {err:?}"
+                            ),
+                        }
+                    } else {
+                        // Left in place deliberately: this uploader owns its
+                        // own copy, so keeping it costs no other bucket
+                        // anything, and the startup scan will pick it up again.
+                        tracing::error!(
+                            "keeping {path_str}: {bucket_name} did not accept it, \
+                             will retry on restart"
+                        );
+                    }
+
+                    completion_tx.send_modify(|n| *n += 1);
+                });
 
         tokio::select! {
             _ = uploads => (),
             _ = shutdown.clone() => (),
         }
 
-        tracing::info!("stopping file uploader {bucket_names}");
+        tracing::info!("stopping file uploader {bucket_name}");
         Ok(())
     }
+}
+
+/// Fans one file out to several buckets, one [`FileUpload`] each.
+///
+/// The file is **hardlinked** into every uploader's directory rather than
+/// copied, so N buckets cost one copy of the bytes on disk. Each uploader then
+/// owns its own link: it retries on its own schedule and unlinks when done, and
+/// the bytes survive until the last one is finished. A bucket that is failing
+/// therefore cannot delete a file another bucket still needs, nor hold one that
+/// every other bucket already has.
+///
+/// Hardlinks mean every uploader's directory must be on the same filesystem as
+/// the file being handed over — placing them under the sink's own output
+/// directory satisfies that.
+#[derive(Debug, Clone)]
+pub struct MultiFileUpload {
+    uploads: Vec<(PathBuf, FileUpload)>,
+}
+
+impl MultiFileUpload {
+    /// Takes the first uploader separately so the set cannot be empty: with no
+    /// uploaders, [`FileUploader::upload_file`] would unlink the sink's only
+    /// copy having stored it nowhere.
+    ///
+    /// Every uploader must own a directory to be linked into, and no two may
+    /// share one — uploaders sharing a directory would upload and delete each
+    /// other's files. Order is only the order links are created in; no uploader
+    /// is privileged.
+    pub fn new(first: FileUpload, rest: Vec<FileUpload>) -> Result<Self> {
+        let mut uploads: Vec<(PathBuf, FileUpload)> = Vec::with_capacity(1 + rest.len());
+
+        for upload in std::iter::once(first).chain(rest) {
+            let Some(dir) = upload.dir().map(Path::to_path_buf) else {
+                return Err(invalid_input(
+                    "every uploader under a MultiFileUpload needs a directory of \
+                     its own; build them with FileUpload::staged_in",
+                ));
+            };
+            if uploads.iter().any(|(existing, _)| *existing == dir) {
+                return Err(invalid_input(format!(
+                    "two uploaders share the directory {}; each needs its own",
+                    dir.display()
+                )));
+            }
+            uploads.push((dir, upload));
+        }
+
+        Ok(Self { uploads })
+    }
+}
+
+#[async_trait::async_trait]
+impl FileUploader for MultiFileUpload {
+    async fn upload_file(&self, file: &Path) -> Result {
+        let Some(name) = file.file_name() else {
+            return Err(Error::from(std::io::Error::new(
+                ErrorKind::InvalidInput,
+                format!("expected a file name in {}", file.display()),
+            )));
+        };
+
+        for (dir, upload) in &self.uploads {
+            let link = dir.join(name);
+            match fs::hard_link(file, &link).await {
+                Ok(()) => {}
+                // Staged by a run that did not finish. The name identifies the
+                // rolled file, so the link already there is the same file; that
+                // uploader's startup scan has queued it, and queueing it again
+                // below is harmless.
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(Error::from(err)),
+            }
+            upload.upload_file(&link).await?;
+        }
+
+        // Our link is spent. The bytes stay alive behind the uploaders' links
+        // until the last of them has stored the file.
+        fs::remove_file(file).await?;
+        Ok(())
+    }
+}
+
+fn invalid_input(message: impl Into<String>) -> Error {
+    Error::from(std::io::Error::new(ErrorKind::InvalidInput, message.into()))
+}
+
+/// Files sitting in an uploader's directory, waiting to be stored.
+/// Subdirectories are skipped: a sink's own output directory holds `tmp` and,
+/// under a [`MultiFileUpload`], one directory per bucket.
+async fn staged_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    fs::create_dir_all(dir).await?;
+
+    let mut staged = Vec::new();
+    let mut entries = fs::read_dir(dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.file_type().await?.is_file() {
+            staged.push(entry.path());
+        }
+    }
+    Ok(staged)
 }
 
 /// Uploads a single file to a single bucket, retrying on failure. Returns

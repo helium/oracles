@@ -1,7 +1,7 @@
 use crate::{authorization::AuthorizationVerifier, Settings};
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
-use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile::data_transfer_multiplier::MAX_CLOCK_DRIFT;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::TryFutureExt;
@@ -792,10 +792,7 @@ fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let (output_bucket, additional_output_buckets) = settings.output_buckets().await?;
-    let (file_upload, file_upload_server) =
-        file_upload::FileUpload::with_additional_buckets(output_bucket, additional_output_buckets)
-            .await;
+    let (file_upload, file_upload_servers) = settings.file_uploaders().await?;
 
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
         WifiHeartbeatIngestReportV1::file_sink(
@@ -1004,8 +1001,13 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.mode
     );
 
-    TaskManager::builder()
-        .add_task(file_upload_server)
+    let mut task_manager = TaskManager::builder();
+    // One uploader task per output bucket.
+    for server in file_upload_servers {
+        task_manager = task_manager.add_task(server);
+    }
+
+    task_manager
         .add_task(wifi_heartbeat_report_sink_server)
         .add_task(speedtest_report_sink_server)
         .add_task(data_transfer_session_sink_server)

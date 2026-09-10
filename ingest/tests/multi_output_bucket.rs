@@ -14,7 +14,8 @@
 //!
 //! The mirror is configured with its own endpoint, region and credentials
 //! rather than inheriting the primary's — the arrangement an S3 primary with a
-//! Cloudflare R2 mirror has.
+//! Cloudflare R2 mirror has. Each bucket uploads from its own directory under
+//! `cache`, linked rather than copied.
 
 use file_store::{aws_local::AwsLocal, BucketClient, FileInfo};
 use futures::TryStreamExt;
@@ -116,8 +117,8 @@ async fn free_port() -> anyhow::Result<SocketAddr> {
 }
 
 /// Builds settings the way a deployment does — parsed from a settings file — so
-/// the test covers the `[additional_output_buckets.<name>]` config shape and not
-/// just the types behind it.
+/// the test covers the `output_bucket_mirror` / `[file_store_mirror]` config
+/// shape and not just the types behind it.
 fn settings(
     primary: &AwsLocal,
     mirror: &AwsLocal,
@@ -142,8 +143,9 @@ output_bucket = "{primary_bucket}"
 
 # The mirror carries its own endpoint, region and key pair and inherits nothing
 # from [file_store] -- what makes a different provider possible.
-[additional_output_buckets.mirror]
-bucket = "{mirror_bucket}"
+output_bucket_mirror = "{mirror_bucket}"
+
+[file_store_mirror]
 endpoint = "{mirror_endpoint}"
 region = "auto"
 access_key_id = "admin"

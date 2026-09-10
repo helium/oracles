@@ -1,6 +1,6 @@
 use crate::error::ChannelError;
 use crate::rolling_file_sink::{RollingFileSink, RollingFileWriteResult};
-use crate::{file_upload::FileUpload, Error, Result};
+use crate::{file_upload::FileUploader, Error, Result};
 use chrono::Utc;
 use metrics::Label;
 use std::time::Duration;
@@ -47,22 +47,25 @@ pub fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>)
     mpsc::channel(size)
 }
 
-pub struct FileSinkBuilder {
+/// `U` is where rolled files go: [`crate::file_upload::FileUpload`] for a single
+/// bucket, [`crate::file_upload::MultiFileUpload`] for several. It is inferred
+/// from the argument to [`FileSinkBuilder::new`], so callers never name it.
+pub struct FileSinkBuilder<U> {
     prefix: String,
     target_path: PathBuf,
     tmp_path: PathBuf,
     max_size: usize,
     roll_time: Duration,
-    file_upload: FileUpload,
+    file_upload: U,
     auto_commit: bool,
     metric: String,
 }
 
-impl FileSinkBuilder {
+impl<U: FileUploader> FileSinkBuilder<U> {
     pub fn new(
         prefix: impl ToString,
         target_path: &Path,
-        file_upload: FileUpload,
+        file_upload: U,
         metric: impl Into<String>,
     ) -> Self {
         Self {
@@ -109,7 +112,7 @@ impl FileSinkBuilder {
         }
     }
 
-    pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T>)>
+    pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T, U>)>
     where
         T: prost::Message,
     {
@@ -251,13 +254,13 @@ impl<T> FileSinkClient<T> {
 }
 
 #[derive(Debug)]
-pub struct FileSink<T> {
+pub struct FileSink<T, U> {
     target_path: PathBuf,
     tmp_path: PathBuf,
     prefix: String,
 
     messages: MessageReceiver<T>,
-    file_upload: FileUpload,
+    file_upload: U,
     staged_files: Vec<PathBuf>,
     /// 'commit' the file to s3 automatically when either the `roll_time` is
     /// surpassed, or `max_size` would be exceeded by an incoming message.
@@ -266,13 +269,15 @@ pub struct FileSink<T> {
     rolling_sink: RollingFileSink,
 }
 
-impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
+impl<T: prost::Message + Send + Sync + 'static, U: FileUploader + 'static> ManagedTask
+    for FileSink<T, U>
+{
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
 
-impl<T: prost::Message> FileSink<T> {
+impl<T: prost::Message, U: FileUploader> FileSink<T, U> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
@@ -467,7 +472,7 @@ fn starts_with_prefix(entry: &tokio::fs::DirEntry, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{file_source, file_upload, FileInfo};
+    use crate::{file_source, file_upload, file_upload::FileUpload, FileInfo};
     use futures::stream::StreamExt;
     use std::str::FromStr;
     use tempfile::TempDir;
@@ -483,7 +488,7 @@ mod tests {
         let file_upload = FileUpload::from_sender(file_upload_tx);
 
         let msg = "hello".to_string();
-        let msg_size = FileSink::encode_msg(msg.clone()).len();
+        let msg_size = FileSink::<String, FileUpload>::encode_msg(msg.clone()).len();
 
         let (_file_sink_client, mut file_sink_server) =
             FileSinkBuilder::new("report", tmp_dir.path(), file_upload, "metric")

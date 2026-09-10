@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
-use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store::file_sink::FileSinkClient;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::TryFutureExt;
 use helium_crypto::PublicKey;
@@ -32,10 +32,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         );
     }
 
-    let (output_bucket, additional_output_buckets) = settings.output_buckets().await?;
-    let (file_upload, file_upload_server) =
-        file_upload::FileUpload::with_additional_buckets(output_bucket, additional_output_buckets)
-            .await;
+    let (file_upload, file_upload_servers) = settings.file_uploaders().await?;
 
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
         &settings.cache,
@@ -90,8 +87,13 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         settings.mode
     );
 
-    TaskManager::builder()
-        .add_task(file_upload_server)
+    let mut task_manager = TaskManager::builder();
+    // One uploader task per output bucket.
+    for server in file_upload_servers {
+        task_manager = task_manager.add_task(server);
+    }
+
+    task_manager
         .add_task(mobile_sink_server)
         .add_task(iot_sink_server)
         .add_task(entity_ownership_sink_server)

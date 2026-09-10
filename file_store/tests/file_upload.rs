@@ -1,16 +1,19 @@
 use file_store::{
     aws_local::AwsLocal,
-    file_upload::{FileUpload, UPLOAD_METRIC},
+    file_upload::{FileUpload, FileUploadServer, FileUploader, MultiFileUpload, UPLOAD_METRIC},
     BucketClient,
 };
 use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use std::{
     collections::HashMap,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::OnceLock,
     time::Duration,
 };
 use task_manager::ManagedTask;
+
+const KEY: &str = "test_report.1700000000000.gz";
 
 #[tokio::test]
 async fn uploads_the_same_file_to_every_bucket() {
@@ -19,173 +22,248 @@ async fn uploads_the_same_file_to_every_bucket() {
     primary.create_bucket().await.expect("create primary");
     mirror.create_bucket().await.expect("create mirror");
 
-    let (file_upload, server) =
-        FileUpload::with_additional_buckets(primary.bucket_client(), vec![mirror.bucket_client()])
-            .await;
+    let cache = tempfile::tempdir().expect("tempdir");
+    let (primary_upload, primary_server) = upload_for(&primary, cache.path()).await;
+    let (mirror_upload, mirror_server) = upload_for(&mirror, cache.path()).await;
 
     let (trigger, listener) = triggered::trigger();
-    let handle = Box::new(server).start_task(listener);
+    let handles = vec![
+        Box::new(primary_server).start_task(listener.clone()),
+        Box::new(mirror_server).start_task(listener),
+    ];
 
-    let cache = tempfile::tempdir().expect("tempdir");
     let contents = b"the exact same bytes".to_vec();
-    let path = write_file(cache.path(), "test_report.1700000000000.gz", &contents).await;
+    let path = write_file(cache.path(), KEY, &contents).await;
 
-    file_upload.upload_file(&path).await.expect("queue upload");
-    file_upload.wait_for_uploads_at_least(1).await;
+    let uploader = MultiFileUpload::new(primary_upload.clone(), vec![mirror_upload.clone()])
+        .expect("multi upload");
+    uploader.upload_file(&path).await.expect("fan out");
 
-    assert_eq!(
-        contents,
-        file_contents(&primary.bucket_client(), "test_report.1700000000000.gz").await
-    );
-    assert_eq!(
-        contents,
-        file_contents(&mirror.bucket_client(), "test_report.1700000000000.gz").await
-    );
-    // Every bucket has it, so the cached copy is gone.
+    primary_upload.wait_for_uploads_at_least(1).await;
+    mirror_upload.wait_for_uploads_at_least(1).await;
+
+    assert_eq!(contents, file_contents(&primary.bucket_client(), KEY).await);
+    assert_eq!(contents, file_contents(&mirror.bucket_client(), KEY).await);
+
+    // Nothing is left on disk: the sink's link went when it was handed over,
+    // and each uploader dropped its own once the bucket had the file.
     assert!(!path.exists());
+    assert!(!primary_upload.dir().expect("staged dir").join(KEY).exists());
+    assert!(!mirror_upload.dir().expect("staged dir").join(KEY).exists());
 
     trigger.trigger();
-    handle.await.expect("uploader task");
+    for handle in handles {
+        handle.await.expect("uploader task");
+    }
 
     primary.cleanup().await.expect("cleanup primary");
     mirror.cleanup().await.expect("cleanup mirror");
 }
 
+/// The point of the fan-out: three buckets cost one copy of the bytes, not
+/// three. Servers are deliberately never started, so the staged links are still
+/// there to inspect.
 #[tokio::test]
-async fn keeps_the_local_file_when_a_bucket_never_gets_it() {
+async fn hardlinks_into_each_bucket_rather_than_copying() {
+    let cache = tempfile::tempdir().expect("tempdir");
+
+    let mut uploads = Vec::new();
+    // The servers are never started, but they hold the receiving end of each
+    // queue: dropping them would close the channel out from under the fan-out.
+    let mut _servers = Vec::new();
+    for bucket in ["bucket-a", "bucket-b", "bucket-c"] {
+        let (upload, server) =
+            FileUpload::staged_in(offline_bucket(bucket), cache.path().join(bucket))
+                .await
+                .expect("file upload");
+        uploads.push(upload);
+        _servers.push(server);
+    }
+
+    let contents = b"one inode, three names".to_vec();
+    let path = write_file(cache.path(), KEY, &contents).await;
+    let source_ino = std::fs::metadata(&path).expect("source metadata").ino();
+
+    let (first, rest) = uploads.split_first().expect("at least one upload");
+    let uploader = MultiFileUpload::new(first.clone(), rest.to_vec()).expect("multi upload");
+    uploader.upload_file(&path).await.expect("fan out");
+
+    // The sink's link is spent, but the bytes live on behind the staged ones.
+    assert!(!path.exists());
+
+    for upload in &uploads {
+        let link = upload.dir().expect("staged dir").join(KEY);
+        let meta = std::fs::metadata(&link).expect("staged link metadata");
+        assert_eq!(
+            source_ino,
+            meta.ino(),
+            "{} is a copy, not a link to the original",
+            link.display()
+        );
+        assert_eq!(3, meta.nlink(), "expected one link per bucket");
+        assert_eq!(contents, std::fs::read(&link).expect("read staged link"));
+    }
+}
+
+/// Each bucket owns its own link, so one that is failing neither holds nor
+/// deletes a copy any other bucket cares about.
+#[tokio::test]
+async fn a_failing_bucket_keeps_only_its_own_copy() {
     let primary = AwsLocal::new().await;
     primary.create_bucket().await.expect("create primary");
 
-    // A bucket that was never created: every put against it fails, so the
-    // fan-out can never complete.
-    let missing = BucketClient {
-        client: primary.aws_client(),
-        bucket: "bucket-that-does-not-exist".to_string(),
-    };
-
-    let (file_upload, server) =
-        FileUpload::with_additional_buckets(primary.bucket_client(), vec![missing]).await;
-    // Give up on the missing bucket immediately rather than sitting through
-    // the production backoff.
-    let server = server.with_retry_policy(0, Duration::from_millis(1));
+    let cache = tempfile::tempdir().expect("tempdir");
+    let (primary_upload, primary_server) = upload_for(&primary, cache.path()).await;
+    // A bucket that was never created: every put against it fails.
+    let (missing_upload, missing_server) = FileUpload::staged_in(
+        BucketClient {
+            client: primary.aws_client(),
+            bucket: "bucket-that-does-not-exist".to_string(),
+        },
+        cache.path().join("missing"),
+    )
+    .await
+    .expect("file upload");
 
     let (trigger, listener) = triggered::trigger();
-    let handle = Box::new(server).start_task(listener);
+    let handles = vec![
+        Box::new(primary_server).start_task(listener.clone()),
+        // Give up immediately rather than sitting through the production
+        // backoff.
+        Box::new(missing_server.with_retry_policy(0, Duration::from_millis(1)))
+            .start_task(listener),
+    ];
 
-    let cache = tempfile::tempdir().expect("tempdir");
     let contents = b"kept on disk".to_vec();
-    let path = write_file(cache.path(), "test_kept.1700000000000.gz", &contents).await;
+    let path = write_file(cache.path(), KEY, &contents).await;
 
-    file_upload.upload_file(&path).await.expect("queue upload");
-    file_upload.wait_for_uploads_at_least(1).await;
+    let uploader = MultiFileUpload::new(primary_upload.clone(), vec![missing_upload.clone()])
+        .expect("multi upload");
+    uploader.upload_file(&path).await.expect("fan out");
 
-    // The bucket that worked has the file, but the fan-out never completed, so
-    // the local copy stays put instead of being lost with it.
-    assert_eq!(
-        contents,
-        file_contents(&primary.bucket_client(), "test_kept.1700000000000.gz").await
-    );
-    assert!(path.exists());
+    primary_upload.wait_for_uploads_at_least(1).await;
+    missing_upload.wait_for_uploads_at_least(1).await;
+
+    // The working bucket stored the file and dropped its link...
+    assert_eq!(contents, file_contents(&primary.bucket_client(), KEY).await);
+    assert!(!primary_upload.dir().expect("staged dir").join(KEY).exists());
+    // ...while the failing one still holds the bytes for its own retry.
+    let kept = missing_upload.dir().expect("staged dir").join(KEY);
+    assert!(kept.exists());
+    assert_eq!(contents, std::fs::read(&kept).expect("read kept link"));
 
     trigger.trigger();
-    handle.await.expect("uploader task");
+    for handle in handles {
+        handle.await.expect("uploader task");
+    }
 
     primary.cleanup().await.expect("cleanup primary");
 }
 
-/// The shape ingest ships for: a primary bucket and a mirror reached through a
-/// different endpoint under a *different* key pair, the way an S3 primary and a
-/// Cloudflare R2 mirror are. The clients share nothing — separate credentials
-/// provider, separate cache entry — and both still get the identical file.
+/// What makes a bucket that was down recoverable: whatever is still staged in
+/// its directory is picked up when it next starts.
 #[tokio::test]
-async fn mirrors_across_independent_credentials() {
-    let primary = AwsLocal::builder().credentials_same("admin").build().await;
-    // A second identity against the same local S3: different key pair, so this
-    // exercises the two-credential path rather than reusing one cached client.
-    let mirror = AwsLocal::builder()
-        .access_key_id("admin")
-        .secret_access_key("admin")
-        .region("auto".to_string())
-        .build()
-        .await;
+async fn resumes_files_left_in_its_directory() {
+    let bucket = AwsLocal::new().await;
+    bucket.create_bucket().await.expect("create bucket");
 
-    primary.create_bucket().await.expect("create primary");
-    mirror.create_bucket().await.expect("create mirror");
-    assert_ne!(primary.bucket(), mirror.bucket());
+    let cache = tempfile::tempdir().expect("tempdir");
+    let (upload, server) = upload_for(&bucket, cache.path()).await;
 
-    let (file_upload, server) =
-        FileUpload::with_additional_buckets(primary.bucket_client(), vec![mirror.bucket_client()])
-            .await;
+    // Staged by a previous run that ended before the bucket had it. Nothing is
+    // queued through the channel here — the startup scan is the only thing that
+    // can find it.
+    let contents = b"left over from last time".to_vec();
+    write_file(upload.dir().expect("staged dir"), KEY, &contents).await;
 
     let (trigger, listener) = triggered::trigger();
     let handle = Box::new(server).start_task(listener);
 
-    let cache = tempfile::tempdir().expect("tempdir");
-    let contents = b"same bytes, two providers".to_vec();
-    let path = write_file(cache.path(), "test_mirror.1700000000000.gz", &contents).await;
+    upload.wait_for_uploads_at_least(1).await;
 
-    file_upload.upload_file(&path).await.expect("queue upload");
-    file_upload.wait_for_uploads_at_least(1).await;
-
-    assert_eq!(
-        contents,
-        file_contents(&primary.bucket_client(), "test_mirror.1700000000000.gz").await
-    );
-    assert_eq!(
-        contents,
-        file_contents(&mirror.bucket_client(), "test_mirror.1700000000000.gz").await
-    );
-    assert!(!path.exists());
+    assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
+    assert!(!upload.dir().expect("staged dir").join(KEY).exists());
 
     trigger.trigger();
     handle.await.expect("uploader task");
 
-    primary.cleanup().await.expect("cleanup primary");
-    mirror.cleanup().await.expect("cleanup mirror");
+    bucket.cleanup().await.expect("cleanup");
 }
 
-/// The upload counter is what an operator alerts on, so a break in it is
-/// silent by construction — worth pinning the label shape down.
+/// The upload counter is what an operator alerts on, so a break in it is silent
+/// by construction — worth pinning the label shape down.
 #[tokio::test]
 async fn records_upload_outcome_per_bucket() {
     let snapshotter = snapshotter();
 
-    let primary = AwsLocal::new().await;
-    primary.create_bucket().await.expect("create primary");
-    let missing_bucket = format!("{}-never-created", primary.bucket());
-    let missing = BucketClient {
-        client: primary.aws_client(),
-        bucket: missing_bucket.clone(),
-    };
-
-    let (file_upload, server) =
-        FileUpload::with_additional_buckets(primary.bucket_client(), vec![missing]).await;
-    let server = server.with_retry_policy(0, Duration::from_millis(1));
-
-    let (trigger, listener) = triggered::trigger();
-    let handle = Box::new(server).start_task(listener);
+    let good = AwsLocal::new().await;
+    good.create_bucket().await.expect("create bucket");
+    let missing_bucket = format!("{}-never-created", good.bucket());
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let path = write_file(cache.path(), "test_metric.1700000000000.gz", b"counted").await;
-    file_upload.upload_file(&path).await.expect("queue upload");
-    file_upload.wait_for_uploads_at_least(1).await;
+    let (good_upload, good_server) = upload_for(&good, cache.path()).await;
+    let (missing_upload, missing_server) = FileUpload::staged_in(
+        BucketClient {
+            client: good.aws_client(),
+            bucket: missing_bucket.clone(),
+        },
+        cache.path().join("missing"),
+    )
+    .await
+    .expect("file upload");
+
+    let (trigger, listener) = triggered::trigger();
+    let handles = vec![
+        Box::new(good_server).start_task(listener.clone()),
+        Box::new(missing_server.with_retry_policy(0, Duration::from_millis(1)))
+            .start_task(listener),
+    ];
+
+    let path = write_file(cache.path(), KEY, b"counted").await;
+    let uploader = MultiFileUpload::new(good_upload.clone(), vec![missing_upload.clone()])
+        .expect("multi upload");
+    uploader.upload_file(&path).await.expect("fan out");
+
+    good_upload.wait_for_uploads_at_least(1).await;
+    missing_upload.wait_for_uploads_at_least(1).await;
 
     trigger.trigger();
-    handle.await.expect("uploader task");
+    for handle in handles {
+        handle.await.expect("uploader task");
+    }
 
     // `snapshot()` drains, so collect once and assert against that.
     let counts = upload_counts(&snapshotter);
     let count = |bucket: &str, status: &str| counts.get(&(bucket.to_string(), status.into()));
 
-    // The bucket that took the file, and the one that never could, are each
-    // counted under their own name.
-    assert_eq!(Some(&1), count(primary.bucket(), "ok"));
-    assert_eq!(Some(&0), count(primary.bucket(), "error"));
+    assert_eq!(Some(&1), count(good.bucket(), "ok"));
+    assert_eq!(Some(&0), count(good.bucket(), "error"));
     assert_eq!(Some(&1), count(&missing_bucket, "error"));
     // Seeded at startup, so "no failures" is reported rather than absent.
     assert_eq!(Some(&0), count(&missing_bucket, "ok"));
 
-    primary.cleanup().await.expect("cleanup primary");
+    good.cleanup().await.expect("cleanup");
+}
+
+/// A `FileUpload` for one of `AwsLocal`'s buckets, staging under
+/// `cache/<bucket>` the way ingest lays it out.
+async fn upload_for(aws: &AwsLocal, cache: &Path) -> (FileUpload, FileUploadServer) {
+    FileUpload::staged_in(aws.bucket_client(), cache.join(aws.bucket()))
+        .await
+        .expect("file upload")
+}
+
+/// A bucket client that is never talked to — for tests that stop before any
+/// upload is attempted.
+fn offline_bucket(bucket: &str) -> BucketClient {
+    BucketClient {
+        client: aws_sdk_s3::Client::from_conf(
+            aws_sdk_s3::Config::builder()
+                .behavior_version_latest()
+                .build(),
+        ),
+        bucket: bucket.to_string(),
+    }
 }
 
 /// Writes a file into `dir` and returns its path.
