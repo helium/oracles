@@ -1,0 +1,45 @@
+# Connection profiles for the mobile_dbt project.
+#
+# `local` targets the docker-compose stack at the repo root
+# (`docker compose up -d --wait trino`): Trino 480 on :8080, anonymous, over
+# plain HTTP, against the `iceberg` catalog. That is also what CI uses.
+#
+# `prod` reads every value from the environment so nothing secret lives in the
+# repo. It authenticates with a JWT, matching how the Rust oracles reach the
+# same cluster (see trino_client/src/settings.rs `AuthSettings::JwtFile`).
+mobile_dbt:
+  target: "{{ env_var('DBT_TARGET', 'local') }}"
+  outputs:
+    local:
+      type: trino
+      method: none
+      host: "{{ env_var('TRINO_HOST', 'localhost') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | int }}"
+      user: "{{ env_var('TRINO_USER', 'dbt') }}"
+      http_scheme: http
+      catalog: "{{ env_var('MOBILE_CATALOG', 'iceberg') }}"
+      # Fallback only. Models declare the schema they belong to (see
+      # dbt_project.yml); anything that shows up here forgot to.
+      schema: undeclared
+      threads: 4
+      # Every timestamp column in the source tables is `timestamp with time
+      # zone`, and the incremental window casts a date back to one. Without a
+      # fixed client zone that cast would follow whatever zone the machine
+      # running dbt is in, so the same run could recompute a different window
+      # on two developers' laptops. (`timezone` is a client connection
+      # parameter, not a Trino session property -- setting it under
+      # `session_properties` is rejected as INVALID_SESSION_PROPERTY.)
+      timezone: UTC
+
+    prod:
+      type: trino
+      method: jwt
+      jwt_token: "{{ env_var('TRINO_JWT_TOKEN') }}"
+      host: "{{ env_var('TRINO_HOST') }}"
+      port: "{{ env_var('TRINO_PORT', '443') | int }}"
+      user: "{{ env_var('TRINO_USER', 'mobile-dbt') }}"
+      http_scheme: https
+      catalog: "{{ env_var('MOBILE_CATALOG', 'mobile') }}"
+      schema: "{{ env_var('DBT_SCHEMA', 'undeclared') }}"
+      threads: 8
+      timezone: UTC

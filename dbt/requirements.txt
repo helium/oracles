@@ -1,0 +1,10 @@
+# Pinned exactly so CI, the image, and every developer resolve the same
+# adapter: dbt-trino tracks dbt-core's minors, and incremental behaviour has
+# changed between them before.
+#
+# Python 3.12. dbt-trino does not import on 3.14 -- its connection dataclass
+# has an un-annotated field, which 3.14's dataclasses reject outright
+# ("'session_properties' is a field but has no type annotation"). 3.13 is
+# untested here.
+dbt-core==1.12.4
+dbt-trino==1.10.3
