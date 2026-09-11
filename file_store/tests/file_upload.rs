@@ -164,9 +164,47 @@ async fn a_failing_bucket_keeps_only_its_own_copy() {
 }
 
 /// What makes a bucket that was down recoverable: whatever is still staged in
-/// its directory is picked up when it next starts.
+/// its directory when the uploader is built is picked up.
 #[tokio::test]
 async fn resumes_files_left_in_its_directory() {
+    let bucket = AwsLocal::new().await;
+    bucket.create_bucket().await.expect("create bucket");
+
+    let cache = tempfile::tempdir().expect("tempdir");
+
+    // Staged by a previous run that ended before the bucket had it, so it is
+    // already there when the uploader is built. Nothing is queued through the
+    // channel here — the scan in `new` is the only thing that can find it.
+    let dir = cache.path().join(bucket.bucket());
+    tokio::fs::create_dir_all(&dir).await.expect("create dir");
+    let contents = b"left over from last time".to_vec();
+    write_file(&dir, KEY, &contents).await;
+
+    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+        .await
+        .expect("file upload");
+
+    let (trigger, listener) = triggered::trigger();
+    let handles = start(servers, &listener);
+
+    uploader.wait_for_uploads_at_least(1).await;
+
+    assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
+    assert!(!dir.join(KEY).exists());
+
+    trigger.trigger();
+    join(handles).await;
+
+    bucket.cleanup().await.expect("cleanup");
+}
+
+/// Reproduces the ordering every service has: `connect` builds the uploaders,
+/// then every sink is constructed — and `FileSink::init` hands over whatever it
+/// finds left in the root — and only then does the TaskManager start the
+/// servers. Scanning at startup rather than at construction would find the link
+/// init had just staged and queue the same file a second time.
+#[tokio::test]
+async fn a_file_handed_over_before_startup_is_not_uploaded_twice() {
     let bucket = AwsLocal::new().await;
     bucket.create_bucket().await.expect("create bucket");
 
@@ -175,19 +213,85 @@ async fn resumes_files_left_in_its_directory() {
         .await
         .expect("file upload");
 
-    // Staged by a previous run that ended before the bucket had it. Nothing is
-    // queued through the channel here — the startup scan is the only thing that
-    // can find it.
-    let contents = b"left over from last time".to_vec();
-    write_file(uploader.uploads()[0].dir(), KEY, &contents).await;
+    // A file a sink deposited but never handed over — what a crash between the
+    // rename and the handover leaves behind.
+    let contents = b"handed over once".to_vec();
+    let path = write_file(cache.path(), KEY, &contents).await;
+
+    // FileSink::init hands it over, while the servers are still only built.
+    uploader.upload_file(&path).await.expect("hand over");
+
+    // Only now does the TaskManager start them.
+    let (trigger, listener) = triggered::trigger();
+    let handles = start(servers, &listener);
+
+    uploader.wait_for_uploads_at_least(1).await;
+
+    // One file, one trip through the queue. A second completion means it was
+    // pulled twice: uploaded twice, and unlinked twice.
+    let duplicated = tokio::time::timeout(
+        Duration::from_secs(2),
+        uploader.wait_for_uploads_at_least(2),
+    )
+    .await;
+    assert!(
+        duplicated.is_err(),
+        "the same file was queued and processed twice"
+    );
+
+    assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
+
+    trigger.trigger();
+    join(handles).await;
+
+    bucket.cleanup().await.expect("cleanup");
+}
+
+/// The other half of the crash window: a run that staged the link but died
+/// before releasing the source leaves both behind. The scan in `new` queues the
+/// link, so when the sink hands the source over and `stage` finds the link
+/// already there, queueing it again would upload and unlink the same file
+/// twice.
+#[tokio::test]
+async fn a_leftover_link_and_its_source_are_uploaded_once() {
+    let bucket = AwsLocal::new().await;
+    bucket.create_bucket().await.expect("create bucket");
+
+    let cache = tempfile::tempdir().expect("tempdir");
+    let dir = cache.path().join(bucket.bucket());
+    tokio::fs::create_dir_all(&dir).await.expect("create dir");
+
+    // Both names for one inode, exactly as a crash mid-handover leaves them.
+    let contents = b"staged but not released".to_vec();
+    let source = write_file(cache.path(), KEY, &contents).await;
+    std::fs::hard_link(&source, dir.join(KEY)).expect("stage the leftover link");
+
+    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+        .await
+        .expect("file upload");
+
+    // FileSink::init finds the source still sitting in the root and hands it
+    // over, the way it does on every start.
+    uploader.upload_file(&source).await.expect("hand over");
 
     let (trigger, listener) = triggered::trigger();
     let handles = start(servers, &listener);
 
     uploader.wait_for_uploads_at_least(1).await;
 
+    let duplicated = tokio::time::timeout(
+        Duration::from_secs(2),
+        uploader.wait_for_uploads_at_least(2),
+    )
+    .await;
+    assert!(
+        duplicated.is_err(),
+        "the leftover link was queued by both the scan and the handover"
+    );
+
     assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
-    assert!(!uploader.uploads()[0].dir().join(KEY).exists());
+    assert!(!source.exists());
+    assert!(!dir.join(KEY).exists());
 
     trigger.trigger();
     join(handles).await;

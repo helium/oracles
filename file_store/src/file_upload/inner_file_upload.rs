@@ -6,7 +6,7 @@
 
 use super::{invalid_input, MessageSender};
 use crate::{error::ChannelError, BucketClient, Error, Result};
-use futures::{stream, StreamExt};
+use futures::StreamExt;
 use metrics::Label;
 use std::{
     io::ErrorKind,
@@ -61,7 +61,6 @@ pub struct InnerFileUpload {
 pub struct FileUploadServer {
     messages: UnboundedReceiverStream<PathBuf>,
     bucket: BucketClient,
-    dir: PathBuf,
     completion_tx: std::sync::Arc<watch::Sender<u64>>,
     max_retries: u8,
     retry_wait: Duration,
@@ -83,16 +82,29 @@ impl InnerFileUpload {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (completion_tx, completion_rx) = watch::channel(0u64);
         let completion_tx = std::sync::Arc::new(completion_tx);
+
+        let upload = Self {
+            sender,
+            completion_rx,
+            dir: dir.clone(),
+        };
+
+        // Anything already here belongs to a run that ended before this bucket
+        // had it. Queue it at construction rather than when the server starts:
+        // a sink cannot be built without an uploader to hand files to, so
+        // nothing can stage into this directory before this point. Scanning
+        // later would find the links a sink's own startup recovery had just
+        // staged and queue them a second time — uploading and unlinking the
+        // same file twice.
+        for staged in staged_files(&dir).await? {
+            upload.queue(&staged)?;
+        }
+
         Ok((
-            Self {
-                sender,
-                completion_rx,
-                dir: dir.clone(),
-            },
+            upload,
             FileUploadServer {
                 messages: UnboundedReceiverStream::new(receiver),
                 bucket,
-                dir,
                 completion_tx,
                 max_retries: DEFAULT_MAX_RETRIES,
                 retry_wait: DEFAULT_RETRY_WAIT,
@@ -133,20 +145,23 @@ impl InnerFileUpload {
         if link != file {
             match fs::hard_link(file, &link).await {
                 Ok(()) => {}
-                // Staged by a run that did not finish. The name identifies the
-                // rolled file, so what is already there is the same file; the
-                // startup scan has queued it, and queueing it again below is
-                // harmless.
-                Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+                // Left by a run that did not finish. The name identifies the
+                // rolled file, so what is already there is the same file, and
+                // the scan in `new` has already queued it — queueing it again
+                // would upload and unlink it twice.
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => return Ok(link),
                 Err(err) => return Err(Error::from(err)),
             }
         }
 
-        self.sender
-            .send(link.clone())
-            .map_err(|_| ChannelError::upload_closed(&link))?;
-
+        self.queue(&link)?;
         Ok(link)
+    }
+
+    fn queue(&self, file: &Path) -> Result {
+        self.sender
+            .send(file.to_path_buf())
+            .map_err(|_| ChannelError::upload_closed(file))
     }
 
     /// Test-only: see
@@ -184,7 +199,6 @@ impl FileUploadServer {
         let Self {
             messages,
             bucket,
-            dir,
             completion_tx,
             max_retries,
             retry_wait,
@@ -199,60 +213,42 @@ impl FileUploadServer {
         upload_counter(&bucket_name, OK_LABEL).increment(0);
         upload_counter(&bucket_name, ERROR_LABEL).increment(0);
 
-        // Whatever is already in our directory is ours to finish: files from a
-        // run that ended before this bucket had them. Queued ahead of new work
-        // so a backlog drains first.
-        let staged = staged_files(&dir).await?;
-        if !staged.is_empty() {
-            tracing::info!(
-                "{bucket_name} resuming {} staged file(s) from {}",
-                staged.len(),
-                dir.display()
-            );
-        }
-
         let bucket = &bucket;
         let completion_tx = &completion_tx;
         let bucket_name = &bucket_name;
 
-        let uploads =
-            stream::iter(staged)
-                .chain(messages)
-                .for_each_concurrent(5, |path| async move {
-                    let path_str = path.display();
-                    if !path.exists() {
-                        // Already handled — a file can reach the queue twice,
-                        // once from the startup scan and once from a sink that
-                        // re-staged it.
-                        tracing::debug!("ignoring absent file {path_str}");
-                        completion_tx.send_modify(|n| *n += 1);
-                        return;
-                    }
-                    if !path.is_file() {
-                        tracing::warn!("ignoring non file {path_str}");
-                        completion_tx.send_modify(|n| *n += 1);
-                        return;
-                    }
+        let uploads = messages.for_each_concurrent(5, |path| async move {
+            let path_str = path.display();
+            if !path.exists() {
+                tracing::debug!("ignoring absent file {path_str}");
+                completion_tx.send_modify(|n| *n += 1);
+                return;
+            }
+            if !path.is_file() {
+                tracing::warn!("ignoring non file {path_str}");
+                completion_tx.send_modify(|n| *n += 1);
+                return;
+            }
 
-                    if put_with_retries(bucket, &path, max_retries, retry_wait).await {
-                        match fs::remove_file(&path).await {
-                            Ok(()) => tracing::info!("stored {path_str} in {bucket_name}"),
-                            Err(err) => tracing::error!(
-                                "failed to remove uploaded file {path_str}: {err:?}"
-                            ),
-                        }
-                    } else {
-                        // Left in place deliberately: this uploader owns its
-                        // own copy, so keeping it costs no other bucket
-                        // anything, and the startup scan will pick it up again.
-                        tracing::error!(
-                            "keeping {path_str}: {bucket_name} did not accept it, \
+            if put_with_retries(bucket, &path, max_retries, retry_wait).await {
+                match fs::remove_file(&path).await {
+                    Ok(()) => tracing::info!("stored {path_str} in {bucket_name}"),
+                    Err(err) => {
+                        tracing::error!("failed to remove uploaded file {path_str}: {err:?}")
+                    }
+                }
+            } else {
+                // Left in place deliberately: this uploader owns its
+                // own copy, so keeping it costs no other bucket
+                // anything, and the startup scan will pick it up again.
+                tracing::error!(
+                    "keeping {path_str}: {bucket_name} did not accept it, \
                              will retry on restart"
-                        );
-                    }
+                );
+            }
 
-                    completion_tx.send_modify(|n| *n += 1);
-                });
+            completion_tx.send_modify(|n| *n += 1);
+        });
 
         tokio::select! {
             _ = uploads => (),
