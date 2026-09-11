@@ -1,5 +1,3 @@
-use std::{path::Path, time::Duration};
-
 use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
     file_upload::FileUploader,
@@ -9,6 +7,7 @@ use helium_proto::{
     self as proto,
     services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
 };
+use std::{path::Path, time::Duration};
 
 use crate::FileType;
 

@@ -1,6 +1,7 @@
 use crate::error::ChannelError;
+use crate::file_upload::file_uploader::FileUploader;
 use crate::rolling_file_sink::{RollingFileSink, RollingFileWriteResult};
-use crate::{file_upload::FileUploader, Error, Result};
+use crate::{Error, Result};
 use chrono::Utc;
 use metrics::Label;
 use std::time::Duration;
