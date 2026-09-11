@@ -289,9 +289,11 @@ impl Cmd {
             None
         };
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_bucket_client(settings.output_bucket.connect().await)
-                .await;
+        let (file_upload, file_upload_server) = file_upload::FileUpload::from_bucket_client(
+            settings.output_bucket.connect().await,
+            &settings.cache,
+        )
+        .await?;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             &settings.cache,

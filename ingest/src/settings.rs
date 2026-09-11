@@ -180,17 +180,17 @@ impl Settings {
     pub async fn file_uploaders(&self) -> anyhow::Result<(MultiFileUpload, Vec<FileUploadServer>)> {
         let (primary, mirror) = self.output_buckets().await?;
 
-        // Directories are named for their bucket. Two buckets sharing a name
-        // would share a directory, which `MultiFileUpload::new` refuses.
-        let dir = self.cache.join(&primary.bucket);
-        let (primary_upload, primary_server) = FileUpload::staged_in(primary, dir).await?;
+        // Each uploader stages under `cache/<bucket>/`, which it derives
+        // itself. Two buckets sharing a name would land in one directory;
+        // `MultiFileUpload::new` refuses that.
+        let (primary_upload, primary_server) =
+            FileUpload::from_bucket_client(primary, &self.cache).await?;
 
         let mut servers = vec![primary_server];
         let mut mirrors = Vec::new();
 
         if let Some(mirror) = mirror {
-            let dir = self.cache.join(&mirror.bucket);
-            let (upload, server) = FileUpload::staged_in(mirror, dir).await?;
+            let (upload, server) = FileUpload::from_bucket_client(mirror, &self.cache).await?;
             mirrors.push(upload);
             servers.push(server);
         }

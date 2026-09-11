@@ -95,8 +95,11 @@ impl Server {
         // gives us a uniform `PriceSink` interface.
         if let Some(output) = settings.output.as_ref() {
             tracing::info!("output bucket configured, starting file_sink");
-            let (file_upload, file_upload_server) =
-                file_upload::FileUpload::from_bucket_client(output.connect().await).await;
+            let (file_upload, file_upload_server) = file_upload::FileUpload::from_bucket_client(
+                output.connect().await,
+                &settings.cache,
+            )
+            .await?;
             let (price_sink, price_sink_server) = PriceReportV1::file_sink(
                 &settings.cache,
                 file_upload.clone(),

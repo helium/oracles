@@ -48,8 +48,8 @@ async fn uploads_the_same_file_to_every_bucket() {
     // Nothing is left on disk: the sink's link went when it was handed over,
     // and each uploader dropped its own once the bucket had the file.
     assert!(!path.exists());
-    assert!(!primary_upload.dir().expect("staged dir").join(KEY).exists());
-    assert!(!mirror_upload.dir().expect("staged dir").join(KEY).exists());
+    assert!(!primary_upload.dir().join(KEY).exists());
+    assert!(!mirror_upload.dir().join(KEY).exists());
 
     trigger.trigger();
     for handle in handles {
@@ -72,10 +72,9 @@ async fn hardlinks_into_each_bucket_rather_than_copying() {
     // queue: dropping them would close the channel out from under the fan-out.
     let mut _servers = Vec::new();
     for bucket in ["bucket-a", "bucket-b", "bucket-c"] {
-        let (upload, server) =
-            FileUpload::staged_in(offline_bucket(bucket), cache.path().join(bucket))
-                .await
-                .expect("file upload");
+        let (upload, server) = FileUpload::from_bucket_client(offline_bucket(bucket), cache.path())
+            .await
+            .expect("file upload");
         uploads.push(upload);
         _servers.push(server);
     }
@@ -92,7 +91,7 @@ async fn hardlinks_into_each_bucket_rather_than_copying() {
     assert!(!path.exists());
 
     for upload in &uploads {
-        let link = upload.dir().expect("staged dir").join(KEY);
+        let link = upload.dir().join(KEY);
         let meta = std::fs::metadata(&link).expect("staged link metadata");
         assert_eq!(
             source_ino,
@@ -105,6 +104,34 @@ async fn hardlinks_into_each_bucket_rather_than_copying() {
     }
 }
 
+/// A lone uploader behaves the same as one under a `MultiFileUpload`: it
+/// derives `<root>/<bucket>/` itself and stages there, rather than uploading
+/// from wherever the file happened to be handed over.
+#[tokio::test]
+async fn a_single_upload_stages_in_its_own_bucket_directory() {
+    let cache = tempfile::tempdir().expect("tempdir");
+
+    // Never started; it just holds the queue open.
+    let (upload, _server) = FileUpload::from_bucket_client(offline_bucket("solo"), cache.path())
+        .await
+        .expect("file upload");
+
+    assert_eq!(cache.path().join("solo"), upload.dir());
+    assert!(upload.dir().is_dir(), "the directory is created up front");
+
+    let contents = b"staged by a lone uploader".to_vec();
+    let path = write_file(cache.path(), KEY, &contents).await;
+
+    FileUploader::upload_file(&upload, &path)
+        .await
+        .expect("hand over");
+
+    // Moved into the bucket's directory, not left where the sink put it.
+    assert!(!path.exists());
+    let staged = upload.dir().join(KEY);
+    assert_eq!(contents, std::fs::read(&staged).expect("read staged file"));
+}
+
 /// Each bucket owns its own link, so one that is failing neither holds nor
 /// deletes a copy any other bucket cares about.
 #[tokio::test]
@@ -115,12 +142,12 @@ async fn a_failing_bucket_keeps_only_its_own_copy() {
     let cache = tempfile::tempdir().expect("tempdir");
     let (primary_upload, primary_server) = upload_for(&primary, cache.path()).await;
     // A bucket that was never created: every put against it fails.
-    let (missing_upload, missing_server) = FileUpload::staged_in(
+    let (missing_upload, missing_server) = FileUpload::from_bucket_client(
         BucketClient {
             client: primary.aws_client(),
             bucket: "bucket-that-does-not-exist".to_string(),
         },
-        cache.path().join("missing"),
+        cache.path(),
     )
     .await
     .expect("file upload");
@@ -146,9 +173,9 @@ async fn a_failing_bucket_keeps_only_its_own_copy() {
 
     // The working bucket stored the file and dropped its link...
     assert_eq!(contents, file_contents(&primary.bucket_client(), KEY).await);
-    assert!(!primary_upload.dir().expect("staged dir").join(KEY).exists());
+    assert!(!primary_upload.dir().join(KEY).exists());
     // ...while the failing one still holds the bytes for its own retry.
-    let kept = missing_upload.dir().expect("staged dir").join(KEY);
+    let kept = missing_upload.dir().join(KEY);
     assert!(kept.exists());
     assert_eq!(contents, std::fs::read(&kept).expect("read kept link"));
 
@@ -174,7 +201,7 @@ async fn resumes_files_left_in_its_directory() {
     // queued through the channel here — the startup scan is the only thing that
     // can find it.
     let contents = b"left over from last time".to_vec();
-    write_file(upload.dir().expect("staged dir"), KEY, &contents).await;
+    write_file(upload.dir(), KEY, &contents).await;
 
     let (trigger, listener) = triggered::trigger();
     let handle = Box::new(server).start_task(listener);
@@ -182,7 +209,7 @@ async fn resumes_files_left_in_its_directory() {
     upload.wait_for_uploads_at_least(1).await;
 
     assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
-    assert!(!upload.dir().expect("staged dir").join(KEY).exists());
+    assert!(!upload.dir().join(KEY).exists());
 
     trigger.trigger();
     handle.await.expect("uploader task");
@@ -202,12 +229,12 @@ async fn records_upload_outcome_per_bucket() {
 
     let cache = tempfile::tempdir().expect("tempdir");
     let (good_upload, good_server) = upload_for(&good, cache.path()).await;
-    let (missing_upload, missing_server) = FileUpload::staged_in(
+    let (missing_upload, missing_server) = FileUpload::from_bucket_client(
         BucketClient {
             client: good.aws_client(),
             bucket: missing_bucket.clone(),
         },
-        cache.path().join("missing"),
+        cache.path(),
     )
     .await
     .expect("file upload");
@@ -248,7 +275,7 @@ async fn records_upload_outcome_per_bucket() {
 /// A `FileUpload` for one of `AwsLocal`'s buckets, staging under
 /// `cache/<bucket>` the way ingest lays it out.
 async fn upload_for(aws: &AwsLocal, cache: &Path) -> (FileUpload, FileUploadServer) {
-    FileUpload::staged_in(aws.bucket_client(), cache.join(aws.bucket()))
+    FileUpload::from_bucket_client(aws.bucket_client(), cache)
         .await
         .expect("file upload")
 }

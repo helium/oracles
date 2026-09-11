@@ -194,7 +194,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     // matching production). A short roll_time ensures the file is committed promptly.
     let cache_dir = tempfile::tempdir()?;
     let (file_upload_client, file_upload_server) =
-        file_upload::FileUpload::from_bucket_client(awsl.bucket_client()).await;
+        file_upload::FileUpload::from_bucket_client(awsl.bucket_client(), cache_dir.path()).await?;
     let file_upload_watcher = file_upload_client.clone();
     let (verified_sessions_sink, verified_sessions_server) =
         VerifiedDataTransferIngestReportV1::file_sink(
@@ -328,7 +328,7 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
     // production). Short roll_time so the file appears in S3 promptly.
     let cache_dir = tempfile::tempdir()?;
     let (file_upload_client, file_upload_server) =
-        file_upload::FileUpload::from_bucket_client(awsl.bucket_client()).await;
+        file_upload::FileUpload::from_bucket_client(awsl.bucket_client(), cache_dir.path()).await?;
     let (valid_sessions_sink, valid_sessions_server) = ValidDataTransferSession::file_sink(
         cache_dir.path(),
         file_upload_client,
@@ -509,7 +509,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
     // Both file sinks share one FileUpload client / server pair.
     let cache_dir = tempfile::tempdir()?;
     let (file_upload_client, file_upload_server) =
-        file_upload::FileUpload::from_bucket_client(awsl.bucket_client()).await;
+        file_upload::FileUpload::from_bucket_client(awsl.bucket_client(), cache_dir.path()).await?;
 
     let (verified_sessions_sink, verified_sessions_server) =
         VerifiedDataTransferIngestReportV1::file_sink(

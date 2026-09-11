@@ -1,5 +1,8 @@
-use crate::{error::ChannelError, Result};
-use std::path::{Path, PathBuf};
+use crate::{error::ChannelError, Error, Result};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 use tokio::sync::mpsc;
 
 pub mod file_uploader;
@@ -20,4 +23,8 @@ pub fn message_channel() -> (MessageSender, MessageReceiver) {
 pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
     tx.send(file.to_path_buf())
         .map_err(|_| ChannelError::upload_closed(file))
+}
+
+fn invalid_input(message: impl Into<String>) -> Error {
+    Error::from(std::io::Error::new(ErrorKind::InvalidInput, message.into()))
 }

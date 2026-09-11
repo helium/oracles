@@ -33,9 +33,11 @@ impl Cmd {
         // unwritable path should surface at boot, not at cutover.
         rewarder_state.mirror_to_file().await?;
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
-                .await;
+        let (file_upload, file_upload_server) = file_upload::FileUpload::from_bucket_client(
+            settings.buckets.output.connect().await,
+            &settings.cache,
+        )
+        .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             &settings.cache,
