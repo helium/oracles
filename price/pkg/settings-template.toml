@@ -36,9 +36,13 @@ interval = "60 seconds"
 # S3 bucket for `PriceReportV1` protobuf files.
 # - Optional for `server`. Omit when running an Iceberg-only deployment;
 #   the server will then fan out only to the Iceberg sink.
-# - Required for `backfill`, which reads these files back to seed Iceberg.
+# - Required for `backfill`, which reads these files back to seed Iceberg,
+#   from whichever bucket sorts first by label.
 #
-# [output]
+# [file_upload]
+# root = "/opt/price/data"
+#
+# [file_upload.buckets.primary]
 # bucket = "price"
 
 [custom_tracing]

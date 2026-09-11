@@ -5,8 +5,10 @@
 //! on every call: setting `INGEST__` variables inside the unit-test process
 //! would leak into the file-based settings tests running beside it.
 //!
-//! What this pins down is that the mirror bucket's credentials can be injected
-//! as environment variables rather than having to live in the settings file.
+//! What this pins down is that a bucket's credentials can be injected as
+//! environment variables rather than having to live in the settings file. It is
+//! why `file_upload.buckets` is keyed by a label rather than by bucket name: bucket
+//! names are hyphenated and hyphens cannot appear in an environment variable.
 
 use ingest::Settings;
 use std::path::Path;
@@ -17,36 +19,49 @@ fn the_mirror_can_be_configured_entirely_from_the_environment() {
     // underscore, so `INGEST_MODE` would be ignored.
     for (key, value) in [
         ("INGEST__MODE", "mobile"),
-        ("INGEST__OUTPUT_BUCKET", "ingest-bucket"),
-        ("INGEST__FILE_STORE__REGION", "us-west-2"),
-        ("INGEST__OUTPUT_BUCKET_MIRROR", "ingest-mirror"),
+        ("INGEST__FILE_UPLOAD__ROOT", "/opt/ingest/data"),
         (
-            "INGEST__FILE_STORE_MIRROR__ENDPOINT",
+            "INGEST__FILE_UPLOAD__BUCKETS__PRIMARY__BUCKET",
+            "ingest-bucket",
+        ),
+        ("INGEST__FILE_UPLOAD__BUCKETS__PRIMARY__REGION", "us-west-2"),
+        ("INGEST__FILE_UPLOAD__BUCKETS__R2__BUCKET", "ingest-mirror"),
+        (
+            "INGEST__FILE_UPLOAD__BUCKETS__R2__ENDPOINT",
             "https://accountid.r2.cloudflarestorage.com",
         ),
-        ("INGEST__FILE_STORE_MIRROR__REGION", "auto"),
-        ("INGEST__FILE_STORE_MIRROR__ACCESS_KEY_ID", "r2-key-id"),
-        ("INGEST__FILE_STORE_MIRROR__SECRET_ACCESS_KEY", "r2-secret"),
+        ("INGEST__FILE_UPLOAD__BUCKETS__R2__REGION", "auto"),
+        (
+            "INGEST__FILE_UPLOAD__BUCKETS__R2__ACCESS_KEY_ID",
+            "r2-key-id",
+        ),
+        (
+            "INGEST__FILE_UPLOAD__BUCKETS__R2__SECRET_ACCESS_KEY",
+            "r2-secret",
+        ),
     ] {
         std::env::set_var(key, value);
     }
 
     let settings = Settings::new(None::<&Path>).expect("settings from env");
 
-    assert_eq!("ingest-bucket", settings.output_bucket);
-    assert_eq!(Some("us-west-2".to_string()), settings.file_store.region);
-
     assert_eq!(
-        Some("ingest-mirror".to_string()),
-        settings.output_bucket_mirror
+        std::path::PathBuf::from("/opt/ingest/data"),
+        settings.file_upload.root
     );
-    let mirror = settings.file_store_mirror.expect("mirror file store");
+    assert_eq!(
+        "ingest-bucket",
+        settings.file_upload.buckets["primary"].bucket
+    );
+
+    let r2 = &settings.file_upload.buckets["r2"];
+    assert_eq!("ingest-mirror", r2.bucket);
     assert_eq!(
         Some("https://accountid.r2.cloudflarestorage.com".to_string()),
-        mirror.endpoint
+        r2.settings.endpoint
     );
-    assert_eq!(Some("auto".to_string()), mirror.region);
-    assert_eq!(Some("r2-key-id".to_string()), mirror.access_key_id);
+    assert_eq!(Some("auto".to_string()), r2.settings.region);
+    assert_eq!(Some("r2-key-id".to_string()), r2.settings.access_key_id);
     // The half that must never end up in a settings file or a config dump.
-    assert_eq!(Some("r2-secret".to_string()), mirror.secret_access_key);
+    assert_eq!(Some("r2-secret".to_string()), r2.settings.secret_access_key);
 }

@@ -6,8 +6,10 @@ use std::{
 use tokio::{fs, sync::mpsc};
 
 pub mod inner_file_upload;
+pub mod settings;
 
 pub use inner_file_upload::{FileUploadServer, InnerFileUpload, UPLOAD_METRIC};
+pub use settings::Settings;
 
 pub type MessageSender = mpsc::UnboundedSender<PathBuf>;
 pub type MessageReceiver = mpsc::UnboundedReceiver<PathBuf>;

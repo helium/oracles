@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_iceberg::{BatchedWriter, BatchedWriterConfig};
 use helium_proto::PriceReportV1;
@@ -93,12 +92,11 @@ impl Server {
         // are spawned together; their handles drive the upload pipeline
         // and the PriceReportV1 file roll. The `S3PriceSink` wrapper
         // gives us a uniform `PriceSink` interface.
-        if let Some(output) = settings.output.as_ref() {
+        if let Some(uploads) = settings.file_upload.as_ref() {
             tracing::info!("output bucket configured, starting file_sink");
-            let (file_upload, file_upload_servers) =
-                file_upload::FileUpload::new(vec![output.connect().await], &settings.cache).await?;
+            let (file_upload, file_upload_servers) = uploads.connect().await?;
             let (price_sink, price_sink_server) = PriceReportV1::file_sink(
-                &settings.cache,
+                &uploads.root,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Automatic,
                 FileSinkRollTime::Duration(Duration::from_secs(PRICE_SINK_ROLL_SECS)),

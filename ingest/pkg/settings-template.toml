@@ -16,10 +16,6 @@ mode = "mobile"
 #
 # listen = "0.0.0.0:9081"
 
-# Cache folder to use. Default blow
-#
-# cache = "/var/data/ingest"
-
 # Network required by all public keys: mainnet | testnet
 #
 network = "mainnet"
@@ -52,62 +48,45 @@ carrier_authorized_keys = "key1,key2"
 #
 # data_transfer_multiplier_ticket_max_age = "10 minutes"
 
-# Name of the bucket ingested files are written to. Required. Its credentials,
-# region and endpoint come from [file_store] below.
-output_bucket = "ingest-bucket"
+[file_upload]
+# Directory the file sinks write into, and under which each bucket stages its
+# own <root>/<bucket>/ subdirectory. Required -- this was previously `cache`.
+root = "/opt/ingest/data"
 
-# Optional. A second bucket that receives a copy of every file written to
-# output_bucket, under the same key. Set it together with [file_store_mirror];
-# either one alone is a startup error.
+# Every bucket a rolled file is written to, keyed by a label you choose. At
+# least one is required. Two buckets means the same file, byte for byte and
+# under the same key, lands in both.
 #
-# The mirror inherits nothing from [file_store]. That is deliberate, and it is
-# what lets the mirror live on a different provider than output_bucket:
-# borrowing the S3 account's region or key pair for a Cloudflare R2 bucket would
-# only build a client that can authenticate against neither.
+# The label is not the bucket name: the bucket name goes in the entry. Labels
+# exist so credentials can come from the environment -- bucket names are
+# hyphenated and hyphens cannot appear in an environment variable name:
 #
-# Each bucket uploads from its own directory under `cache`, named for the
-# bucket. A rolled file is hardlinked into both rather than copied, so two
-# buckets cost one copy of the bytes on disk, and each bucket then owns its own
-# link: they upload, fail and retry independently, and neither can delete or
-# hold up the other's copy. Anything a bucket has not stored is picked up again
-# the next time ingest starts.
+#   INGEST__FILE_UPLOAD__BUCKETS__PRIMARY__SECRET_ACCESS_KEY=<secret>
 #
-# The two buckets must have different names, since the directories are named
-# after them.
+# Each entry carries its own region, endpoint and credentials and inherits
+# nothing from the others, which is what lets one bucket live on a different
+# provider than another -- a Cloudflare R2 mirror of an S3 primary. For R2 the
+# region is "auto" and the key pair is an R2 API token, not the AWS one.
 #
-# Mirroring an S3 output_bucket to R2. region is "auto" for R2, and the key pair
-# is an R2 API token, not the AWS one:
+# Set both access_key_id and secret_access_key or neither. With only one of
+# them the S3 client silently ignores both and falls back to the ambient AWS
+# credential chain, which cannot authenticate against R2 -- so the service
+# refuses to start rather than failing every upload later.
 #
-# output_bucket_mirror = "ingest-bucket-mirror"
-#
-# [file_store_mirror]
+# A file is removed from a bucket's directory only once that bucket has stored
+# it, and each bucket retries on its own: one that is failing can neither hold
+# up nor delete another's copy, and picks up its own backlog on restart.
+
+[file_upload.buckets.primary]
+bucket = "ingest-bucket"
+# region = "us-west-2"
+
+# [file_upload.buckets.mirror]
+# bucket = "ingest-bucket-mirror"
 # endpoint = "https://<account_id>.r2.cloudflarestorage.com"
 # region = "auto"
 # access_key_id = "<r2 access key id>"
 # secret_access_key = "<r2 secret access key>"
-#
-# Credentials do not have to live in this file. Every setting can come from the
-# environment instead, prefixed with INGEST__ and nested with __ — note the
-# double underscore after the prefix too:
-#
-#   INGEST__FILE_STORE_MIRROR__SECRET_ACCESS_KEY=<r2 secret>
-#
-# Set both access_key_id and secret_access_key or neither. With only one of
-# them the S3 client silently ignores both and falls back to the ambient AWS
-# credential chain, which cannot authenticate against R2 — so ingest refuses to
-# start on a half-configured mirror rather than failing every upload later.
-
-[file_store]
-# AWS settings for output_bucket. The mirror above does NOT read these.
-
-# Region for the bucket. Defaults to below
-#
-# region = "us-west-2"
-
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
-#
-# endpoint = "https://aws-s3-bucket.aws.com"
 
 [metrics]
 

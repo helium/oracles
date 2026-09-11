@@ -32,10 +32,10 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         );
     }
 
-    let (file_upload, file_upload_servers) = settings.file_uploaders().await?;
+    let (file_upload, file_upload_servers) = settings.file_upload.connect().await?;
 
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
-        &settings.cache,
+        &settings.file_upload.root,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -44,7 +44,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     .await?;
 
     let (iot_sink, iot_sink_server) = IotHotspotChangeReportV1::file_sink(
-        &settings.cache,
+        &settings.file_upload.root,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -54,7 +54,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_ownership_sink, entity_ownership_sink_server) =
         EntityOwnershipChangeReportV1::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -64,7 +64,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_reward_destination_sink, entity_reward_destination_sink_server) =
         EntityRewardDestinationChangeReportV1::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload,
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),

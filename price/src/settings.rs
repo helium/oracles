@@ -31,7 +31,9 @@ pub struct Settings {
     /// are not started and ticks go only to the configured Iceberg
     /// table.
     #[serde(default)]
-    pub output: Option<file_store::BucketSettings>,
+    /// Buckets every price report is written to, and the directory they
+    /// stage under. Absent disables the S3 sink.
+    pub file_upload: Option<file_store::file_upload::Settings>,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -152,7 +154,11 @@ mod tests {
     fn test_default_price_override() -> anyhow::Result<()> {
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
+                (
+                    "PRICE__FILE_UPLOAD__BUCKETS__PRIMARY__BUCKET",
+                    Some("test-bucket".to_string()),
+                ),
+                ("PRICE__FILE_UPLOAD__ROOT", Some("/tmp/price".to_string())),
                 ("PRICE__DEFAULT_PRICE", Some("100000000".to_string())),
                 ("PRICE__API_KEY", Some("test-key".to_string())),
             ],
@@ -160,18 +166,16 @@ mod tests {
         )?;
 
         assert_eq!(settings.default_price, Some(100_000_000));
-        assert_eq!(
-            settings.output.as_ref().expect("output").bucket,
-            "test-bucket"
-        );
+        let uploads = settings.file_upload.as_ref().expect("uploads");
+        assert_eq!(uploads.buckets["primary"].bucket, "test-bucket");
         Ok(())
     }
 
     #[test]
     fn test_settings_template_parses() -> anyhow::Result<()> {
         let template = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pkg/settings-template.toml");
-        // The template ships with `[output]` commented out — `output`
-        // is optional for the server and required only for backfill.
+        // The template ships with `[file_upload]` commented out — uploads are
+        // optional for the server and required only for backfill.
         // `api_key` is required and ships commented out (set via env in
         // production), so it must be supplied here for the parse to succeed.
         let settings =
@@ -180,7 +184,7 @@ mod tests {
             })?;
 
         assert!(settings.source.contains("pyth.dourolabs.app/hermes"));
-        assert!(settings.output.is_none());
+        assert!(settings.file_upload.is_none());
         assert_eq!(settings.interval, Duration::from_secs(60));
         Ok(())
     }
@@ -190,7 +194,11 @@ mod tests {
         let url = "https://example.test/v2/updates/price/latest?ids[]=abc";
         let settings = temp_env::with_vars(
             [
-                ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
+                (
+                    "PRICE__FILE_UPLOAD__BUCKETS__PRIMARY__BUCKET",
+                    Some("test-bucket".to_string()),
+                ),
+                ("PRICE__FILE_UPLOAD__ROOT", Some("/tmp/price".to_string())),
                 ("PRICE__SOURCE", Some(url.to_string())),
                 ("PRICE__API_KEY", Some("test-key".to_string())),
             ],

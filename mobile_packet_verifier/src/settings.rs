@@ -4,12 +4,7 @@ use config::{Config, ConfigError, Environment, File};
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Duration,
-};
+use std::{collections::HashSet, path::Path, str::FromStr, time::Duration};
 
 use crate::{banning, multiplier, routing::RoutingKeys};
 
@@ -21,9 +16,6 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
-    /// Cache location for generated verified reports
-    #[serde(default = "default_cache")]
-    pub cache: PathBuf,
     /// Burn period in hours. (Default is 1 hour)
     #[serde(with = "humantime_serde", default = "default_burn_period")]
     pub burn_period: Duration,
@@ -34,7 +26,9 @@ pub struct Settings {
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     pub ingest_bucket: file_store::BucketSettings,
-    pub output_bucket: file_store::BucketSettings,
+    /// Buckets every verified report is written to, and the directory they
+    /// stage under.
+    pub file_upload: file_store::file_upload::Settings,
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::burn::Settings>,
@@ -101,10 +95,6 @@ fn default_gateway_refresh_interval() -> Duration {
 
 fn default_log() -> String {
     "mobile_packet_verifier=debug,poc_store=info".to_string()
-}
-
-fn default_cache() -> PathBuf {
-    PathBuf::from("/opt/mobile-packet-verifier/data")
 }
 
 fn default_burn_period() -> Duration {

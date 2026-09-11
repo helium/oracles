@@ -133,27 +133,28 @@ fn settings(
             r#"
 mode = "mobile"
 listen_addr = "{listen_addr}"
-cache = "{cache}"
 token = "{TOKEN}"
 carrier_authorized_keys = "{CARRIER_KEY}"
 # Short so the sink rolls and uploads within the test's patience. Production
 # runs 15 minutes.
 roll_time = "1s"
-output_bucket = "{primary_bucket}"
 
-# The mirror carries its own endpoint, region and key pair and inherits nothing
-# from [file_store] -- what makes a different provider possible.
-output_bucket_mirror = "{mirror_bucket}"
+[file_upload]
+root = "{cache}"
 
-[file_store_mirror]
-endpoint = "{mirror_endpoint}"
-region = "auto"
+[file_upload.buckets.primary]
+bucket = "{primary_bucket}"
+endpoint = "{primary_endpoint}"
+region = "us-east-1"
 access_key_id = "admin"
 secret_access_key = "admin"
 
-[file_store]
-endpoint = "{primary_endpoint}"
-region = "us-east-1"
+# The mirror carries its own endpoint, region and key pair and inherits nothing
+# from the primary -- what makes a different provider possible.
+[file_upload.buckets.mirror]
+bucket = "{mirror_bucket}"
+endpoint = "{mirror_endpoint}"
+region = "auto"
 access_key_id = "admin"
 secret_access_key = "admin"
 "#,

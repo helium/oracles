@@ -46,10 +46,13 @@ impl Cmd {
         // Backfill reads `PriceReportV1` files from S3 to seed the
         // Iceberg history; the bucket is non-optional here even though
         // the daemon allows Iceberg-only configurations.
+        // Every upload bucket holds the same files, so any one can be read
+        // back; take the first by label so the choice is deterministic.
         let output = settings
-            .output
+            .file_upload
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("`output` (S3 bucket) is required for backfill"))?;
+            .and_then(|uploads| uploads.buckets.values().next())
+            .ok_or_else(|| anyhow::anyhow!("`uploads` (S3 bucket) is required for backfill"))?;
 
         let pool = database.connect("price-backfill").await?;
         sqlx::migrate!().run(&pool).await?;

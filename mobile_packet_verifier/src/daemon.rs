@@ -11,9 +11,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
-};
+use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source};
 use file_store_oracles::{
     mobile_session::DataTransferSessionIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -289,14 +287,10 @@ impl Cmd {
             None
         };
 
-        let (file_upload, file_upload_servers) = file_upload::FileUpload::new(
-            vec![settings.output_bucket.connect().await],
-            &settings.cache,
-        )
-        .await?;
+        let (file_upload, file_upload_servers) = settings.file_upload.connect().await?;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Default,
@@ -306,7 +300,7 @@ impl Cmd {
 
         let (verified_sessions, verified_sessions_server) =
             VerifiedDataTransferIngestReportV1::file_sink(
-                &settings.cache,
+                &settings.file_upload.root,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
                 FileSinkRollTime::Default,
@@ -391,7 +385,7 @@ impl Cmd {
             &settings.multiplier,
             settings.ticket_signers()?,
             ticket_resolver,
-            &settings.cache,
+            &settings.file_upload.root,
             multiplier_ticket_writer,
         )
         .await?;
