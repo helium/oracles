@@ -792,7 +792,7 @@ fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let (file_upload, file_upload_servers) = settings.file_upload.connect().await?;
+    let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
 
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
         WifiHeartbeatIngestReportV1::file_sink(
@@ -1001,13 +1001,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.mode
     );
 
-    let mut task_manager = TaskManager::builder();
-    // One uploader task per output bucket.
-    for server in file_upload_servers {
-        task_manager = task_manager.add_task(server);
-    }
-
-    task_manager
+    TaskManager::builder()
+        .add_task(file_upload_tasks)
         .add_task(wifi_heartbeat_report_sink_server)
         .add_task(speedtest_report_sink_server)
         .add_task(data_transfer_session_sink_server)

@@ -1,10 +1,11 @@
 //! Where a service's rolled files go: the buckets, and the directory they stage
 //! under.
 
-use super::{invalid_input, FileUpload, FileUploadServer};
+use super::{invalid_input, FileUpload};
 use crate::{BucketSettings, Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
+use task_manager::TaskManager;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Settings {
@@ -35,8 +36,15 @@ pub struct Settings {
 
 impl Settings {
     /// Connects every configured bucket, returning the uploader the sinks write
-    /// through and a server task per bucket for the caller to manage.
-    pub async fn connect(&self) -> Result<(FileUpload, Vec<FileUploadServer>)> {
+    /// through and the tasks that drain it.
+    ///
+    /// The tasks come back as one nested [`TaskManager`] rather than a `Vec`,
+    /// so a caller adds a single task however many buckets are configured, and
+    /// the buckets start and stop as a unit. Nesting preserves the ordering a
+    /// caller wants: registered before the sinks, the uploaders are shut down
+    /// after them, so a sink's last files are handed over before its uploader
+    /// stops.
+    pub async fn connect(&self) -> Result<(FileUpload, TaskManager)> {
         self.validate()?;
 
         let mut buckets = Vec::with_capacity(self.buckets.len());
@@ -44,7 +52,17 @@ impl Settings {
             buckets.push(bucket.connect().await);
         }
 
-        FileUpload::new(buckets, &self.root).await
+        let (upload, servers) = FileUpload::new(buckets, &self.root).await?;
+
+        let mut tasks = TaskManager::builder();
+        for server in servers {
+            // Named for the bucket: otherwise every uploader logs under the
+            // same type name and they cannot be told apart.
+            let name = format!("file_upload:{}", server.bucket());
+            tasks = tasks.add_named(name, server);
+        }
+
+        Ok((upload, tasks.build()))
     }
 
     /// Rejects settings that cannot work as written, before anything connects,

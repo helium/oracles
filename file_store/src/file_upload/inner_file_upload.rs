@@ -165,6 +165,11 @@ impl ManagedTask for FileUploadServer {
 }
 
 impl FileUploadServer {
+    /// The bucket this server uploads to. Used to name its task.
+    pub(crate) fn bucket(&self) -> &str {
+        &self.bucket.bucket
+    }
+
     /// Overrides how hard the bucket is retried before a file is left for the
     /// next startup. Intended for tests, which cannot afford to sit through the
     /// production backoff to observe what happens when a bucket never accepts

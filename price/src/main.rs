@@ -94,7 +94,7 @@ impl Server {
         // gives us a uniform `PriceSink` interface.
         if let Some(uploads) = settings.file_upload.as_ref() {
             tracing::info!("output bucket configured, starting file_sink");
-            let (file_upload, file_upload_servers) = uploads.connect().await?;
+            let (file_upload, file_upload_tasks) = uploads.connect().await?;
             let (price_sink, price_sink_server) = PriceReportV1::file_sink(
                 &uploads.root,
                 file_upload.clone(),
@@ -103,10 +103,7 @@ impl Server {
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
-            // One uploader task per output bucket.
-            for server in file_upload_servers {
-                task_manager.add(server);
-            }
+            task_manager.add(file_upload_tasks);
             task_manager.add(price_sink_server);
             sinks.push(Box::new(S3PriceSink::new(price_sink)));
         }

@@ -287,7 +287,7 @@ impl Cmd {
             None
         };
 
-        let (file_upload, file_upload_servers) = settings.file_upload.connect().await?;
+        let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             &settings.file_upload.root,
@@ -390,13 +390,8 @@ impl Cmd {
         )
         .await?;
 
-        let mut task_manager = TaskManager::builder();
-        // One uploader task per output bucket.
-        for server in file_upload_servers {
-            task_manager = task_manager.add_task(server);
-        }
-
-        task_manager
+        TaskManager::builder()
+            .add_task(file_upload_tasks)
             .add_task(valid_sessions_server)
             .add_task(verified_sessions_server)
             .add_task(reports_server)

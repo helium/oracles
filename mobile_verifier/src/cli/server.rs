@@ -32,7 +32,7 @@ impl Cmd {
         // unwritable path should surface at boot, not at cutover.
         rewarder_state.mirror_to_file().await?;
 
-        let (file_upload, file_upload_servers) = settings.file_upload.connect().await?;
+        let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             &settings.file_upload.root,
@@ -86,13 +86,8 @@ impl Cmd {
             settings.location_cache_refresh_interval,
         );
 
-        let mut task_manager = TaskManager::builder();
-        // One uploader task per output bucket.
-        for server in file_upload_servers {
-            task_manager = task_manager.add_task(server);
-        }
-
-        task_manager
+        TaskManager::builder()
+            .add_task(file_upload_tasks)
             .add_task(valid_heartbeats_server)
             .add_task(task_manager::periodic(gateway_refresher))
             .add_task(task_manager::periodic(location_cache_refresher))
