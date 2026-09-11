@@ -1,8 +1,11 @@
-//! A [`FileUpload`] stores files in one bucket, and [`FileUploadServer`] is the
-//! task that drains its queue.
+//! The per-bucket half of an upload. An [`InnerFileUpload`] stages files for
+//! one bucket and [`FileUploadServer`] is the task that drains its queue.
+//!
+//! Not constructed directly: [`crate::file_upload::FileUpload`] owns one of
+//! these per bucket and is what a sink writes through.
 
 use super::{invalid_input, MessageSender};
-use crate::{error::ChannelError, file_upload::FileUploader, BucketClient, Error, Result};
+use crate::{error::ChannelError, BucketClient, Error, Result};
 use futures::{stream, StreamExt};
 use metrics::Label;
 use std::{
@@ -43,16 +46,14 @@ fn upload_counter(bucket: &str, status: Label) -> metrics::Counter {
 
 /// Uploads files to a single bucket.
 ///
-/// Owns `<root>/<bucket>/`. A file handed over is hardlinked in there and the
-/// caller's copy released, so from then on this uploader holds its own link:
-/// it is the only thing that removes it, and at startup it re-queues whatever
-/// is still there. That is what lets several uploaders share one rolled file
-/// without racing each other to delete it (see
-/// [`crate::file_upload::MultiFileUpload`]) — and a lone uploader behaves
-/// identically, just with one link instead of several.
+/// Owns `<root>/<bucket>/`. A file staged here is hardlinked into that
+/// directory, so from then on this uploader holds its own link: it is the only
+/// thing that removes it, and at startup it re-queues whatever is still there.
+/// That is what lets several uploaders share one rolled file without racing
+/// each other to delete it.
 #[derive(Debug, Clone)]
-pub struct FileUpload {
-    pub sender: MessageSender,
+pub struct InnerFileUpload {
+    sender: MessageSender,
     completion_rx: watch::Receiver<u64>,
     dir: PathBuf,
 }
@@ -66,21 +67,13 @@ pub struct FileUploadServer {
     retry_wait: Duration,
 }
 
-impl FileUpload {
-    pub async fn new(
-        client: crate::Client,
-        bucket: String,
-        root: impl AsRef<Path>,
-    ) -> Result<(Self, FileUploadServer)> {
-        Self::from_bucket_client(BucketClient { client, bucket }, root).await
-    }
-
+impl InnerFileUpload {
     /// Stages files in `<root>/<bucket>/`, created if missing.
     ///
     /// Naming the directory after the bucket is what keeps two uploaders under
     /// one root from treading on each other; it also means two buckets with the
     /// same name cannot share a root.
-    pub async fn from_bucket_client(
+    pub(super) async fn new(
         bucket: BucketClient,
         root: impl AsRef<Path>,
     ) -> Result<(Self, FileUploadServer)> {
@@ -110,7 +103,7 @@ impl FileUpload {
     /// Creates a `FileUpload` from a raw sender with a no-op completion tracker
     /// and an explicit staging directory. Useful in tests that inspect the raw
     /// upload channel directly and never run the server.
-    pub fn from_sender(sender: MessageSender, dir: impl AsRef<Path>) -> Self {
+    pub(super) fn from_sender(sender: MessageSender, dir: impl AsRef<Path>) -> Self {
         let (_tx, rx) = watch::channel(0u64);
         Self {
             sender,
@@ -156,31 +149,12 @@ impl FileUpload {
         Ok(link)
     }
 
-    /// Returns the number of files this uploader has finished with (stored,
-    /// skipped, or given up on).
-    pub fn completed_uploads(&self) -> u64 {
-        *self.completion_rx.borrow()
-    }
-
-    /// Waits until at least `n` files have been finished with.
-    /// Intended for test use to synchronize on upload completion without
-    /// blocking or changing production flows.
-    pub async fn wait_for_uploads_at_least(&self, n: u64) {
+    /// Test-only: see
+    /// [`crate::file_upload::FileUpload::wait_for_uploads_at_least`], which is
+    /// what tests actually call.
+    pub(super) async fn wait_for_uploads_at_least(&self, n: u64) {
         let mut rx = self.completion_rx.clone();
         let _ = rx.wait_for(|&count| count >= n).await;
-    }
-}
-
-#[async_trait::async_trait]
-impl FileUploader for FileUpload {
-    async fn upload_file(&self, file: &Path) -> Result {
-        let link = self.stage(file).await?;
-        // Our link is the one that counts now; release the caller's, unless it
-        // is the very same file.
-        if link != file {
-            fs::remove_file(file).await?;
-        }
-        Ok(())
     }
 }
 
@@ -191,10 +165,6 @@ impl ManagedTask for FileUploadServer {
 }
 
 impl FileUploadServer {
-    pub fn bucket(&self) -> &str {
-        &self.bucket.bucket
-    }
-
     /// Overrides how hard the bucket is retried before a file is left for the
     /// next startup. Intended for tests, which cannot afford to sit through the
     /// production backoff to observe what happens when a bucket never accepts

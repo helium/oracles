@@ -1,6 +1,6 @@
 use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
-    file_upload::FileUploader,
+    file_upload::FileUpload,
     FileSink, FileSinkBuilder, Result,
 };
 use helium_proto::{
@@ -37,16 +37,13 @@ where
     const FILE_PREFIX: &'static str;
     const METRIC_SUFFIX: &'static str;
 
-    /// Generic over the uploader so a sink can be pointed at one bucket
-    /// (`FileUpload`, the default) or several (`MultiFileUpload`) without any
-    /// caller that uses one bucket having to say so.
-    async fn file_sink<U: FileUploader>(
+    async fn file_sink(
         target_path: &Path,
-        file_upload: U,
+        file_upload: FileUpload,
         commit_strategy: FileSinkCommitStrategy,
         roll_time: FileSinkRollTime,
         metric_prefix: &str,
-    ) -> Result<(FileSinkClient<Self>, FileSink<Self, U>)> {
+    ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
             Self::FILE_PREFIX.to_string(),
             target_path,

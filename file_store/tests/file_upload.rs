@@ -1,6 +1,6 @@
 use file_store::{
     aws_local::AwsLocal,
-    file_upload::{FileUpload, FileUploadServer, FileUploader, MultiFileUpload, UPLOAD_METRIC},
+    file_upload::{FileUpload, FileUploadServer, UPLOAD_METRIC},
     BucketClient,
 };
 use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
@@ -23,41 +23,63 @@ async fn uploads_the_same_file_to_every_bucket() {
     mirror.create_bucket().await.expect("create mirror");
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let (primary_upload, primary_server) = upload_for(&primary, cache.path()).await;
-    let (mirror_upload, mirror_server) = upload_for(&mirror, cache.path()).await;
+    let (uploader, servers) = FileUpload::new(
+        vec![primary.bucket_client(), mirror.bucket_client()],
+        cache.path(),
+    )
+    .await
+    .expect("file upload");
 
     let (trigger, listener) = triggered::trigger();
-    let handles = vec![
-        Box::new(primary_server).start_task(listener.clone()),
-        Box::new(mirror_server).start_task(listener),
-    ];
+    let handles = start(servers, &listener);
 
     let contents = b"the exact same bytes".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
-
-    let uploader = MultiFileUpload::new(primary_upload.clone(), vec![mirror_upload.clone()])
-        .expect("multi upload");
     uploader.upload_file(&path).await.expect("fan out");
 
-    primary_upload.wait_for_uploads_at_least(1).await;
-    mirror_upload.wait_for_uploads_at_least(1).await;
+    uploader.wait_for_uploads_at_least(1).await;
 
     assert_eq!(contents, file_contents(&primary.bucket_client(), KEY).await);
     assert_eq!(contents, file_contents(&mirror.bucket_client(), KEY).await);
 
-    // Nothing is left on disk: the sink's link went when it was handed over,
-    // and each uploader dropped its own once the bucket had the file.
+    // Nothing is left on disk: the caller's link went at handover, and each
+    // uploader dropped its own once the bucket had the file.
     assert!(!path.exists());
-    assert!(!primary_upload.dir().join(KEY).exists());
-    assert!(!mirror_upload.dir().join(KEY).exists());
+    for upload in uploader.uploads() {
+        assert!(!upload.dir().join(KEY).exists());
+    }
 
     trigger.trigger();
-    for handle in handles {
-        handle.await.expect("uploader task");
-    }
+    join(handles).await;
 
     primary.cleanup().await.expect("cleanup primary");
     mirror.cleanup().await.expect("cleanup mirror");
+}
+
+/// One bucket takes the same path as several: the file is staged in that
+/// bucket's own directory rather than uploaded where it was handed over.
+#[tokio::test]
+async fn a_single_bucket_stages_in_its_own_directory() {
+    let cache = tempfile::tempdir().expect("tempdir");
+
+    // Servers are never started; they just hold the queues open.
+    let (uploader, _servers) = FileUpload::new(vec![offline_bucket("solo")], cache.path())
+        .await
+        .expect("file upload");
+
+    let dir = uploader.uploads()[0].dir().to_path_buf();
+    assert_eq!(cache.path().join("solo"), dir);
+    assert!(dir.is_dir(), "the directory is created up front");
+
+    let contents = b"staged by one bucket".to_vec();
+    let path = write_file(cache.path(), KEY, &contents).await;
+    uploader.upload_file(&path).await.expect("hand over");
+
+    assert!(!path.exists());
+    assert_eq!(
+        contents,
+        std::fs::read(dir.join(KEY)).expect("read staged file")
+    );
 }
 
 /// The point of the fan-out: three buckets cost one copy of the bytes, not
@@ -66,31 +88,22 @@ async fn uploads_the_same_file_to_every_bucket() {
 #[tokio::test]
 async fn hardlinks_into_each_bucket_rather_than_copying() {
     let cache = tempfile::tempdir().expect("tempdir");
+    let buckets = ["bucket-a", "bucket-b", "bucket-c"].map(offline_bucket);
 
-    let mut uploads = Vec::new();
-    // The servers are never started, but they hold the receiving end of each
-    // queue: dropping them would close the channel out from under the fan-out.
-    let mut _servers = Vec::new();
-    for bucket in ["bucket-a", "bucket-b", "bucket-c"] {
-        let (upload, server) = FileUpload::from_bucket_client(offline_bucket(bucket), cache.path())
-            .await
-            .expect("file upload");
-        uploads.push(upload);
-        _servers.push(server);
-    }
+    let (uploader, _servers) = FileUpload::new(buckets.to_vec(), cache.path())
+        .await
+        .expect("file upload");
 
     let contents = b"one inode, three names".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
     let source_ino = std::fs::metadata(&path).expect("source metadata").ino();
 
-    let (first, rest) = uploads.split_first().expect("at least one upload");
-    let uploader = MultiFileUpload::new(first.clone(), rest.to_vec()).expect("multi upload");
     uploader.upload_file(&path).await.expect("fan out");
 
-    // The sink's link is spent, but the bytes live on behind the staged ones.
+    // The caller's link is spent, but the bytes live on behind the staged ones.
     assert!(!path.exists());
 
-    for upload in &uploads {
+    for upload in uploader.uploads() {
         let link = upload.dir().join(KEY);
         let meta = std::fs::metadata(&link).expect("staged link metadata");
         assert_eq!(
@@ -104,87 +117,50 @@ async fn hardlinks_into_each_bucket_rather_than_copying() {
     }
 }
 
-/// A lone uploader behaves the same as one under a `MultiFileUpload`: it
-/// derives `<root>/<bucket>/` itself and stages there, rather than uploading
-/// from wherever the file happened to be handed over.
-#[tokio::test]
-async fn a_single_upload_stages_in_its_own_bucket_directory() {
-    let cache = tempfile::tempdir().expect("tempdir");
-
-    // Never started; it just holds the queue open.
-    let (upload, _server) = FileUpload::from_bucket_client(offline_bucket("solo"), cache.path())
-        .await
-        .expect("file upload");
-
-    assert_eq!(cache.path().join("solo"), upload.dir());
-    assert!(upload.dir().is_dir(), "the directory is created up front");
-
-    let contents = b"staged by a lone uploader".to_vec();
-    let path = write_file(cache.path(), KEY, &contents).await;
-
-    FileUploader::upload_file(&upload, &path)
-        .await
-        .expect("hand over");
-
-    // Moved into the bucket's directory, not left where the sink put it.
-    assert!(!path.exists());
-    let staged = upload.dir().join(KEY);
-    assert_eq!(contents, std::fs::read(&staged).expect("read staged file"));
-}
-
 /// Each bucket owns its own link, so one that is failing neither holds nor
 /// deletes a copy any other bucket cares about.
 #[tokio::test]
 async fn a_failing_bucket_keeps_only_its_own_copy() {
-    let primary = AwsLocal::new().await;
-    primary.create_bucket().await.expect("create primary");
+    let good = AwsLocal::new().await;
+    good.create_bucket().await.expect("create bucket");
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let (primary_upload, primary_server) = upload_for(&primary, cache.path()).await;
     // A bucket that was never created: every put against it fails.
-    let (missing_upload, missing_server) = FileUpload::from_bucket_client(
-        BucketClient {
-            client: primary.aws_client(),
-            bucket: "bucket-that-does-not-exist".to_string(),
-        },
-        cache.path(),
-    )
-    .await
-    .expect("file upload");
+    let missing = BucketClient {
+        client: good.aws_client(),
+        bucket: "bucket-that-does-not-exist".to_string(),
+    };
+    let (uploader, mut servers) =
+        FileUpload::new(vec![good.bucket_client(), missing], cache.path())
+            .await
+            .expect("file upload");
+
+    // Give up on the missing bucket immediately rather than sitting through the
+    // production backoff.
+    let failing = servers.pop().expect("missing bucket server");
+    servers.push(failing.with_retry_policy(0, Duration::from_millis(1)));
 
     let (trigger, listener) = triggered::trigger();
-    let handles = vec![
-        Box::new(primary_server).start_task(listener.clone()),
-        // Give up immediately rather than sitting through the production
-        // backoff.
-        Box::new(missing_server.with_retry_policy(0, Duration::from_millis(1)))
-            .start_task(listener),
-    ];
+    let handles = start(servers, &listener);
 
     let contents = b"kept on disk".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
-
-    let uploader = MultiFileUpload::new(primary_upload.clone(), vec![missing_upload.clone()])
-        .expect("multi upload");
     uploader.upload_file(&path).await.expect("fan out");
 
-    primary_upload.wait_for_uploads_at_least(1).await;
-    missing_upload.wait_for_uploads_at_least(1).await;
+    uploader.wait_for_uploads_at_least(1).await;
 
     // The working bucket stored the file and dropped its link...
-    assert_eq!(contents, file_contents(&primary.bucket_client(), KEY).await);
-    assert!(!primary_upload.dir().join(KEY).exists());
+    assert_eq!(contents, file_contents(&good.bucket_client(), KEY).await);
+    assert!(!uploader.uploads()[0].dir().join(KEY).exists());
     // ...while the failing one still holds the bytes for its own retry.
-    let kept = missing_upload.dir().join(KEY);
+    let kept = uploader.uploads()[1].dir().join(KEY);
     assert!(kept.exists());
     assert_eq!(contents, std::fs::read(&kept).expect("read kept link"));
 
     trigger.trigger();
-    for handle in handles {
-        handle.await.expect("uploader task");
-    }
+    join(handles).await;
 
-    primary.cleanup().await.expect("cleanup primary");
+    good.cleanup().await.expect("cleanup");
 }
 
 /// What makes a bucket that was down recoverable: whatever is still staged in
@@ -195,26 +171,45 @@ async fn resumes_files_left_in_its_directory() {
     bucket.create_bucket().await.expect("create bucket");
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let (upload, server) = upload_for(&bucket, cache.path()).await;
+    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+        .await
+        .expect("file upload");
 
     // Staged by a previous run that ended before the bucket had it. Nothing is
     // queued through the channel here — the startup scan is the only thing that
     // can find it.
     let contents = b"left over from last time".to_vec();
-    write_file(upload.dir(), KEY, &contents).await;
+    write_file(uploader.uploads()[0].dir(), KEY, &contents).await;
 
     let (trigger, listener) = triggered::trigger();
-    let handle = Box::new(server).start_task(listener);
+    let handles = start(servers, &listener);
 
-    upload.wait_for_uploads_at_least(1).await;
+    uploader.wait_for_uploads_at_least(1).await;
 
     assert_eq!(contents, file_contents(&bucket.bucket_client(), KEY).await);
-    assert!(!upload.dir().join(KEY).exists());
+    assert!(!uploader.uploads()[0].dir().join(KEY).exists());
 
     trigger.trigger();
-    handle.await.expect("uploader task");
+    join(handles).await;
 
     bucket.cleanup().await.expect("cleanup");
+}
+
+/// With no buckets, `upload_file` would release the caller's only copy having
+/// stored it nowhere.
+#[tokio::test]
+async fn no_buckets_is_an_error() {
+    let cache = tempfile::tempdir().expect("tempdir");
+    assert!(FileUpload::new(vec![], cache.path()).await.is_err());
+}
+
+/// Directories are named for their bucket, so two buckets with one name would
+/// upload and delete each other's files.
+#[tokio::test]
+async fn two_buckets_sharing_a_name_is_an_error() {
+    let cache = tempfile::tempdir().expect("tempdir");
+    let buckets = vec![offline_bucket("same-name"), offline_bucket("same-name")];
+    assert!(FileUpload::new(buckets, cache.path()).await.is_err());
 }
 
 /// The upload counter is what an operator alerts on, so a break in it is silent
@@ -228,36 +223,27 @@ async fn records_upload_outcome_per_bucket() {
     let missing_bucket = format!("{}-never-created", good.bucket());
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let (good_upload, good_server) = upload_for(&good, cache.path()).await;
-    let (missing_upload, missing_server) = FileUpload::from_bucket_client(
-        BucketClient {
-            client: good.aws_client(),
-            bucket: missing_bucket.clone(),
-        },
-        cache.path(),
-    )
-    .await
-    .expect("file upload");
+    let missing = BucketClient {
+        client: good.aws_client(),
+        bucket: missing_bucket.clone(),
+    };
+    let (uploader, mut servers) =
+        FileUpload::new(vec![good.bucket_client(), missing], cache.path())
+            .await
+            .expect("file upload");
+
+    let failing = servers.pop().expect("missing bucket server");
+    servers.push(failing.with_retry_policy(0, Duration::from_millis(1)));
 
     let (trigger, listener) = triggered::trigger();
-    let handles = vec![
-        Box::new(good_server).start_task(listener.clone()),
-        Box::new(missing_server.with_retry_policy(0, Duration::from_millis(1)))
-            .start_task(listener),
-    ];
+    let handles = start(servers, &listener);
 
     let path = write_file(cache.path(), KEY, b"counted").await;
-    let uploader = MultiFileUpload::new(good_upload.clone(), vec![missing_upload.clone()])
-        .expect("multi upload");
     uploader.upload_file(&path).await.expect("fan out");
-
-    good_upload.wait_for_uploads_at_least(1).await;
-    missing_upload.wait_for_uploads_at_least(1).await;
+    uploader.wait_for_uploads_at_least(1).await;
 
     trigger.trigger();
-    for handle in handles {
-        handle.await.expect("uploader task");
-    }
+    join(handles).await;
 
     // `snapshot()` drains, so collect once and assert against that.
     let counts = upload_counts(&snapshotter);
@@ -272,12 +258,19 @@ async fn records_upload_outcome_per_bucket() {
     good.cleanup().await.expect("cleanup");
 }
 
-/// A `FileUpload` for one of `AwsLocal`'s buckets, staging under
-/// `cache/<bucket>` the way ingest lays it out.
-async fn upload_for(aws: &AwsLocal, cache: &Path) -> (FileUpload, FileUploadServer) {
-    FileUpload::from_bucket_client(aws.bucket_client(), cache)
-        .await
-        .expect("file upload")
+fn start(servers: Vec<FileUploadServer>, listener: &triggered::Listener) -> Vec<TaskHandle> {
+    servers
+        .into_iter()
+        .map(|server| Box::new(server).start_task(listener.clone()))
+        .collect()
+}
+
+type TaskHandle = task_manager::TaskFuture;
+
+async fn join(handles: Vec<TaskHandle>) {
+    for handle in handles {
+        handle.await.expect("uploader task");
+    }
 }
 
 /// A bucket client that is never talked to — for tests that stop before any

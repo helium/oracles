@@ -2,7 +2,7 @@ use crate::authorization::AuthorizedKeys;
 use anyhow::Context;
 use config::{Config, Environment, File};
 use file_store::{
-    file_upload::{FileUpload, FileUploadServer, MultiFileUpload},
+    file_upload::{FileUpload, FileUploadServer},
     BucketClient,
 };
 use helium_crypto::{Network, PublicKeyBinary};
@@ -177,25 +177,15 @@ impl Settings {
     /// make progress independently: a mirror that is failing cannot delete the
     /// primary's copy, hold up its uploads, or lose its own — whatever it has
     /// not stored is picked up again on the next start.
-    pub async fn file_uploaders(&self) -> anyhow::Result<(MultiFileUpload, Vec<FileUploadServer>)> {
+    pub async fn file_uploaders(&self) -> anyhow::Result<(FileUpload, Vec<FileUploadServer>)> {
         let (primary, mirror) = self.output_buckets().await?;
 
-        // Each uploader stages under `cache/<bucket>/`, which it derives
-        // itself. Two buckets sharing a name would land in one directory;
-        // `MultiFileUpload::new` refuses that.
-        let (primary_upload, primary_server) =
-            FileUpload::from_bucket_client(primary, &self.cache).await?;
+        // Each bucket stages under `cache/<bucket>/`, which its uploader
+        // derives itself. Two buckets sharing a name would land in one
+        // directory; `FileUpload::new` refuses that.
+        let buckets = std::iter::once(primary).chain(mirror).collect();
 
-        let mut servers = vec![primary_server];
-        let mut mirrors = Vec::new();
-
-        if let Some(mirror) = mirror {
-            let (upload, server) = FileUpload::from_bucket_client(mirror, &self.cache).await?;
-            mirrors.push(upload);
-            servers.push(server);
-        }
-
-        Ok((MultiFileUpload::new(primary_upload, mirrors)?, servers))
+        Ok(FileUpload::new(buckets, &self.cache).await?)
     }
 
     /// Connects the primary output bucket and, if one is configured, the

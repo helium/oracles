@@ -289,8 +289,8 @@ impl Cmd {
             None
         };
 
-        let (file_upload, file_upload_server) = file_upload::FileUpload::from_bucket_client(
-            settings.output_bucket.connect().await,
+        let (file_upload, file_upload_servers) = file_upload::FileUpload::new(
+            vec![settings.output_bucket.connect().await],
             &settings.cache,
         )
         .await?;
@@ -396,8 +396,13 @@ impl Cmd {
         )
         .await?;
 
-        TaskManager::builder()
-            .add_task(file_upload_server)
+        let mut task_manager = TaskManager::builder();
+        // One uploader task per output bucket.
+        for server in file_upload_servers {
+            task_manager = task_manager.add_task(server);
+        }
+
+        task_manager
             .add_task(valid_sessions_server)
             .add_task(verified_sessions_server)
             .add_task(reports_server)
