@@ -50,7 +50,8 @@ carrier_authorized_keys = "key1,key2"
 
 [file_upload]
 # Directory the file sinks write into, and under which each bucket stages its
-# own <root>/<bucket>/ subdirectory. Required -- this was previously `cache`.
+# own <root>/<label>_<bucket>/ subdirectory. Required -- this was previously
+# `cache`.
 root = "/opt/ingest/data"
 
 # Every bucket a rolled file is written to, keyed by a label you choose. At

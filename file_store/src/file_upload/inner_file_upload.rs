@@ -46,7 +46,7 @@ fn upload_counter(bucket: &str, status: Label) -> metrics::Counter {
 
 /// Uploads files to a single bucket.
 ///
-/// Owns `<root>/<bucket>/`. A file staged here is hardlinked into that
+/// Owns `<root>/<label>_<bucket>/`. A file staged here is hardlinked into that
 /// directory, so from then on this uploader holds its own link: it is the only
 /// thing that removes it, and at startup it re-queues whatever is still there.
 /// That is what lets several uploaders share one rolled file without racing
@@ -55,6 +55,9 @@ fn upload_counter(bucket: &str, status: Label) -> metrics::Counter {
 pub struct InnerFileUpload {
     sender: MessageSender,
     completion_rx: watch::Receiver<u64>,
+    /// Bucket name, for logs and metrics. Not the directory name — see
+    /// [`InnerFileUpload::new`].
+    bucket: String,
     dir: PathBuf,
 }
 
@@ -67,16 +70,20 @@ pub struct FileUploadServer {
 }
 
 impl InnerFileUpload {
-    /// Stages files in `<root>/<bucket>/`, created if missing.
+    /// Stages files in `<root>/<label>_<bucket>/`, created if missing.
     ///
-    /// Naming the directory after the bucket is what keeps two uploaders under
-    /// one root from treading on each other; it also means two buckets with the
-    /// same name cannot share a root.
+    /// Both halves earn their place. The label is what makes the name unique —
+    /// two buckets on different providers may legitimately share a name, since
+    /// bucket names are scoped per provider, so the bucket alone would collide.
+    /// The bucket name is what makes the directory legible to whoever is
+    /// looking at the disk, since the label alone says nothing about where the
+    /// files are going.
     pub(super) async fn new(
+        label: &str,
         bucket: BucketClient,
         root: impl AsRef<Path>,
     ) -> Result<(Self, FileUploadServer)> {
-        let dir = root.as_ref().join(&bucket.bucket);
+        let dir = root.as_ref().join(format!("{label}_{}", bucket.bucket));
         fs::create_dir_all(&dir).await?;
 
         let (sender, receiver) = mpsc::unbounded_channel();
@@ -86,6 +93,7 @@ impl InnerFileUpload {
         let upload = Self {
             sender,
             completion_rx,
+            bucket: bucket.bucket.clone(),
             dir: dir.clone(),
         };
 
@@ -96,8 +104,17 @@ impl InnerFileUpload {
         // later would find the links a sink's own startup recovery had just
         // staged and queue them a second time — uploading and unlinking the
         // same file twice.
-        for staged in staged_files(&dir).await? {
-            upload.queue(&staged)?;
+        //
+        // Streamed into the queue rather than collected first: a bucket that
+        // was down for a week leaves a large backlog here, and this runs before
+        // the service binds its listener.
+        let mut entries = fs::read_dir(&dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            // Subdirectories are skipped as a precaution; nothing should create
+            // any here.
+            if entry.file_type().await?.is_file() {
+                upload.queue(&entry.path())?;
+            }
         }
 
         Ok((
@@ -115,13 +132,27 @@ impl InnerFileUpload {
     /// Creates a `FileUpload` from a raw sender with a no-op completion tracker
     /// and an explicit staging directory. Useful in tests that inspect the raw
     /// upload channel directly and never run the server.
+    ///
+    /// Unlike [`Self::new`] this runs no recovery scan, so the directory must
+    /// not already hold staged links: `stage` skips queueing a link that is
+    /// already there on the assumption the scan queued it, and here nothing
+    /// did. The directory is created so the first `stage` does not fail.
     pub(super) fn from_sender(sender: MessageSender, dir: impl AsRef<Path>) -> Self {
+        let dir = dir.as_ref().to_path_buf();
+        let _ = std::fs::create_dir_all(&dir);
         let (_tx, rx) = watch::channel(0u64);
         Self {
             sender,
             completion_rx: rx,
-            dir: dir.as_ref().to_path_buf(),
+            bucket: String::new(),
+            dir,
         }
+    }
+
+    /// The bucket this uploader stores to. Identifies it in logs and metrics;
+    /// the directory carries the label alongside it.
+    pub fn bucket(&self) -> &str {
+        &self.bucket
     }
 
     /// The directory this uploader owns.
@@ -150,7 +181,13 @@ impl InnerFileUpload {
                 // the scan in `new` has already queued it — queueing it again
                 // would upload and unlink it twice.
                 Err(err) if err.kind() == ErrorKind::AlreadyExists => return Ok(link),
-                Err(err) => return Err(Error::from(err)),
+                Err(err) => {
+                    // Counted like an upload failure: staging never reaches the
+                    // server, so without this a bucket whose directory has gone
+                    // bad is silent on the dashboard.
+                    upload_counter(&self.bucket, ERROR_LABEL).increment(1);
+                    return Err(Error::from(err));
+                }
             }
         }
 
@@ -260,21 +297,6 @@ impl FileUploadServer {
     }
 }
 
-/// Files sitting in an uploader's directory, waiting to be stored.
-/// Subdirectories are skipped as a precaution; nothing should create any here.
-async fn staged_files(dir: &Path) -> Result<Vec<PathBuf>> {
-    fs::create_dir_all(dir).await?;
-
-    let mut staged = Vec::new();
-    let mut entries = fs::read_dir(dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        if entry.file_type().await?.is_file() {
-            staged.push(entry.path());
-        }
-    }
-    Ok(staged)
-}
-
 /// Uploads a single file to a single bucket, retrying on failure. Returns
 /// whether the bucket ended up with the file.
 async fn put_with_retries(
@@ -297,7 +319,12 @@ async fn put_with_retries(
             Err(err) => {
                 tracing::error!("failed to store {path_str} in {bucket} retry: {retry}: {err:?}");
                 retry += 1;
-                time::sleep(retry_wait).await;
+                // Only when another attempt follows: sleeping after the last
+                // one just delays giving up, and with five concurrent slots
+                // that delay is throughput a backlog cannot spare.
+                if retry <= max_retries {
+                    time::sleep(retry_wait).await;
+                }
             }
         }
     }

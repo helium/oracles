@@ -193,8 +193,11 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     // Real FileSink for VerifiedDataTransferIngestReportV1 (CommitStrategy::Manual,
     // matching production). A short roll_time ensures the file is committed promptly.
     let cache_dir = tempfile::tempdir()?;
-    let (file_upload_client, mut file_upload_servers) =
-        file_upload::FileUpload::new(vec![awsl.bucket_client()], cache_dir.path()).await?;
+    let (file_upload_client, mut file_upload_servers) = file_upload::FileUpload::new(
+        vec![("output".to_string(), awsl.bucket_client())],
+        cache_dir.path(),
+    )
+    .await?;
     let file_upload_server = file_upload_servers.pop().expect("one server per bucket");
     let file_upload_watcher = file_upload_client.clone();
     let (verified_sessions_sink, verified_sessions_server) =
@@ -328,8 +331,11 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
     // Real FileSink for ValidDataTransferSession (Automatic commit — matches
     // production). Short roll_time so the file appears in S3 promptly.
     let cache_dir = tempfile::tempdir()?;
-    let (file_upload_client, mut file_upload_servers) =
-        file_upload::FileUpload::new(vec![awsl.bucket_client()], cache_dir.path()).await?;
+    let (file_upload_client, mut file_upload_servers) = file_upload::FileUpload::new(
+        vec![("output".to_string(), awsl.bucket_client())],
+        cache_dir.path(),
+    )
+    .await?;
     let file_upload_server = file_upload_servers.pop().expect("one server per bucket");
     let (valid_sessions_sink, valid_sessions_server) = ValidDataTransferSession::file_sink(
         cache_dir.path(),
@@ -510,8 +516,11 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
 
     // Both file sinks share one FileUpload client / server pair.
     let cache_dir = tempfile::tempdir()?;
-    let (file_upload_client, mut file_upload_servers) =
-        file_upload::FileUpload::new(vec![awsl.bucket_client()], cache_dir.path()).await?;
+    let (file_upload_client, mut file_upload_servers) = file_upload::FileUpload::new(
+        vec![("output".to_string(), awsl.bucket_client())],
+        cache_dir.path(),
+    )
+    .await?;
     let file_upload_server = file_upload_servers.pop().expect("one server per bucket");
 
     let (verified_sessions_sink, verified_sessions_server) =

@@ -14,7 +14,10 @@ pub struct Settings {
     ///
     /// The label is not the bucket name — that lives in the entry, alongside
     /// its own region, endpoint and credentials, so one bucket can sit on a
-    /// different provider from the others. Labels exist because bucket names
+    /// different provider from the others, and two may share a name. The label
+    /// names the staging directory, and identifies the entry in config errors;
+    /// the bucket name is what appears in logs and metrics. Labels exist
+    /// because bucket names
     /// are usually hyphenated and hyphens cannot appear in environment variable
     /// names; keying on the bucket name would put
     /// `..__BUCKETS__<LABEL>__SECRET_ACCESS_KEY` out of reach, and a mirror's
@@ -26,7 +29,7 @@ pub struct Settings {
     pub buckets: BTreeMap<String, BucketSettings>,
 
     /// Directory the file sinks write into, and under which each bucket stages
-    /// its own `<root>/<bucket>/`.
+    /// its own `<root>/<label>_<bucket>/`.
     ///
     /// No default: it used to be each service's `cache`, and the right value
     /// differs per service, so a shared default would silently point somewhere
@@ -47,9 +50,11 @@ impl Settings {
     pub async fn connect(&self) -> Result<(FileUpload, TaskManager)> {
         self.validate()?;
 
+        // Labels come along: they name the staging directories, so two buckets
+        // that share a name on different providers stay separate on disk.
         let mut buckets = Vec::with_capacity(self.buckets.len());
-        for bucket in self.buckets.values() {
-            buckets.push(bucket.connect().await);
+        for (label, bucket) in &self.buckets {
+            buckets.push((label.clone(), bucket.connect().await));
         }
 
         let (upload, servers) = FileUpload::new(buckets, &self.root).await?;

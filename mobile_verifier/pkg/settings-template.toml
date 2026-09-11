@@ -86,7 +86,8 @@ bucket = "price"
 
 [file_upload]
 # Directory the file sinks write into, and under which each bucket stages its
-# own <root>/<bucket>/ subdirectory. Required -- this replaces `cache`.
+# own <root>/<label>_<bucket>/ subdirectory. Required -- this replaces
+# `cache`.
 root = "/var/data/verfied-reports"
 
 # Every bucket a rolled file is written to, keyed by a label you choose. At

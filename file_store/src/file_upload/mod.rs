@@ -37,15 +37,16 @@ pub struct FileUpload {
 }
 
 impl FileUpload {
-    /// Connects one uploader per bucket, each staging in `<root>/<bucket>/`.
+    /// Connects one uploader per bucket, each staging in
+    /// `<root>/<label>_<bucket>/`.
     ///
-    /// Returns a server task per bucket for the caller to manage. At least one
-    /// bucket is required: with none, [`Self::upload_file`] would release the
-    /// sink's only copy having stored it nowhere. Two buckets may not share a
-    /// name, since the directory is named for the bucket and uploaders sharing
-    /// one would upload and delete each other's files.
+    /// Buckets are given as `(label, client)`. The label is what keeps two
+    /// buckets that share a name on different providers separate on disk; the
+    /// bucket name is there so the directory says where its files are going. Returns a server task per bucket for the caller to
+    /// manage. At least one bucket is required: with none, [`Self::upload_file`]
+    /// would release the sink's only copy having stored it nowhere.
     pub async fn new(
-        buckets: Vec<BucketClient>,
+        buckets: Vec<(String, BucketClient)>,
         root: impl AsRef<Path>,
     ) -> Result<(Self, Vec<FileUploadServer>)> {
         if buckets.is_empty() {
@@ -56,14 +57,16 @@ impl FileUpload {
         let mut uploads = Vec::with_capacity(buckets.len());
         let mut servers = Vec::with_capacity(buckets.len());
 
-        for bucket in buckets {
-            let (upload, server) = InnerFileUpload::new(bucket, root).await?;
+        for (label, bucket) in buckets {
+            let (upload, server) = InnerFileUpload::new(&label, bucket, root).await?;
+            // Labels are unique when they come from settings, where they are
+            // map keys. This guards the direct path.
             if uploads
                 .iter()
                 .any(|other: &InnerFileUpload| other.dir() == upload.dir())
             {
                 return Err(invalid_input(format!(
-                    "two buckets share the directory {}; each needs its own",
+                    "two buckets share the directory {}; each needs its own label",
                     upload.dir().display()
                 )));
             }
@@ -104,17 +107,40 @@ impl FileUpload {
 
     /// Takes ownership of `file`: every bucket gets its own link to it, and the
     /// caller's is released.
+    ///
+    /// A bucket that cannot be staged into is logged and skipped rather than
+    /// returned as an error. This is called from a sink's roll, where an error
+    /// aborts the sink task and takes the whole service down with it — so
+    /// propagating would let one bucket's unwritable directory stop every other
+    /// bucket and the service besides, which is the coupling this type exists
+    /// to avoid.
     pub async fn upload_file(&self, file: &Path) -> Result {
         let mut links = Vec::with_capacity(self.uploads.len());
+        let mut staged_everywhere = true;
+
         for upload in &self.uploads {
-            links.push(upload.stage(file).await?);
+            match upload.stage(file).await {
+                Ok(link) => links.push(link),
+                Err(err) => {
+                    tracing::error!(
+                        "failed to stage {} for {}: {err:?}",
+                        file.display(),
+                        upload.bucket()
+                    );
+                    staged_everywhere = false;
+                }
+            }
         }
 
-        // The caller's link is spent once every uploader holds its own. The
-        // bytes stay alive behind those until the last has stored the file.
-        if !links.iter().any(|link| link == file) {
-            fs::remove_file(file).await?;
+        // The caller's link is spent once every uploader holds its own. If one
+        // missed out, keep it: the sink hands over whatever is still here at
+        // the next startup, which is that bucket's second chance.
+        if staged_everywhere && !links.iter().any(|link| link == file) {
+            if let Err(err) = fs::remove_file(file).await {
+                tracing::error!("failed to release {}: {err:?}", file.display());
+            }
         }
+
         Ok(())
     }
 }

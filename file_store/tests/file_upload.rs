@@ -24,7 +24,10 @@ async fn uploads_the_same_file_to_every_bucket() {
 
     let cache = tempfile::tempdir().expect("tempdir");
     let (uploader, servers) = FileUpload::new(
-        vec![primary.bucket_client(), mirror.bucket_client()],
+        vec![
+            labelled(primary.bucket_client()),
+            labelled(mirror.bucket_client()),
+        ],
         cache.path(),
     )
     .await
@@ -63,12 +66,13 @@ async fn a_single_bucket_stages_in_its_own_directory() {
     let cache = tempfile::tempdir().expect("tempdir");
 
     // Servers are never started; they just hold the queues open.
-    let (uploader, _servers) = FileUpload::new(vec![offline_bucket("solo")], cache.path())
-        .await
-        .expect("file upload");
+    let (uploader, _servers) =
+        FileUpload::new(vec![labelled(offline_bucket("solo"))], cache.path())
+            .await
+            .expect("file upload");
 
     let dir = uploader.uploads()[0].dir().to_path_buf();
-    assert_eq!(cache.path().join("solo"), dir);
+    assert_eq!(staging_dir(cache.path(), "solo", "solo"), dir);
     assert!(dir.is_dir(), "the directory is created up front");
 
     let contents = b"staged by one bucket".to_vec();
@@ -88,9 +92,12 @@ async fn a_single_bucket_stages_in_its_own_directory() {
 #[tokio::test]
 async fn hardlinks_into_each_bucket_rather_than_copying() {
     let cache = tempfile::tempdir().expect("tempdir");
-    let buckets = ["bucket-a", "bucket-b", "bucket-c"].map(offline_bucket);
+    let buckets: Vec<_> = ["bucket-a", "bucket-b", "bucket-c"]
+        .map(offline_bucket)
+        .map(labelled)
+        .to_vec();
 
-    let (uploader, _servers) = FileUpload::new(buckets.to_vec(), cache.path())
+    let (uploader, _servers) = FileUpload::new(buckets, cache.path())
         .await
         .expect("file upload");
 
@@ -130,10 +137,12 @@ async fn a_failing_bucket_keeps_only_its_own_copy() {
         client: good.aws_client(),
         bucket: "bucket-that-does-not-exist".to_string(),
     };
-    let (uploader, mut servers) =
-        FileUpload::new(vec![good.bucket_client(), missing], cache.path())
-            .await
-            .expect("file upload");
+    let (uploader, mut servers) = FileUpload::new(
+        vec![labelled(good.bucket_client()), labelled(missing)],
+        cache.path(),
+    )
+    .await
+    .expect("file upload");
 
     // Give up on the missing bucket immediately rather than sitting through the
     // production backoff.
@@ -175,12 +184,12 @@ async fn resumes_files_left_in_its_directory() {
     // Staged by a previous run that ended before the bucket had it, so it is
     // already there when the uploader is built. Nothing is queued through the
     // channel here — the scan in `new` is the only thing that can find it.
-    let dir = cache.path().join(bucket.bucket());
+    let dir = staging_dir(cache.path(), bucket.bucket(), bucket.bucket());
     tokio::fs::create_dir_all(&dir).await.expect("create dir");
     let contents = b"left over from last time".to_vec();
     write_file(&dir, KEY, &contents).await;
 
-    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+    let (uploader, servers) = FileUpload::new(vec![labelled(bucket.bucket_client())], cache.path())
         .await
         .expect("file upload");
 
@@ -209,7 +218,7 @@ async fn a_file_handed_over_before_startup_is_not_uploaded_twice() {
     bucket.create_bucket().await.expect("create bucket");
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+    let (uploader, servers) = FileUpload::new(vec![labelled(bucket.bucket_client())], cache.path())
         .await
         .expect("file upload");
 
@@ -258,7 +267,7 @@ async fn a_leftover_link_and_its_source_are_uploaded_once() {
     bucket.create_bucket().await.expect("create bucket");
 
     let cache = tempfile::tempdir().expect("tempdir");
-    let dir = cache.path().join(bucket.bucket());
+    let dir = staging_dir(cache.path(), bucket.bucket(), bucket.bucket());
     tokio::fs::create_dir_all(&dir).await.expect("create dir");
 
     // Both names for one inode, exactly as a crash mid-handover leaves them.
@@ -266,7 +275,7 @@ async fn a_leftover_link_and_its_source_are_uploaded_once() {
     let source = write_file(cache.path(), KEY, &contents).await;
     std::fs::hard_link(&source, dir.join(KEY)).expect("stage the leftover link");
 
-    let (uploader, servers) = FileUpload::new(vec![bucket.bucket_client()], cache.path())
+    let (uploader, servers) = FileUpload::new(vec![labelled(bucket.bucket_client())], cache.path())
         .await
         .expect("file upload");
 
@@ -307,13 +316,102 @@ async fn no_buckets_is_an_error() {
     assert!(FileUpload::new(vec![], cache.path()).await.is_err());
 }
 
-/// Directories are named for their bucket, so two buckets with one name would
-/// upload and delete each other's files.
+/// A bucket whose directory has gone bad must not take the handover down with
+/// it: `upload_file` is called from a sink's roll, where an error aborts the
+/// sink task and TaskManager stops the whole service.
 #[tokio::test]
-async fn two_buckets_sharing_a_name_is_an_error() {
+async fn a_bucket_that_cannot_be_staged_into_does_not_fail_the_handover() {
     let cache = tempfile::tempdir().expect("tempdir");
-    let buckets = vec![offline_bucket("same-name"), offline_bucket("same-name")];
+    let buckets = vec![
+        ("good".to_string(), offline_bucket("bucket-good")),
+        ("broken".to_string(), offline_bucket("bucket-broken")),
+    ];
+    let (uploader, _servers) = FileUpload::new(buckets, cache.path())
+        .await
+        .expect("file upload");
+
+    // Its directory is now a regular file, so hardlinking into it fails.
+    let broken = uploader.uploads()[1].dir().to_path_buf();
+    std::fs::remove_dir(&broken).expect("remove dir");
+    std::fs::write(&broken, b"not a directory").expect("replace with a file");
+
+    let contents = b"one bucket is broken".to_vec();
+    let path = write_file(cache.path(), KEY, &contents).await;
+
+    uploader
+        .upload_file(&path)
+        .await
+        .expect("a broken bucket must not fail the handover");
+
+    // The healthy bucket has its link...
+    let good = uploader.uploads()[0].dir().join(KEY);
+    assert_eq!(contents, std::fs::read(&good).expect("read staged link"));
+    // ...and the caller's copy is kept, so the sink hands it over again at the
+    // next startup and the broken bucket gets another chance.
+    assert!(
+        path.exists(),
+        "the source was released with a bucket missing"
+    );
+}
+
+/// Bucket names are scoped per provider, so mirroring to a bucket of the same
+/// name on another provider is a legitimate config. Directories are named for
+/// the label, which keeps the two apart on disk.
+#[tokio::test]
+async fn two_buckets_may_share_a_name_under_different_labels() {
+    let cache = tempfile::tempdir().expect("tempdir");
+    let buckets = vec![
+        (
+            "primary".to_string(),
+            offline_bucket("helium-mobile-ingest"),
+        ),
+        ("r2".to_string(), offline_bucket("helium-mobile-ingest")),
+    ];
+
+    let (uploader, _servers) = FileUpload::new(buckets, cache.path())
+        .await
+        .expect("same bucket name on two providers is allowed");
+
+    let expected = |label| staging_dir(cache.path(), label, "helium-mobile-ingest");
+    assert_eq!(expected("primary"), uploader.uploads()[0].dir());
+    assert_eq!(expected("r2"), uploader.uploads()[1].dir());
+    // Both still report under the bucket name, which is what metrics key on.
+    assert_eq!("helium-mobile-ingest", uploader.uploads()[0].bucket());
+}
+
+/// Uniqueness now comes from label and bucket together, so the guard only has
+/// to catch an entry repeated outright. Settings cannot produce one — labels
+/// are map keys — so this covers the direct constructor.
+#[tokio::test]
+async fn the_same_bucket_under_the_same_label_twice_is_an_error() {
+    let cache = tempfile::tempdir().expect("tempdir");
+    let buckets = vec![
+        ("same".to_string(), offline_bucket("bucket-a")),
+        ("same".to_string(), offline_bucket("bucket-a")),
+    ];
     assert!(FileUpload::new(buckets, cache.path()).await.is_err());
+}
+
+/// One label with two different buckets is fine: the bucket name is part of
+/// the directory, so they do not collide.
+#[tokio::test]
+async fn one_label_with_different_buckets_does_not_collide() {
+    let cache = tempfile::tempdir().expect("tempdir");
+    let buckets = vec![
+        ("out".to_string(), offline_bucket("bucket-a")),
+        ("out".to_string(), offline_bucket("bucket-b")),
+    ];
+    let (uploader, _servers) = FileUpload::new(buckets, cache.path())
+        .await
+        .expect("distinct buckets do not collide");
+    assert_eq!(
+        staging_dir(cache.path(), "out", "bucket-a"),
+        uploader.uploads()[0].dir()
+    );
+    assert_eq!(
+        staging_dir(cache.path(), "out", "bucket-b"),
+        uploader.uploads()[1].dir()
+    );
 }
 
 /// The upload counter is what an operator alerts on, so a break in it is silent
@@ -331,10 +429,12 @@ async fn records_upload_outcome_per_bucket() {
         client: good.aws_client(),
         bucket: missing_bucket.clone(),
     };
-    let (uploader, mut servers) =
-        FileUpload::new(vec![good.bucket_client(), missing], cache.path())
-            .await
-            .expect("file upload");
+    let (uploader, mut servers) = FileUpload::new(
+        vec![labelled(good.bucket_client()), labelled(missing)],
+        cache.path(),
+    )
+    .await
+    .expect("file upload");
 
     let failing = servers.pop().expect("missing bucket server");
     servers.push(failing.with_retry_policy(0, Duration::from_millis(1)));
@@ -375,6 +475,17 @@ async fn join(handles: Vec<TaskHandle>) {
     for handle in handles {
         handle.await.expect("uploader task");
     }
+}
+
+/// Labels a bucket by its own name. Labels only have to be distinct, and the
+/// bucket name already is.
+fn labelled(bucket: BucketClient) -> (String, BucketClient) {
+    (bucket.bucket.clone(), bucket)
+}
+
+/// Where an uploader stages: `<root>/<label>_<bucket>/`.
+fn staging_dir(root: &Path, label: &str, bucket: &str) -> PathBuf {
+    root.join(format!("{label}_{bucket}"))
 }
 
 /// A bucket client that is never talked to — for tests that stop before any
