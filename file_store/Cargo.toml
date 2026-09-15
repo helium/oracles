@@ -38,9 +38,6 @@ aws-smithy-types-convert = { workspace = true }
 
 [dev-dependencies]
 metrics-util = { version = "0", features = ["debugging"] }
-tempfile = { workspace = true }
-tokio = { workspace = true }
-triggered = { workspace = true }
 
 [features]
 default = ["sqlx-postgres"]

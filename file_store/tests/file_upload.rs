@@ -1,6 +1,6 @@
 use file_store::{
     aws_local::AwsLocal,
-    file_upload::{FileUpload, FileUploadServer, UPLOAD_METRIC},
+    file_upload::{FileUpload, FileUploadServer, Handover, UPLOAD_METRIC},
     BucketClient,
 };
 use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
@@ -38,7 +38,7 @@ async fn uploads_the_same_file_to_every_bucket() {
 
     let contents = b"the exact same bytes".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
-    uploader.upload_file(&path).await.expect("fan out");
+    hand_over(&uploader, &path).await;
 
     uploader.wait_for_uploads_at_least(1).await;
 
@@ -77,7 +77,7 @@ async fn a_single_bucket_stages_in_its_own_directory() {
 
     let contents = b"staged by one bucket".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
-    uploader.upload_file(&path).await.expect("hand over");
+    hand_over(&uploader, &path).await;
 
     assert!(!path.exists());
     assert_eq!(
@@ -105,7 +105,7 @@ async fn hardlinks_into_each_bucket_rather_than_copying() {
     let path = write_file(cache.path(), KEY, &contents).await;
     let source_ino = std::fs::metadata(&path).expect("source metadata").ino();
 
-    uploader.upload_file(&path).await.expect("fan out");
+    hand_over(&uploader, &path).await;
 
     // The caller's link is spent, but the bytes live on behind the staged ones.
     assert!(!path.exists());
@@ -154,7 +154,7 @@ async fn a_failing_bucket_keeps_only_its_own_copy() {
 
     let contents = b"kept on disk".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
-    uploader.upload_file(&path).await.expect("fan out");
+    hand_over(&uploader, &path).await;
 
     uploader.wait_for_uploads_at_least(1).await;
 
@@ -228,7 +228,7 @@ async fn a_file_handed_over_before_startup_is_not_uploaded_twice() {
     let path = write_file(cache.path(), KEY, &contents).await;
 
     // FileSink::init hands it over, while the servers are still only built.
-    uploader.upload_file(&path).await.expect("hand over");
+    hand_over(&uploader, &path).await;
 
     // Only now does the TaskManager start them.
     let (trigger, listener) = triggered::trigger();
@@ -281,7 +281,7 @@ async fn a_leftover_link_and_its_source_are_uploaded_once() {
 
     // FileSink::init finds the source still sitting in the root and hands it
     // over, the way it does on every start.
-    uploader.upload_file(&source).await.expect("hand over");
+    hand_over(&uploader, &source).await;
 
     let (trigger, listener) = triggered::trigger();
     let handles = start(servers, &listener);
@@ -338,10 +338,11 @@ async fn a_bucket_that_cannot_be_staged_into_does_not_fail_the_handover() {
     let contents = b"one bucket is broken".to_vec();
     let path = write_file(cache.path(), KEY, &contents).await;
 
-    uploader
-        .upload_file(&path)
-        .await
-        .expect("a broken bucket must not fail the handover");
+    assert_eq!(
+        Handover::Partial,
+        uploader.stage(&path).await,
+        "a broken bucket must be reported, not returned as an error"
+    );
 
     // The healthy bucket has its link...
     let good = uploader.uploads()[0].dir().join(KEY);
@@ -443,7 +444,7 @@ async fn records_upload_outcome_per_bucket() {
     let handles = start(servers, &listener);
 
     let path = write_file(cache.path(), KEY, b"counted").await;
-    uploader.upload_file(&path).await.expect("fan out");
+    hand_over(&uploader, &path).await;
     uploader.wait_for_uploads_at_least(1).await;
 
     trigger.trigger();
@@ -475,6 +476,23 @@ async fn join(handles: Vec<TaskHandle>) {
     for handle in handles {
         handle.await.expect("uploader task");
     }
+}
+
+/// What a sink does with a rolled file: hand it to every bucket, and release
+/// its own copy once they have all taken a link.
+///
+/// Asserts the handover was complete, which every test but
+/// `a_bucket_that_cannot_be_staged_into_...` expects; that one drives
+/// `stage` directly.
+async fn hand_over(uploader: &FileUpload, file: &Path) {
+    assert_eq!(
+        Handover::Complete,
+        uploader.stage(file).await,
+        "every bucket should have taken a link"
+    );
+    tokio::fs::remove_file(file)
+        .await
+        .expect("release the source");
 }
 
 /// Labels a bucket by its own name. Labels only have to be distinct, and the

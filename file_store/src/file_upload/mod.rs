@@ -3,7 +3,7 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
-use tokio::{fs, sync::mpsc};
+use tokio::sync::mpsc;
 
 pub mod inner_file_upload;
 pub mod settings;
@@ -105,44 +105,49 @@ impl FileUpload {
         }
     }
 
-    /// Takes ownership of `file`: every bucket gets its own link to it, and the
-    /// caller's is released.
+    /// Links `file` into every bucket's directory.
     ///
-    /// A bucket that cannot be staged into is logged and skipped rather than
-    /// returned as an error. This is called from a sink's roll, where an error
-    /// aborts the sink task and takes the whole service down with it — so
-    /// propagating would let one bucket's unwritable directory stop every other
-    /// bucket and the service besides, which is the coupling this type exists
-    /// to avoid.
-    pub async fn upload_file(&self, file: &Path) -> Result {
-        let mut links = Vec::with_capacity(self.uploads.len());
-        let mut staged_everywhere = true;
+    /// Does not touch `file` itself: whoever created it stays responsible for
+    /// it, and releases it once [`Handover::Complete`] says every bucket holds
+    /// a link of its own. Each uploader then owns that link — it is the only
+    /// thing that removes it — so the bytes survive until the last bucket has
+    /// stored the file.
+    ///
+    /// A bucket that cannot be staged into is logged and reported as
+    /// [`Handover::Partial`] rather than returned as an error. This runs inside
+    /// a sink's roll, where an error aborts the sink task and TaskManager stops
+    /// the service, so propagating would let one bucket's unwritable directory
+    /// stop every other bucket and the service besides — the coupling this type
+    /// exists to avoid.
+    pub async fn stage(&self, file: &Path) -> Handover {
+        let mut handover = Handover::Complete;
 
         for upload in &self.uploads {
-            match upload.stage(file).await {
-                Ok(link) => links.push(link),
-                Err(err) => {
-                    tracing::error!(
-                        "failed to stage {} for {}: {err:?}",
-                        file.display(),
-                        upload.bucket()
-                    );
-                    staged_everywhere = false;
-                }
+            if let Err(err) = upload.stage(file).await {
+                tracing::error!(
+                    "failed to stage {} for {}: {err:?}",
+                    file.display(),
+                    upload.bucket()
+                );
+                handover = Handover::Partial;
             }
         }
 
-        // The caller's link is spent once every uploader holds its own. If one
-        // missed out, keep it: the sink hands over whatever is still here at
-        // the next startup, which is that bucket's second chance.
-        if staged_everywhere && !links.iter().any(|link| link == file) {
-            if let Err(err) = fs::remove_file(file).await {
-                tracing::error!("failed to release {}: {err:?}", file.display());
-            }
-        }
-
-        Ok(())
+        handover
     }
+}
+
+/// Whether every bucket took a link of its own, and so whether the caller's
+/// copy can be released.
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handover {
+    /// Every bucket holds its own link. The caller's copy is spent.
+    Complete,
+    /// At least one bucket missed out. Keeping the caller's copy is what gives
+    /// that bucket another chance: the sink hands over whatever is still in its
+    /// directory at the next startup.
+    Partial,
 }
 
 fn invalid_input(message: impl Into<String>) -> Error {
