@@ -4,7 +4,6 @@
 # log = "mobile-verifier=debug,poc_store=info"
 
 # Cache location for generated verified reports; Required
-cache = "/var/data/verfied-reports"
 
 # Reward period in hours. (Default is 24)
 # rewards = "24 hours"
@@ -85,21 +84,41 @@ bucket = "price"
 #
 # endpoint = "https://aws-s3-bucket.aws.com"
 
-[output]
-# Output bucket for verified reports
+[file_upload]
+# Directory the file sinks write into, and under which each bucket stages its
+# own <root>/<label>_<bucket>/ subdirectory. Required -- this replaces
+# `cache`.
+root = "/var/data/verfied-reports"
 
-# Name of bucket to write details to. Required
+# Every bucket a rolled file is written to, keyed by a label you choose. At
+# least one is required. Two buckets means the same file, byte for byte and
+# under the same key, lands in both.
 #
+# The label is not the bucket name -- that goes in the entry. Labels exist so
+# credentials can come from the environment: bucket names are hyphenated and
+# hyphens cannot appear in an environment variable name.
+#
+#   VERIFIER__FILE_UPLOAD__BUCKETS__PRIMARY__SECRET_ACCESS_KEY=<secret>
+#
+# Each entry carries its own region, endpoint and credentials and inherits
+# nothing from the others, which is what lets one bucket live on a different
+# provider than another -- a Cloudflare R2 mirror of an S3 primary. For R2 the
+# region is "auto" and the key pair is an R2 API token, not the AWS one.
+#
+# Set both access_key_id and secret_access_key or neither: with only one the S3
+# client silently ignores both and falls back to the ambient AWS credential
+# chain, so the service refuses to start rather than failing every upload.
+
+[file_upload.buckets.primary]
 bucket = "mainnet-mobile-verified"
-
-# Region for bucket. Defaults to below
-#
 # region = "us-west-2"
 
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
-#
-# endpoint = "https://aws-s3-bucket.aws.com"
+# [file_upload.buckets.mirror]
+# bucket = "mainnet-mobile-verified-mirror"
+# endpoint = "https://<account_id>.r2.cloudflarestorage.com"
+# region = "auto"
+# access_key_id = "<r2 access key id>"
+# secret_access_key = "<r2 secret access key>"
 
 [metrics]
 

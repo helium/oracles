@@ -74,19 +74,23 @@ impl AwsLocal {
             })
             .collect::<Result<_>>()?;
 
-        self.client
-            .client
-            .delete_objects()
-            .bucket(&self.client.bucket)
-            .delete(
-                aws_sdk_s3::types::Delete::builder()
-                    .set_objects(Some(objects))
-                    .build()
-                    .map_err(AwsLocalError::new)?,
-            )
-            .send()
-            .await
-            .map_err(AwsLocalError::new)?;
+        // S3 rejects a DeleteObjects carrying no keys, so a bucket that was
+        // created but never written to could not be torn down at all.
+        if !objects.is_empty() {
+            self.client
+                .client
+                .delete_objects()
+                .bucket(&self.client.bucket)
+                .delete(
+                    aws_sdk_s3::types::Delete::builder()
+                        .set_objects(Some(objects))
+                        .build()
+                        .map_err(AwsLocalError::new)?,
+                )
+                .send()
+                .await
+                .map_err(AwsLocalError::new)?;
+        }
 
         self.client
             .client

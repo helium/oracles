@@ -1,6 +1,9 @@
 use crate::error::ChannelError;
 use crate::rolling_file_sink::{RollingFileSink, RollingFileWriteResult};
-use crate::{file_upload::FileUpload, Error, Result};
+use crate::{
+    file_upload::{FileUpload, Handover},
+    Error, Result,
+};
 use chrono::Utc;
 use metrics::Label;
 use std::time::Duration;
@@ -20,10 +23,14 @@ use tokio::{
 
 pub const DEFAULT_SINK_ROLL_SECS: u64 = 3 * 60;
 
-#[cfg(not(test))]
-pub const SINK_CHECK_MILLIS: u64 = 60_000;
-#[cfg(test)]
-pub const SINK_CHECK_MILLIS: u64 = 50;
+/// Longest a sink waits between checks for a file that is due to roll. The
+/// check interval is the configured roll time capped at this, so a sink told to
+/// roll every few seconds actually does — before this was a flat 60s, a
+/// `roll_time` shorter than the interval was silently rounded up to it, and the
+/// tests had to override the constant under `cfg(test)` to observe a roll at
+/// all. At or above 60s (every deployment: the default roll time is 3 minutes,
+/// ingest configures 15) the interval is unchanged.
+pub const MAX_SINK_CHECK: Duration = Duration::from_secs(60);
 
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
@@ -277,7 +284,7 @@ impl<T: prost::Message> FileSink<T> {
         let mut dir = fs::read_dir(&self.target_path).await?;
         while let Some(entry) = dir.next_entry().await? {
             if starts_with_prefix(&entry, &self.prefix) {
-                self.file_upload.upload_file(&entry.path()).await?;
+                self.hand_over(&entry.path()).await;
             }
         }
 
@@ -303,7 +310,13 @@ impl<T: prost::Message> FileSink<T> {
             self.target_path.display()
         );
 
-        let mut rollover_timer = time::interval(Duration::from_millis(SINK_CHECK_MILLIS));
+        let check_interval = self
+            .rolling_sink
+            .roll_time()
+            .min(MAX_SINK_CHECK)
+            // `interval` panics on a zero period.
+            .max(Duration::from_millis(1));
+        let mut rollover_timer = time::interval(check_interval);
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
 
         loop {
@@ -428,9 +441,24 @@ impl<T: prost::Message> FileSink<T> {
         let target_path = self.target_path.join(target_filename);
 
         fs::rename(&sink_path, &target_path).await?;
-        self.file_upload.upload_file(&target_path).await?;
+        self.hand_over(&target_path).await;
 
         Ok(())
+    }
+
+    /// Hands `file` to the uploader and releases our copy once every bucket
+    /// holds a link of its own.
+    ///
+    /// We created the file, so we are the one that removes it — the uploader
+    /// only ever adds links, and removes only the links it made. When a bucket
+    /// missed out the file stays put, and [`Self::init`] hands it over again at
+    /// the next startup.
+    async fn hand_over(&self, file: &Path) {
+        if self.file_upload.stage(file).await == Handover::Complete {
+            if let Err(err) = fs::remove_file(file).await {
+                tracing::error!("failed to release {}: {err:?}", file.display());
+            }
+        }
     }
 
     fn encode_msg(item: T) -> bytes::Bytes {
@@ -470,10 +498,13 @@ mod tests {
         let tmp_dir = TempDir::new()?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload::from_sender(file_upload_tx);
+        // The uploader stages into its own directory, as it does in
+        // production; the sink releases its copy once it has.
+        let upload_dir = tmp_dir.path().join("upload");
+        let file_upload = FileUpload::from_sender(file_upload_tx, &upload_dir);
 
         let msg = "hello".to_string();
-        let msg_size = FileSink::encode_msg(msg.clone()).len();
+        let msg_size = FileSink::<String>::encode_msg(msg.clone()).len();
 
         let (_file_sink_client, mut file_sink_server) =
             FileSinkBuilder::new("report", tmp_dir.path(), file_upload, "metric")
@@ -502,7 +533,10 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload::from_sender(file_upload_tx);
+        // The uploader stages into its own directory, as it does in
+        // production; the sink releases its copy once it has.
+        let upload_dir = tmp_dir.path().join("upload");
+        let file_upload = FileUpload::from_sender(file_upload_tx, &upload_dir);
 
         let file_prefix = "entropy_report";
         let (file_sink_client, file_sink_server) =
@@ -531,7 +565,7 @@ mod tests {
         shutdown_trigger.trigger();
         sink_thread.await.expect("file sink did not complete");
 
-        let entropy_file = get_entropy_file(&tmp_dir, file_prefix)
+        let entropy_file = get_entropy_file(&upload_dir, file_prefix)
             .await
             .expect("no entropy available");
         assert_eq!("hello", read_file(&entropy_file).await);
@@ -542,7 +576,10 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
-        let file_upload = FileUpload::from_sender(file_upload_tx);
+        // The uploader stages into its own directory, as it does in
+        // production; the sink releases its copy once it has.
+        let upload_dir = tmp_dir.path().join("upload");
+        let file_upload = FileUpload::from_sender(file_upload_tx, &upload_dir);
 
         let file_prefix = "entropy_report";
 
@@ -572,7 +609,7 @@ mod tests {
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;
 
-        assert!(get_entropy_file(&tmp_dir, file_prefix).await.is_err());
+        assert!(get_entropy_file(&upload_dir, file_prefix).await.is_err());
         assert!(matches!(
             file_upload_rx.try_recv(),
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)
@@ -583,7 +620,7 @@ mod tests {
 
         assert!(file_upload_rx.try_recv().is_ok());
 
-        let entropy_file = get_entropy_file(&tmp_dir, file_prefix)
+        let entropy_file = get_entropy_file(&upload_dir, file_prefix)
             .await
             .expect("no entropy available");
         assert_eq!("hello", read_file(&entropy_file).await);
@@ -602,12 +639,10 @@ mod tests {
     }
 
     async fn get_entropy_file(
-        tmp_dir: &TempDir,
+        dir: &Path,
         prefix: &'static str,
     ) -> std::result::Result<DirEntry, String> {
-        let mut entries = fs::read_dir(tmp_dir.path())
-            .await
-            .expect("failed to read tmp dir");
+        let mut entries = fs::read_dir(dir).await.expect("failed to read dir");
 
         while let Some(entry) = entries.next_entry().await.unwrap() {
             if is_entropy_file(&entry, prefix) {

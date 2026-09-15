@@ -31,9 +31,58 @@ pub struct Cmd {
     /// Format: RFC 3339 (e.g. 2026-04-24T00:00:00Z)
     #[clap(long)]
     stop_after: DateTime<Utc>,
+
+    /// Label of the upload bucket to read the history from, as it appears in
+    /// `[file_upload.buckets.<label>]`. Required when more than one is
+    /// configured: buckets hold the same files only from the point the second
+    /// was added, so reading from a recently added mirror would silently
+    /// backfill an incomplete history.
+    #[clap(long)]
+    bucket: Option<String>,
 }
 
 impl Cmd {
+    /// The bucket to read the history back from.
+    ///
+    /// Never guesses between several: they agree only on files written after
+    /// the last one was added, so picking the wrong one backfills a partial
+    /// history and reports success.
+    fn bucket_to_read<'a>(
+        &self,
+        file_upload: &'a file_store::file_upload::Settings,
+    ) -> Result<&'a file_store::BucketSettings> {
+        let labels = || {
+            file_upload
+                .buckets
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        if let Some(label) = &self.bucket {
+            return file_upload.buckets.get(label).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no upload bucket labelled {label:?}; configured: {}",
+                    labels()
+                )
+            });
+        }
+
+        let mut configured = file_upload.buckets.values();
+        let only = configured
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("`file_upload.buckets` is empty"))?;
+        if configured.next().is_some() {
+            anyhow::bail!(
+                "more than one upload bucket is configured; pass --bucket <label> to say \
+                 which history to backfill from (configured: {})",
+                labels()
+            );
+        }
+        Ok(only)
+    }
+
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let database = settings
             .database
@@ -46,10 +95,11 @@ impl Cmd {
         // Backfill reads `PriceReportV1` files from S3 to seed the
         // Iceberg history; the bucket is non-optional here even though
         // the daemon allows Iceberg-only configurations.
-        let output = settings
-            .output
+        let file_upload = settings
+            .file_upload
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("`output` (S3 bucket) is required for backfill"))?;
+            .ok_or_else(|| anyhow::anyhow!("`file_upload` is required for backfill"))?;
+        let output = self.bucket_to_read(file_upload)?;
 
         let pool = database.connect("price-backfill").await?;
         sqlx::migrate!().run(&pool).await?;

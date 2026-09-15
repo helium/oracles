@@ -72,7 +72,7 @@ where
         speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
             FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
