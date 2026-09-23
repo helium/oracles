@@ -83,9 +83,13 @@ jobs:
             *) echo "Unsupported package: ${{ matrix.package }}"; exit 1 ;;
           esac
       - name: Pull from Zot, tag for ECR, and push
+        env:
+          ZOT_URL: ${{ secrets.ZOT_URL }}
+          PACKAGE: ${{ matrix.package }}
+          VERSION: ${{ inputs.version }}
         run: |
-          SRC="${{ secrets.ZOT_URL }}/oracles/${{ matrix.package }}:${{ inputs.version }}"
-          DST="${{ env.ECR_URL }}:${{ inputs.version }}"
+          SRC="$ZOT_URL/oracles/$PACKAGE:$VERSION"
+          DST="$ECR_URL:$VERSION"
 
           echo "Pulling $SRC"
           docker pull "$SRC"
