@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
-use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store::file_sink::FileSinkClient;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::TryFutureExt;
 use helium_crypto::PublicKey;
@@ -32,12 +32,10 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         );
     }
 
-    let s3_client = settings.file_store.connect().await;
-    let (file_upload, file_upload_server) =
-        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
+    let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
 
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
-        &settings.cache,
+        &settings.file_upload.root,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -46,7 +44,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     .await?;
 
     let (iot_sink, iot_sink_server) = IotHotspotChangeReportV1::file_sink(
-        &settings.cache,
+        &settings.file_upload.root,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -56,7 +54,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_ownership_sink, entity_ownership_sink_server) =
         EntityOwnershipChangeReportV1::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -66,7 +64,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_reward_destination_sink, entity_reward_destination_sink_server) =
         EntityRewardDestinationChangeReportV1::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload,
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -90,7 +88,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     );
 
     TaskManager::builder()
-        .add_task(file_upload_server)
+        .add_task(file_upload_tasks)
         .add_task(mobile_sink_server)
         .add_task(iot_sink_server)
         .add_task(entity_ownership_sink_server)

@@ -37,6 +37,7 @@ aws-sdk-s3 = { workspace = true }
 aws-smithy-types-convert = { workspace = true }
 
 [dev-dependencies]
+metrics-util = { version = "0", features = ["debugging"] }
 
 [features]
 default = ["sqlx-postgres"]

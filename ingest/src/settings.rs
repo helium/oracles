@@ -1,12 +1,11 @@
 use crate::authorization::AuthorizedKeys;
 use anyhow::Context;
 use config::{Config, Environment, File};
+use file_store::file_upload;
 use helium_crypto::{Network, PublicKeyBinary};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet, net::SocketAddr, path::Path, path::PathBuf, str::FromStr, time::Duration,
-};
+use std::{collections::HashSet, net::SocketAddr, path::Path, str::FromStr, time::Duration};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -21,9 +20,6 @@ pub struct Settings {
     /// Listen address. Required. Default is 0.0.0.0:9081
     #[serde(default = "default_listen_addr")]
     pub listen_addr: SocketAddr,
-    /// Local folder for storing intermediate files
-    #[serde(default = "default_cache")]
-    pub cache: PathBuf,
     /// Network required in all public keys:  mainnet | testnet
     #[serde(default = "default_network", skip_serializing)]
     pub network: Network,
@@ -36,9 +32,14 @@ pub struct Settings {
     /// Timeout of session key session in seconds
     #[serde(with = "humantime_serde", default = "default_session_key_timeout")]
     pub session_key_timeout: Duration,
-    #[serde(default)]
-    pub file_store: file_store::Settings,
-    pub output_bucket: String,
+    /// Buckets every ingested file is written to, and the directory they stage
+    /// under. At least one bucket is required; a second is a mirror, receiving
+    /// a copy of every file under the same key.
+    ///
+    /// Each bucket carries its own region, endpoint and credentials and
+    /// inherits nothing from the others, which is what lets a mirror live on
+    /// another provider — an R2 bucket alongside an S3 primary.
+    pub file_upload: file_upload::Settings,
     /// Timeout of session key session in seconds
     #[serde(with = "humantime_serde", default = "default_roll_time")]
     pub roll_time: Duration,
@@ -80,10 +81,6 @@ pub struct Settings {
 
 fn default_network() -> Network {
     Network::MainNet
-}
-
-fn default_cache() -> PathBuf {
-    PathBuf::from("/opt/ingest/data")
 }
 
 fn default_ticket_max_age() -> Duration {
@@ -197,9 +194,98 @@ fn parse_optional_authorized_keys(keys: &str) -> anyhow::Result<HashSet<PublicKe
 
 #[cfg(test)]
 mod tests {
-    use super::parse_authorized_keys;
+    use super::{parse_authorized_keys, Settings};
+    use std::path::PathBuf;
 
     const KEY: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+    #[test]
+    fn one_bucket_is_enough() {
+        let settings = settings_from_toml(
+            r#"
+mode = "mobile"
+
+[file_upload]
+root = "/opt/ingest/data"
+
+[file_upload.buckets.primary]
+bucket = "ingest-bucket"
+region = "us-west-2"
+"#,
+        );
+
+        assert_eq!(PathBuf::from("/opt/ingest/data"), settings.file_upload.root);
+        assert_eq!(1, settings.file_upload.buckets.len());
+        assert_eq!(
+            "ingest-bucket",
+            settings.file_upload.buckets["primary"].bucket
+        );
+        assert!(settings.file_upload.validate().is_ok());
+    }
+
+    /// The shape this exists for: an S3 primary and an R2 mirror, each with its
+    /// own endpoint and its own key pair, inheriting nothing from the other.
+    #[test]
+    fn a_mirror_keeps_its_own_endpoint_and_credentials() {
+        let settings = settings_from_toml(
+            r#"
+mode = "mobile"
+
+[file_upload]
+root = "/opt/ingest/data"
+
+[file_upload.buckets.primary]
+bucket = "ingest-bucket"
+region = "us-west-2"
+
+[file_upload.buckets.r2]
+bucket = "ingest-mirror"
+endpoint = "https://accountid.r2.cloudflarestorage.com"
+region = "auto"
+access_key_id = "r2-key-id"
+secret_access_key = "r2-secret"
+"#,
+        );
+
+        let r2 = &settings.file_upload.buckets["r2"];
+        assert_eq!("ingest-mirror", r2.bucket);
+        assert_eq!(
+            Some("https://accountid.r2.cloudflarestorage.com".to_string()),
+            r2.settings.endpoint
+        );
+        assert_eq!(Some("auto".to_string()), r2.settings.region);
+
+        // Nothing bled over from the S3 primary.
+        let primary = &settings.file_upload.buckets["primary"];
+        assert_eq!(Some("us-west-2".to_string()), primary.settings.region);
+        assert_eq!(None, primary.settings.endpoint);
+
+        assert!(settings.file_upload.validate().is_ok());
+    }
+
+    /// `main` logs the whole settings struct as JSON at startup, so a mirror's
+    /// credentials must not survive serialization.
+    #[test]
+    fn a_settings_dump_omits_bucket_credentials() {
+        let settings = settings_from_toml(
+            r#"
+mode = "mobile"
+
+[file_upload]
+root = "/opt/ingest/data"
+
+[file_upload.buckets.r2]
+bucket = "ingest-mirror"
+access_key_id = "r2-key-id"
+secret_access_key = "r2-secret"
+"#,
+        );
+
+        let dumped = serde_json::to_string(&settings).expect("serialize settings");
+        assert!(!dumped.contains("r2-secret"), "{dumped}");
+        assert!(!dumped.contains("r2-key-id"), "{dumped}");
+        assert!(dumped.contains("ingest-mirror"), "{dumped}");
+    }
 
     #[test]
     fn empty_authorized_keys_is_an_error() {
@@ -218,5 +304,12 @@ mod tests {
         let keys = parse_authorized_keys("carrier_authorized_keys", &format!("{KEY}, {KEY}"))
             .expect("valid keys");
         assert_eq!(keys.len(), 1);
+    }
+
+    fn settings_from_toml(toml: &str) -> Settings {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("settings.toml");
+        std::fs::write(&path, toml).expect("write settings");
+        Settings::new(Some(&path)).expect("parse settings")
     }
 }

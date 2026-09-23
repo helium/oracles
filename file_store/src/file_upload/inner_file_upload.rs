@@ -1,0 +1,335 @@
+//! The per-bucket half of an upload. An [`InnerFileUpload`] stages files for
+//! one bucket and [`FileUploadServer`] is the task that drains its queue.
+//!
+//! Not constructed directly: [`crate::file_upload::FileUpload`] owns one of
+//! these per bucket and is what a sink writes through.
+
+use super::{invalid_input, MessageSender};
+use crate::{error::ChannelError, BucketClient, Error, Result};
+use futures::StreamExt;
+use metrics::Label;
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use task_manager::ManagedTask;
+use tokio::{
+    fs,
+    sync::{mpsc, watch},
+    time,
+};
+use tokio_stream::wrappers::UnboundedReceiverStream;
+
+const DEFAULT_MAX_RETRIES: u8 = 5;
+const DEFAULT_RETRY_WAIT: Duration = Duration::from_secs(10);
+
+/// Terminal upload outcome per file per bucket, labeled `bucket` and `status`
+/// (`ok` | `error`).
+///
+/// One increment per file per bucket, once that bucket has either stored the
+/// file or exhausted its retries — not one per attempt. A bucket that quietly
+/// stops accepting files is otherwise invisible from the outside: the uploader
+/// keeps its copy and logs an error, while the service goes on serving traffic
+/// and looking healthy. Alert on `status="error"` per bucket.
+pub const UPLOAD_METRIC: &str = "file_store_upload";
+
+const OK_LABEL: Label = Label::from_static_parts("status", "ok");
+const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
+
+fn upload_counter(bucket: &str, status: Label) -> metrics::Counter {
+    metrics::counter!(
+        UPLOAD_METRIC,
+        vec![Label::new("bucket", bucket.to_string()), status]
+    )
+}
+
+/// Uploads files to a single bucket.
+///
+/// Owns `<root>/<label>_<bucket>/`. A file staged here is hardlinked into that
+/// directory, so from then on this uploader holds its own link: it is the only
+/// thing that removes it, and at startup it re-queues whatever is still there.
+/// That is what lets several uploaders share one rolled file without racing
+/// each other to delete it.
+#[derive(Debug, Clone)]
+pub struct InnerFileUpload {
+    sender: MessageSender,
+    completion_rx: watch::Receiver<u64>,
+    /// Bucket name, for logs and metrics. Not the directory name — see
+    /// [`InnerFileUpload::new`].
+    bucket: String,
+    dir: PathBuf,
+}
+
+pub struct FileUploadServer {
+    messages: UnboundedReceiverStream<PathBuf>,
+    bucket: BucketClient,
+    completion_tx: std::sync::Arc<watch::Sender<u64>>,
+    max_retries: u8,
+    retry_wait: Duration,
+}
+
+impl InnerFileUpload {
+    /// Stages files in `<root>/<label>_<bucket>/`, created if missing.
+    ///
+    /// Both halves earn their place. The label is what makes the name unique —
+    /// two buckets on different providers may legitimately share a name, since
+    /// bucket names are scoped per provider, so the bucket alone would collide.
+    /// The bucket name is what makes the directory legible to whoever is
+    /// looking at the disk, since the label alone says nothing about where the
+    /// files are going.
+    pub(super) async fn new(
+        label: &str,
+        bucket: BucketClient,
+        root: impl AsRef<Path>,
+    ) -> Result<(Self, FileUploadServer)> {
+        let dir = root.as_ref().join(format!("{label}_{}", bucket.bucket));
+        fs::create_dir_all(&dir).await?;
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let (completion_tx, completion_rx) = watch::channel(0u64);
+        let completion_tx = std::sync::Arc::new(completion_tx);
+
+        let upload = Self {
+            sender,
+            completion_rx,
+            bucket: bucket.bucket.clone(),
+            dir: dir.clone(),
+        };
+
+        // Anything already here belongs to a run that ended before this bucket
+        // had it. Queue it at construction rather than when the server starts:
+        // a sink cannot be built without an uploader to hand files to, so
+        // nothing can stage into this directory before this point. Scanning
+        // later would find the links a sink's own startup recovery had just
+        // staged and queue them a second time — uploading and unlinking the
+        // same file twice.
+        //
+        // Streamed into the queue rather than collected first: a bucket that
+        // was down for a week leaves a large backlog here, and this runs before
+        // the service binds its listener.
+        let mut entries = fs::read_dir(&dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            // Subdirectories are skipped as a precaution; nothing should create
+            // any here.
+            if entry.file_type().await?.is_file() {
+                upload.queue(&entry.path())?;
+            }
+        }
+
+        Ok((
+            upload,
+            FileUploadServer {
+                messages: UnboundedReceiverStream::new(receiver),
+                bucket,
+                completion_tx,
+                max_retries: DEFAULT_MAX_RETRIES,
+                retry_wait: DEFAULT_RETRY_WAIT,
+            },
+        ))
+    }
+
+    /// Creates a `FileUpload` from a raw sender with a no-op completion tracker
+    /// and an explicit staging directory. Useful in tests that inspect the raw
+    /// upload channel directly and never run the server.
+    ///
+    /// Unlike [`Self::new`] this runs no recovery scan, so the directory must
+    /// not already hold staged links: `stage` skips queueing a link that is
+    /// already there on the assumption the scan queued it, and here nothing
+    /// did. The directory is created so the first `stage` does not fail.
+    pub(super) fn from_sender(sender: MessageSender, dir: impl AsRef<Path>) -> Self {
+        let dir = dir.as_ref().to_path_buf();
+        let _ = std::fs::create_dir_all(&dir);
+        let (_tx, rx) = watch::channel(0u64);
+        Self {
+            sender,
+            completion_rx: rx,
+            bucket: String::new(),
+            dir,
+        }
+    }
+
+    /// The bucket this uploader stores to. Identifies it in logs and metrics;
+    /// the directory carries the label alongside it.
+    pub fn bucket(&self) -> &str {
+        &self.bucket
+    }
+
+    /// The directory this uploader owns.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// Hardlinks `file` into this uploader's directory and queues the link,
+    /// returning it. Leaves `file` alone: under a
+    /// [`crate::file_upload::MultiFileUpload`] the caller's copy has to survive
+    /// until every uploader has taken its own link.
+    pub(super) async fn stage(&self, file: &Path) -> Result<PathBuf> {
+        let Some(name) = file.file_name() else {
+            return Err(invalid_input(format!(
+                "expected a file name in {}",
+                file.display()
+            )));
+        };
+
+        let link = self.dir.join(name);
+        if link != file {
+            match fs::hard_link(file, &link).await {
+                Ok(()) => {}
+                // Left by a run that did not finish. The name identifies the
+                // rolled file, so what is already there is the same file, and
+                // the scan in `new` has already queued it — queueing it again
+                // would upload and unlink it twice.
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => return Ok(link),
+                Err(err) => {
+                    // Counted like an upload failure: staging never reaches the
+                    // server, so without this a bucket whose directory has gone
+                    // bad is silent on the dashboard.
+                    upload_counter(&self.bucket, ERROR_LABEL).increment(1);
+                    return Err(Error::from(err));
+                }
+            }
+        }
+
+        self.queue(&link)?;
+        Ok(link)
+    }
+
+    fn queue(&self, file: &Path) -> Result {
+        self.sender
+            .send(file.to_path_buf())
+            .map_err(|_| ChannelError::upload_closed(file))
+    }
+
+    /// Test-only: see
+    /// [`crate::file_upload::FileUpload::wait_for_uploads_at_least`], which is
+    /// what tests actually call.
+    pub(super) async fn wait_for_uploads_at_least(&self, n: u64) {
+        let mut rx = self.completion_rx.clone();
+        let _ = rx.wait_for(|&count| count >= n).await;
+    }
+}
+
+impl ManagedTask for FileUploadServer {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
+        task_manager::spawn(self.run(shutdown))
+    }
+}
+
+impl FileUploadServer {
+    /// The bucket this server uploads to. Used to name its task.
+    pub(crate) fn bucket(&self) -> &str {
+        &self.bucket.bucket
+    }
+
+    /// Overrides how hard the bucket is retried before a file is left for the
+    /// next startup. Intended for tests, which cannot afford to sit through the
+    /// production backoff to observe what happens when a bucket never accepts
+    /// the file.
+    pub fn with_retry_policy(mut self, max_retries: u8, retry_wait: Duration) -> Self {
+        self.max_retries = max_retries;
+        self.retry_wait = retry_wait;
+        self
+    }
+
+    pub async fn run(self, shutdown: triggered::Listener) -> Result {
+        let Self {
+            messages,
+            bucket,
+            completion_tx,
+            max_retries,
+            retry_wait,
+        } = self;
+
+        let bucket_name = bucket.bucket.clone();
+        tracing::info!("starting file uploader {bucket_name}");
+
+        // Seed both series so a bucket that has never failed reports zero
+        // rather than being absent. Without this an alert cannot tell "no
+        // failures" from "this uploader is not reporting at all".
+        upload_counter(&bucket_name, OK_LABEL).increment(0);
+        upload_counter(&bucket_name, ERROR_LABEL).increment(0);
+
+        let bucket = &bucket;
+        let completion_tx = &completion_tx;
+        let bucket_name = &bucket_name;
+
+        let uploads = messages.for_each_concurrent(5, |path| async move {
+            let path_str = path.display();
+            if !path.exists() {
+                tracing::debug!("ignoring absent file {path_str}");
+                completion_tx.send_modify(|n| *n += 1);
+                return;
+            }
+            if !path.is_file() {
+                tracing::warn!("ignoring non file {path_str}");
+                completion_tx.send_modify(|n| *n += 1);
+                return;
+            }
+
+            if put_with_retries(bucket, &path, max_retries, retry_wait).await {
+                match fs::remove_file(&path).await {
+                    Ok(()) => tracing::info!("stored {path_str} in {bucket_name}"),
+                    Err(err) => {
+                        tracing::error!("failed to remove uploaded file {path_str}: {err:?}")
+                    }
+                }
+            } else {
+                // Left in place deliberately: this uploader owns its
+                // own copy, so keeping it costs no other bucket
+                // anything, and the startup scan will pick it up again.
+                tracing::error!(
+                    "keeping {path_str}: {bucket_name} did not accept it, \
+                             will retry on restart"
+                );
+            }
+
+            completion_tx.send_modify(|n| *n += 1);
+        });
+
+        tokio::select! {
+            _ = uploads => (),
+            _ = shutdown.clone() => (),
+        }
+
+        tracing::info!("stopping file uploader {bucket_name}");
+        Ok(())
+    }
+}
+
+/// Uploads a single file to a single bucket, retrying on failure. Returns
+/// whether the bucket ended up with the file.
+async fn put_with_retries(
+    bucket_client: &BucketClient,
+    path: &Path,
+    max_retries: u8,
+    retry_wait: Duration,
+) -> bool {
+    let path_str = path.display();
+    let bucket = &bucket_client.bucket;
+    let mut retry = 0;
+
+    while retry <= max_retries {
+        tracing::debug!("storing {path_str} in {bucket} retry {retry}");
+        match bucket_client.put_file(path).await {
+            Ok(()) => {
+                upload_counter(bucket, OK_LABEL).increment(1);
+                return true;
+            }
+            Err(err) => {
+                tracing::error!("failed to store {path_str} in {bucket} retry: {retry}: {err:?}");
+                retry += 1;
+                // Only when another attempt follows: sleeping after the last
+                // one just delays giving up, and with five concurrent slots
+                // that delay is throughput a backlog cannot spare.
+                if retry <= max_retries {
+                    time::sleep(retry_wait).await;
+                }
+            }
+        }
+    }
+
+    upload_counter(bucket, ERROR_LABEL).increment(1);
+    tracing::error!("failed to upload {path_str} to {bucket} after {max_retries} retries");
+    false
+}

@@ -52,6 +52,10 @@ impl RollingFileSink {
         &self.prefix
     }
 
+    pub fn roll_time(&self) -> Duration {
+        self.roll_time
+    }
+
     pub async fn write(&mut self, buf: Bytes) -> RollingFileSinkResult<RollingFileWriteResult> {
         self._write(buf)
             .await

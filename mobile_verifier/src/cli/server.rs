@@ -11,7 +11,6 @@ use crate::{
     telemetry, Settings,
 };
 use anyhow::Result;
-use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::services::poc_mobile::Heartbeat;
 use task_manager::TaskManager;
@@ -33,12 +32,10 @@ impl Cmd {
         // unwritable path should surface at boot, not at cutover.
         rewarder_state.mirror_to_file().await?;
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
-                .await;
+        let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
-            &settings.cache,
+            &settings.file_upload.root,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
             FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
@@ -90,7 +87,7 @@ impl Cmd {
         );
 
         TaskManager::builder()
-            .add_task(file_upload_server)
+            .add_task(file_upload_tasks)
             .add_task(valid_heartbeats_server)
             .add_task(task_manager::periodic(gateway_refresher))
             .add_task(task_manager::periodic(location_cache_refresher))

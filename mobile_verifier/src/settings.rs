@@ -15,7 +15,6 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Buckets {
     pub ingest: file_store::BucketSettings,
-    pub output: file_store::BucketSettings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -27,9 +26,9 @@ pub struct Settings {
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     pub buckets: Buckets,
-    /// Cache location for generated verified reports
-    #[serde(default = "default_cache")]
-    pub cache: PathBuf,
+    /// Buckets every verified report is written to, and the directory they
+    /// stage under.
+    pub file_upload: file_store::file_upload::Settings,
     /// Reward period in hours. (Default is 24 hours)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
     pub reward_period: Duration,
@@ -113,10 +112,6 @@ fn default_reward_period_offset() -> Duration {
     humantime::parse_duration("60 minutes").unwrap()
 }
 
-fn default_cache() -> PathBuf {
-    PathBuf::from("/opt/mobile-verifier/data")
-}
-
 fn default_usa_and_mexico_geofence_regions() -> PathBuf {
     PathBuf::from("/opt/mobile-verifier/geofence")
 }
@@ -165,7 +160,7 @@ impl Settings {
     }
 
     pub fn store_base_path(&self) -> &std::path::Path {
-        std::path::Path::new(&self.cache)
+        &self.file_upload.root
     }
 
     /// The static authorization allow-list, parsed from settings. The list is

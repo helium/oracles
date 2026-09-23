@@ -41,5 +41,6 @@ custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 backon = "1"
 rand = { workspace = true }
