@@ -36,15 +36,19 @@ profiles.yml), so there is nothing extra to set in a deployment:
   TRINO_PORT          default 443
   TRINO_HTTP_SCHEME   default https  (set http for the local docker stack)
   TRINO_USER          default mobile-dbt
-  TRINO_JWT_TOKEN     optional; sent as a bearer token by phase 2
+  TRINO_PASSWORD      HTTP Basic password; required over https
   MOBILE_CATALOG      default mobile
+
+  TRINO_SSL_CERT      path to the cert to verify against; required over https
 
   TRINO_WAIT_TIMEOUT   total seconds for both phases, default 300
   TRINO_WAIT_INTERVAL  seconds between polls, default 5
 """
 
+import base64
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
@@ -68,16 +72,63 @@ def log(message):
     print(f"wait_for_trino: {message}", flush=True)
 
 
-def probe_info(url, timeout):
+def tls_verification():
+    """How to verify the coordinator's certificate.
+
+    Returns what `requests` wants for `verify`: a path to verify against, or
+    False for no verification. Kept identical in meaning to the dbt profile's
+    `cert`, so the probe and the run cannot disagree about whether the
+    connection is checked.
+    """
+    # Required over https for the same reason the profile requires it: the
+    # cluster is self-signed, so there is nothing in the system store that can
+    # validate it, and this method puts the password on every request.
+    if os.environ.get("TRINO_HTTP_SCHEME", "https") != "https":
+        return True
+    return env("TRINO_SSL_CERT")
+
+
+def ssl_context(verify):
+    """The same decision, as an SSLContext for urllib in phase 1."""
+    if verify is True:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=verify)
+
+
+def basic_auth_password():
+    """The password, required over https.
+
+    Enforced here rather than left to dbt. `env_var('TRINO_PASSWORD')` in the
+    profile does NOT abort a run when the variable is missing -- dbt carries on
+    and attempts the connection, so a deployment that forgot it fails later
+    with an authentication error, which reads like a wrong password rather than
+    an absent one. This runs before dbt and says which it is.
+    """
+    if os.environ.get("TRINO_HTTP_SCHEME", "https") != "https":
+        return None
+    return env("TRINO_PASSWORD")
+
+
+def basic_auth_header(password):
+    """`Authorization` for phase 1, so it can read `starting` on a secured
+    cluster instead of stopping at a 401."""
+    if not password:
+        return {}
+    user = os.environ.get("TRINO_USER", "mobile-dbt")
+    token = base64.b64encode(f"{user}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
+
+
+def probe_info(url, timeout, headers, context):
     """One poll of /v1/info.
 
     Returns (awake, starting) where `starting` is None when it could not be
     read -- either because the endpoint is behind auth or because the body was
     not the JSON we expected.
     """
-    request = urllib.request.Request(url, method="GET")
+    request = urllib.request.Request(url, method="GET", headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
             try:
                 return True, bool(json.load(response).get("starting"))
             except (ValueError, AttributeError):
@@ -95,11 +146,11 @@ def probe_info(url, timeout):
         return False, None
 
 
-def wait_for_http(url, deadline, interval, request_timeout):
+def wait_for_http(url, deadline, interval, request_timeout, headers, context):
     """Phase 1. Returns True if `starting == false` was actually observed."""
     log(f"waking {url}")
     while True:
-        awake, starting = probe_info(url, request_timeout)
+        awake, starting = probe_info(url, request_timeout, headers, context)
         if awake and starting is False:
             log("coordinator reports starting=false")
             return True
@@ -113,24 +164,23 @@ def wait_for_http(url, deadline, interval, request_timeout):
         time.sleep(interval)
 
 
-def try_query(host, port, scheme):
+def try_query(host, port, scheme, verify, password):
     """`SELECT 1`. Raises on failure; the caller decides whether to retry."""
     # dbt-trino's own client, so this adds no dependency and speaks the same
     # protocol the real run will.
     import trino
 
-    auth = None
-    token = os.environ.get("TRINO_JWT_TOKEN")
-    if token:
-        auth = trino.auth.JWTAuthentication(token)
+    user = env("TRINO_USER", "mobile-dbt")
+    auth = trino.auth.BasicAuthentication(user, password) if password else None
 
     connection = trino.dbapi.connect(
         host=host,
         port=int(port),
-        user=env("TRINO_USER", "mobile-dbt"),
+        user=user,
         catalog=env("MOBILE_CATALOG", "mobile"),
         http_scheme=scheme,
         auth=auth,
+        verify=verify,
     )
     try:
         cursor = connection.cursor()
@@ -140,11 +190,11 @@ def try_query(host, port, scheme):
         connection.close()
 
 
-def wait_for_query(host, port, scheme, deadline, interval, retry):
+def wait_for_query(host, port, scheme, verify, password, deadline, interval, retry):
     log("checking that it will serve a query")
     while True:
         try:
-            try_query(host, port, scheme)
+            try_query(host, port, scheme, verify, password)
             log("SELECT 1 succeeded; Trino is ready")
             return
         except Exception as err:  # noqa: BLE001 - any failure is a failure to serve
@@ -170,10 +220,22 @@ def main():
     # unreachable host, short enough to keep polling inside the budget.
     request_timeout = min(interval * 2, 30)
 
+    # Both resolved before any waiting, so a missing one fails in a second
+    # rather than after the full wake budget.
+    verify = tls_verification()
+    password = basic_auth_password()
+
     saw_ready = wait_for_http(
-        f"{scheme}://{host}:{port}/v1/info", deadline, interval, request_timeout
+        f"{scheme}://{host}:{port}/v1/info",
+        deadline,
+        interval,
+        request_timeout,
+        basic_auth_header(password),
+        ssl_context(verify) if scheme == "https" else None,
     )
-    wait_for_query(host, port, scheme, deadline, interval, retry=not saw_ready)
+    wait_for_query(
+        host, port, scheme, verify, password, deadline, interval, retry=not saw_ready
+    )
 
 
 if __name__ == "__main__":

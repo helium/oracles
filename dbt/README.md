@@ -192,8 +192,48 @@ images use, so a single tag ships the whole repo at one version —
 `oracles/dbt:4.9.0` beside `oracles/mobile-verifier:4.9.0`. There is no
 dbt-specific tag: shipping a dbt-only change means cutting an ordinary release.
 
-Everything the container needs comes from the environment (`TRINO_HOST`,
-`TRINO_JWT_TOKEN`, `MOBILE_CATALOG`, `DBT_TARGET=prod`); see `profiles.yml`.
+Everything the container needs comes from the environment; see `profiles.yml`.
+
+| | |
+| --- | --- |
+| `DBT_TARGET=prod` | **Required.** Defaults to `local` — plain HTTP, no auth, catalog `iceberg`. |
+| `TRINO_HOST` | **Required.** |
+| `TRINO_USER` | **Required in practice.** Defaults to `mobile-dbt`; must match what the cluster's PASSWORD backend knows. |
+| `TRINO_PASSWORD` | **Required.** HTTP Basic. |
+| `TRINO_SSL_CERT` | **Required.** Path to the cluster's self-signed certificate, mounted into the container. |
+| `TRINO_PORT` | 443 |
+| `MOBILE_CATALOG` | `mobile` |
+| `TRINO_HTTP_SCHEME` | `https` — probe only; the `prod` profile forces HTTPS |
+| `TRINO_WAIT_TIMEOUT` / `TRINO_WAIT_INTERVAL` | 300 / 5 seconds |
+
+Do not set `DBT_SCHEMA` (a fallback; models declare their own),
+`DBT_SCHEMA_PREFIX` (per-developer isolation) or `DBT_SKIP_TRINO_WAIT`.
+
+### Basic auth over a self-signed certificate
+
+The cluster uses Trino's PASSWORD authentication, so dbt connects with
+`method: ldap` — the adapter's name for HTTP Basic, whatever backs it — and that
+method forces HTTPS, because Trino refuses password auth over plain HTTP.
+
+Its certificate is self-signed, so nothing in the system CA store validates it.
+`TRINO_SSL_CERT` must point at the certificate:
+
+```bash
+openssl s_client -showcerts -connect HOST:443 </dev/null \
+  | openssl x509 -outform PEM > trino-ca.crt
+```
+
+Mount that and set `TRINO_SSL_CERT` to its path. Verification is deliberately
+not skippable by environment variable: Basic sends the password on every
+request, so the TLS check is the only thing stopping anyone in the path from
+reading it. Turning it off is a code change under review, not a variable set on
+a cron job.
+
+`scripts/wait_for_trino.py` requires `TRINO_PASSWORD` itself rather than leaving
+it to dbt. `env_var('TRINO_PASSWORD')` in a profile does *not* abort a run when
+the variable is missing — dbt carries on and attempts the connection, so the
+failure arrives as an authentication error that reads like a wrong password
+rather than an absent one. The probe runs first and says which.
 
 ```bash
 docker run IMAGE                     # wait for Trino, then `dbt run` + `dbt test`

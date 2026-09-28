@@ -5,8 +5,8 @@
 # plain HTTP, against the `iceberg` catalog. That is also what CI uses.
 #
 # `prod` reads every value from the environment so nothing secret lives in the
-# repo. It authenticates with a JWT, matching how the Rust oracles reach the
-# same cluster (see trino_client/src/settings.rs `AuthSettings::JwtFile`).
+# repo. It authenticates with HTTP Basic against a cluster serving a self-signed
+# certificate; see the notes on `method` and `cert` below.
 mobile_dbt:
   target: "{{ env_var('DBT_TARGET', 'local') }}"
   outputs:
@@ -33,13 +33,37 @@ mobile_dbt:
 
     prod:
       type: trino
-      method: jwt
-      jwt_token: "{{ env_var('TRINO_JWT_TOKEN') }}"
+      # HTTP Basic. dbt-trino calls this method `ldap`, but the name only
+      # reflects the commonest backend for Trino's PASSWORD authentication --
+      # the adapter builds a `trino.auth.BasicAuthentication`, which is what
+      # PASSWORD accepts however it is backed (LDAP, a password file, anything
+      # else). There is no separate `basic` method.
+      method: ldap
+      user: "{{ env_var('TRINO_USER', 'mobile-dbt') }}"
+      password: "{{ env_var('TRINO_PASSWORD') }}"
       host: "{{ env_var('TRINO_HOST') }}"
       port: "{{ env_var('TRINO_PORT', '443') | int }}"
-      user: "{{ env_var('TRINO_USER', 'mobile-dbt') }}"
-      http_scheme: https
+      # No `http_scheme`: this method forces HTTPS, and Trino refuses password
+      # authentication over plain HTTP -- it would be sending the password in a
+      # header in the clear.
       catalog: "{{ env_var('MOBILE_CATALOG', 'mobile') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'undeclared') }}"
       threads: 8
       timezone: UTC
+      # The cluster serves a SELF-SIGNED certificate, so the system CA store
+      # cannot validate it. Point this at the certificate itself and it
+      # validates normally. Required -- there is no default, so a deployment
+      # that forgets it fails at startup instead of connecting.
+      #
+      # Extract it once with:
+      #   openssl s_client -showcerts -connect HOST:443 </dev/null \
+      #     | openssl x509 -outform PEM > trino-ca.crt
+      # then mount it and set TRINO_SSL_CERT to the path.
+      #
+      # Verification is deliberately not made skippable by an environment
+      # variable. This method sends the password on every request, so the TLS
+      # check is the only thing stopping anyone who can get between us and the
+      # coordinator from reading it -- that is a decision to take in a code
+      # change under review, not one to make by setting a variable in a cron
+      # job. (`cert: false` here is what turning it off would look like.)
+      cert: "{{ env_var('TRINO_SSL_CERT') }}"
