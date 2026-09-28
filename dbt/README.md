@@ -187,10 +187,13 @@ doubling every count downstream.
 
 ## Deployment
 
-The image is built and pushed on `dbt-v*` tags only, so shipping models is not
-tied to the release cadence of the Rust binaries. Everything the container
-needs comes from the environment (`TRINO_HOST`, `TRINO_JWT_TOKEN`,
-`MOBILE_CATALOG`, `DBT_TARGET=prod`); see `profiles.yml`.
+The image is built and pushed on every release tag, the same trigger the Rust
+images use, so a single tag ships the whole repo at one version —
+`oracles/dbt:4.9.0` beside `oracles/mobile-verifier:4.9.0`. There is no
+dbt-specific tag: shipping a dbt-only change means cutting an ordinary release.
+
+Everything the container needs comes from the environment (`TRINO_HOST`,
+`TRINO_JWT_TOKEN`, `MOBILE_CATALOG`, `DBT_TARGET=prod`); see `profiles.yml`.
 
 ```bash
 docker run IMAGE                     # wait for Trino, then `dbt run` + `dbt test`

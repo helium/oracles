@@ -132,10 +132,16 @@ jobs:
         if: failure()
         run: docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail 200 trino polaris
 
-  # Built and pushed on `dbt-v*` tags only, so shipping models is not coupled to
-  # the cadence of the Rust binaries' own release tags.
+  # Built and pushed on every release tag, the same trigger the Rust images use
+  # in CI.yml, so one tag ships the whole repo at one version:
+  # `oracles/dbt:4.9.0` beside `oracles/mobile-verifier:4.9.0`.
+  #
+  # Deliberately NOT a dbt-only tag prefix. CI.yml's image job fires on
+  # `refs/tags/*` with no prefix filter, so a `dbt-…` tag builds and pushes the
+  # six Rust images under that name too -- junk in the registry, and a release
+  # scheme nothing else in this repo follows.
   build-image:
-    if: startsWith(github.ref, 'refs/tags/dbt-v')
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [parse, build]
     runs-on: ubuntu-latest
     concurrency:
