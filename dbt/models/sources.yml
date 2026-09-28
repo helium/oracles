@@ -1,0 +1,105 @@
+version: 2
+
+# The one source this project reads. It is written by the S3 binary-file ingest
+# pipeline, which lives OUTSIDE this repo, so there is no definition here to
+# derive it from: `scripts/external_sources.sql` holds a hand-maintained copy of
+# its production DDL, and CI creates the table from that copy before building
+# the models against it. Drift therefore surfaces as a wrong or missing column
+# rather than as a silently wrong mart -- weaker than deriving a schema from its
+# own definition, and the best available for a table we do not own. Refresh the
+# copy with `SHOW CREATE TABLE` when upstream moves.
+#
+# The oracle-written tables in this catalog (`data_transfer`, `poc`, `rewards`,
+# `tokens`) are deliberately NOT declared here. Nothing models them, so their
+# declarations verified only their own accuracy, at the cost of a full
+# mobile-verifier compile in CI to create the tables to check them against.
+# Declare one when a model needs it, and restore that check with it: the
+# schemas are `table_definition()` functions (helium_iceberg_oracles/src/,
+# mobile_verifier/src/iceberg/, price/src/iceberg/), and creating tables from
+# those same functions is what keeps a declaration honest.
+#
+# `database` is the active target's catalog rather than a project var: a var
+# whose value is itself Jinja (`{{ env_var(...) }}`) is not re-rendered when a
+# schema YAML reads it, and lands in the query as a literal catalog name that
+# does not exist. Taking it from the target also means sources and models can
+# never end up pointed at different catalogs -- `iceberg` locally, `mobile` in
+# production, one setting either way (see profiles.yml).
+#
+# Source names mirror the Iceberg namespace, so `source('hotspots',
+# 'enabled_carriers_history')` names the table it reads with no translation step
+# in between.
+
+sources:
+  - name: hotspots
+    database: "{{ target.database }}"
+    schema: hotspots
+    description: >
+      Hotspot state derived from the S3 binary-file ingest pipeline, which
+      lives OUTSIDE this repo. Nothing in `oracles` creates or writes these
+      tables; `scripts/external_sources.sql` holds a copy of the production
+      DDL so CI has something to build against, and that copy is not
+      authoritative -- refresh it with `SHOW CREATE TABLE` when upstream moves.
+
+      Rows carry `file_ts` / `record_index`: the ingest file they came from and
+      their offset within it. Together they identify a row -- it is the
+      provenance convention this ingest pipeline uses throughout.
+    tables:
+      - name: enabled_carriers_history
+        description: >
+          History of carrier enablement per hotspot: which carriers are turned
+          on, which are in demand-sampling, and the firmware that reported it.
+          Partitioned on day(received_timestamp), sorted by (hotspot_pubkey,
+          received_timestamp).
+
+          A HISTORY table -- multiple rows per hotspot over time, one per
+          report. Nothing here is current state; the current set is the latest
+          row per `hotspot_pubkey`, and picking it is the consumer's job.
+
+          Carries two clocks. `received_timestamp` is when ingest took the
+          report and is the partition key; `timestamp` came from the reporting
+          device. Bucket and order on the former.
+
+          `mobile.hotspots.enabled_carriers_history` is the authoritative
+          location for this data, and the one to build against.
+        loaded_at_field: received_timestamp
+        freshness:
+          warn_after: { count: 6, period: hour }
+          error_after: { count: 24, period: hour }
+        tests:
+          # `file_ts` + `record_index` is the ingest pipeline's row identity, so
+          # a duplicate means a file was processed twice -- which would fan any
+          # latest-row-per-hotspot model into picking an arbitrary winner.
+          # INFERRED from the column pair's conventional meaning, not from a
+          # stated upstream guarantee: confirm it, or drop this test.
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [file_ts, record_index]
+        columns:
+          - name: file_ts
+            description: Ingest file the row came from.
+            tests: [not_null]
+          - name: record_index
+            description: Offset of the record within that file.
+            tests: [not_null]
+          - name: received_timestamp
+            description: When ingest received the report. Authoritative; partition key.
+            tests: [not_null]
+          - name: hotspot_pubkey
+            tests: [not_null]
+          - name: enabled_carriers
+            description: >
+              array(varchar). Nullable, and a null is not the same as an empty
+              array: absent means the report carried no list, empty means it
+              carried one with nothing in it.
+          - name: sampling_enabled_carriers
+            description: array(varchar). Carriers in a demand-sampling window. Nullable, as above.
+          - name: firmware_version
+            description: Nullable.
+          - name: timestamp
+            description: >
+              Clock supplied by the reporting device. Not a grain, an ordering
+              key, or a partition filter.
+            tests: [not_null]
+          - name: signer
+            description: Key that signed the report.
+            tests: [not_null]

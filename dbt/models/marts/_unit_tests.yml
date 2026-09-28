@@ -1,0 +1,76 @@
+# Unit tests, not data tests. These assert the model's LOGIC against rows
+# supplied inline, so they need no fixtures and no warehouse data -- they run
+# green against a freshly created, empty warehouse, in CI, on every PR. The
+# fixtures in `scripts/fixtures.sql` are for looking at the thing by hand; these
+# are what stop the logic regressing.
+#
+# `select *` in the model means every column has to be spelled out in `given`
+# and `expect`. Verbose, and the price of the model tracking its source's
+# columns automatically.
+#
+# RUN THESE WITH `dbt run && dbt test`, NOT `dbt build`. A unit test that
+# supplies `this` -- which testing an incremental branch requires -- makes dbt
+# read the model relation's column types to build the fixture CTE, so the
+# relation has to exist. `dbt build` deliberately runs unit tests BEFORE the
+# model they cover, so against a fresh warehouse it errors with "the relation
+# doesn't exist" and skips everything downstream. Building first and testing
+# second sidesteps it; CI does exactly that.
+
+unit_tests:
+  - name: latest_report_per_hotspot_wins
+    model: enabled_carriers_inventory
+    description: >
+      Two reports for one hotspot: the later device `timestamp` wins and only
+      that row survives. Covers the first-run branch, where the window
+      predicate is `true`.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'enabled_carriers_history')
+        rows:
+          - {file_ts: 100, record_index: 0, received_timestamp: "2026-09-07 10:00:00+00", hotspot_pubkey: "hs_a", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2026-09-07 09:59:00+00", signer: "s1"}
+          - {file_ts: 100, record_index: 1, received_timestamp: "2026-09-07 10:05:00+00", hotspot_pubkey: "hs_a", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.19.0", timestamp: "2026-09-07 10:04:00+00", signer: "s1"}
+    expect:
+      rows:
+          - {file_ts: 100, record_index: 1, received_timestamp: "2026-09-07 10:05:00+00", hotspot_pubkey: "hs_a", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.19.0", timestamp: "2026-09-07 10:04:00+00", signer: "s1"}
+
+  - name: watermark_ignores_reported_clock
+    model: enabled_carriers_inventory
+    description: >
+      THE REGRESSION GUARD. A watermark over the device-supplied `timestamp`
+      gets pinned by any device reporting a far-future clock and then admits
+      nothing ever again, for any hotspot.
+
+      The pin lives in the TARGET table, not the source: the watermark is
+      `max(...) from {{ this }}`, so the bug only manifests once a previous run
+      has already ingested the skewed row. `this` therefore holds hs_skew, whose
+      device clock reads 2099 and which was received at 10:25.
+
+        * Under `received_timestamp` the watermark is 10:25 and a 30-minute
+          lookback opens the window at 09:55. hs_old (received 09:00) is
+          excluded, which proves the window bounds anything at all; hs_honest
+          (received 10:30) is admitted.
+        * Under `timestamp` the watermark is 2099-01-01, the window opens in
+          2098, and NOTHING is ever admitted again.
+
+      Switch the model's window back to `timestamp` and this test fails with an
+      empty result -- verified by doing exactly that.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # A previous run already ingested the skewed row. This is what pins a
+      # `timestamp`-based watermark.
+      - input: this
+        rows:
+          - {file_ts: 200, record_index: 1, received_timestamp: "2026-09-07 10:25:00+00", hotspot_pubkey: "hs_skew", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2099-01-01 00:00:00+00", signer: "s1"}
+      - input: source('hotspots', 'enabled_carriers_history')
+        rows:
+          - {file_ts: 200, record_index: 0, received_timestamp: "2026-09-07 09:00:00+00", hotspot_pubkey: "hs_old", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2026-09-07 08:59:00+00", signer: "s1"}
+          - {file_ts: 200, record_index: 1, received_timestamp: "2026-09-07 10:25:00+00", hotspot_pubkey: "hs_skew", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2099-01-01 00:00:00+00", signer: "s1"}
+          - {file_ts: 200, record_index: 2, received_timestamp: "2026-09-07 10:30:00+00", hotspot_pubkey: "hs_honest", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2026-09-07 10:29:00+00", signer: "s1"}
+    expect:
+      rows:
+          - {file_ts: 200, record_index: 1, received_timestamp: "2026-09-07 10:25:00+00", hotspot_pubkey: "hs_skew", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2099-01-01 00:00:00+00", signer: "s1"}
+          - {file_ts: 200, record_index: 2, received_timestamp: "2026-09-07 10:30:00+00", hotspot_pubkey: "hs_honest", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2026-09-07 10:29:00+00", signer: "s1"}

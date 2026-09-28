@@ -1,0 +1,161 @@
+name: dbt
+
+# NOTE: the third-party actions below are pinned by tag, not by commit SHA as
+# the Rust workflows in this repo are. Pin them before merging.
+
+# Triggers on the dbt project and on the local warehouse it is built against.
+#
+# No Rust paths: the only source this project declares is written by a pipeline
+# outside this repo, so there is no `table_definition()` here for CI to create a
+# table from. Add the relevant `*/src/iceberg/**` path back alongside the first
+# model over an oracle table -- that is what makes a source declaration
+# verifiable rather than just written down.
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "dbt/**"
+      - "docker-compose.yml"
+      - "infra/**"
+      - ".github/workflows/dbt.yml"
+  push:
+    branches: ["main"]
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # Needs no warehouse and no Rust, so it is the first thing in the run to go
+  # red on a bad model. Jinja and YAML only: `dbt parse` does not look at the SQL
+  # itself, so a syntax error gets past this and is caught by `dbt run` in the
+  # `build` job, where Trino parses it for real.
+  parse:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-parse
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: dbt/requirements.txt
+      - name: Install dbt
+        run: pip install -r requirements.txt
+      - name: Install dbt packages
+        # --lock so a drifted package-lock.yml fails rather than being silently
+        # re-resolved to something the image was never built with.
+        run: dbt deps --lock && dbt deps
+      - name: Parse project
+        run: dbt parse
+
+  # Stands up the repo's own Trino/Polaris/Iceberg stack, creates the source
+  # table from the mirrored DDL, loads fixtures, then builds and tests. Docker
+  # and Python only -- no Rust toolchain, no cargo cache.
+  build:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-build
+      cancel-in-progress: true
+    env:
+      COMPOSE_PROJECT_NAME: oracles
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Start Trino, Polaris and RustFS
+        # `--wait trino` pulls in postgres, rustfs and the polaris bootstrap
+        # jobs through the compose dependency graph and blocks on their health
+        # checks, so nothing below needs its own retry loop.
+        run: docker compose -p "$COMPOSE_PROJECT_NAME" up -d --wait trino
+
+      - name: Register the Trino catalog
+        # Local Trino runs with catalog.store=memory, so the mounted catalog
+        # properties files are inert and the catalog has to be created at
+        # runtime. See the script's header.
+        run: ./dbt/scripts/register_trino_catalog.sh
+
+      - name: Create external source mirrors
+        # Tables written by pipelines outside this repo, so there is no Rust
+        # definition to create them from. This applies a hand-maintained copy of
+        # their production DDL -- see the header of the .sql file.
+        run: ./dbt/scripts/create_external_sources.sh
+
+      - name: Load fixtures
+        # So the data tests run against rows rather than passing trivially on
+        # empty tables. Model logic is covered by the unit tests, which need no
+        # data at all and run as part of `dbt build` below.
+        run: ./dbt/scripts/load_fixtures.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: dbt/requirements.txt
+      - name: Install dbt
+        working-directory: dbt
+        run: pip install -r requirements.txt && dbt deps
+
+      # `run` then `test`, not `build`. `dbt build` runs a model's unit tests
+      # before the model itself, and a unit test that supplies `this` needs the
+      # relation to exist to read its column types -- so on a fresh warehouse
+      # like this one, `build` errors before it has created anything. See the
+      # header of models/marts/_unit_tests.yml.
+      - name: Build models
+        working-directory: dbt
+        run: dbt run
+      - name: Run tests
+        working-directory: dbt
+        # Data tests against the fixture rows, unit tests against rows supplied
+        # inline. Together with the step above: the models compile and execute
+        # against schemas created from their real definitions, and the logic is
+        # pinned independently of what is in the warehouse.
+        run: dbt test
+
+      - name: Trino logs on failure
+        if: failure()
+        run: docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail 200 trino polaris
+
+  # Built and pushed on `dbt-v*` tags only, so shipping models is not coupled to
+  # the cadence of the Rust binaries' own release tags.
+  build-image:
+    if: startsWith(github.ref, 'refs/tags/dbt-v')
+    needs: [parse, build]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-build-image
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Log in to Docker Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        with:
+          registry: ${{ secrets.ZOT_URL }}
+          username: ${{ secrets.ZOT_USER }}
+          password: ${{ secrets.ZOT_PASSWORD }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+      - name: Build and Push dbt Image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        with:
+          context: dbt
+          file: dbt/Dockerfile
+          push: true
+          tags: ${{ secrets.ZOT_URL }}/oracles/dbt:${{ github.ref_name }}

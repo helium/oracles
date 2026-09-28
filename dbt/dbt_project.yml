@@ -1,0 +1,59 @@
+name: mobile_dbt
+version: '1.0.0'
+config-version: 2
+
+profile: mobile_dbt
+
+flags:
+  # dbt-trino still defaults to skipping TLS verification and warns that this
+  # legacy behaviour is going away. The `prod` target talks to the cluster over
+  # https, so opt in now rather than discovering it when the default flips.
+  require_certificate_validation: true
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # The catalog is NOT a var -- models take it from `target.database`, so the
+  # profile is the single place it is set. See the note in models/sources.yml.
+
+  # How far back an incremental run reaches BEHIND the newest row it already
+  # has. This is margin against commit ordering, not against late data, and the
+  # two want very different numbers.
+  #
+  # `received_timestamp` is assigned at ingest, so it is near-monotonic with
+  # commit order -- but not exactly, because ingest can have several files in
+  # flight and a later commit may carry a row stamped slightly earlier than one
+  # already committed. The window only has to cover that skew. Minutes.
+  #
+  # Sizing it in days would be the right answer for a different shape of model:
+  # a daily rollup has to RECOMPUTE a past day when a late row changes its
+  # totals, and lateness there is a property of the data. A current-state upsert
+  # recomputes nothing -- it just needs to not miss a row at the boundary. Using
+  # a days-wide window here would make every run re-read and re-upsert most of
+  # the fleet, at whatever cadence the model runs.
+  #
+  # A model with the daily shape should pass its own value rather than change
+  # this one: `incremental_window(..., lookback_minutes=3*24*60)`.
+  incremental_lookback_minutes: 30
+
+models:
+  mobile_dbt:
+    marts:
+      +materialized: incremental
+      # No `+schema` default. A model lands in the schema of the data it
+      # describes -- `enabled_carriers_inventory` sits in `hotspots` beside the
+      # `enabled_carriers_history` it summarises -- so each one declares its own
+      # and there is no sensible project-wide answer. A model that forgets falls
+      # back to the target's schema, which profiles.yml names `undeclared` so
+      # the mistake is obvious in the table's own path.
+      #
+      # Table `properties` are set per model too. dbt replaces an
+      # adapter-specific dict config rather than merging into it, so a
+      # project-level default would be silently dropped by any model that sets
+      # its own partitioning.

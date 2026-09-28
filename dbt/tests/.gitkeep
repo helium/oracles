@@ -1,0 +1,3 @@
+Singular tests go here (dbt's `test-paths`). Kept tracked because the Dockerfile
+copies this directory, and git does not track empty ones -- without a file here
+the image build fails on checkout.
