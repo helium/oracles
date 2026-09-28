@@ -33,13 +33,17 @@ Configuration is the same environment the dbt profile reads (see
 profiles.yml), so there is nothing extra to set in a deployment:
 
   TRINO_HOST          required
-  TRINO_PORT          default 443
+  TRINO_PORT          default 8443 (Trino's https port; Railway's private
+                      network reaches the container directly, so the public
+                      443 convention does not apply)
   TRINO_HTTP_SCHEME   default https  (set http for the local docker stack)
   TRINO_USER          default mobile-dbt
   TRINO_PASSWORD      HTTP Basic password; required over https
   MOBILE_CATALOG      default mobile
 
-  TRINO_SSL_CERT      path to the cert to verify against; required over https
+  TRINO_SSL_CERT      path to the certificate to verify against
+  TRINO_SSL_VERIFY    set false to connect without verifying; one of these two
+                      is required over https
 
   TRINO_WAIT_TIMEOUT   total seconds for both phases, default 300
   TRINO_WAIT_INTERVAL  seconds between polls, default 5
@@ -80,16 +84,32 @@ def tls_verification():
     `cert`, so the probe and the run cannot disagree about whether the
     connection is checked.
     """
-    # Required over https for the same reason the profile requires it: the
-    # cluster is self-signed, so there is nothing in the system store that can
-    # validate it, and this method puts the password on every request.
     if os.environ.get("TRINO_HTTP_SCHEME", "https") != "https":
         return True
-    return env("TRINO_SSL_CERT")
+    cert = os.environ.get("TRINO_SSL_CERT", "")
+    if cert:
+        return cert
+    if os.environ.get("TRINO_SSL_VERIFY", "true").lower() == "false":
+        return False
+    # Neither set. The cluster is self-signed, so the system store cannot
+    # validate it and the run would fail at the first query with a TLS error
+    # that says nothing about what to do. Say what to do.
+    sys.exit(
+        "wait_for_trino: set TRINO_SSL_CERT to the coordinator's certificate, "
+        "or TRINO_SSL_VERIFY=false to connect without verifying it"
+    )
 
 
 def ssl_context(verify):
     """The same decision, as an SSLContext for urllib in phase 1."""
+    if verify is False:
+        # Logged every run, deliberately. An unverified connection should never
+        # become something nobody remembers choosing.
+        log("TLS verification is DISABLED (TRINO_SSL_VERIFY=false)")
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
     if verify is True:
         return ssl.create_default_context()
     return ssl.create_default_context(cafile=verify)
@@ -170,6 +190,14 @@ def try_query(host, port, scheme, verify, password):
     # protocol the real run will.
     import trino
 
+    if verify is False:
+        # Matches `suppress_cert_warning` in the profile. The DISABLED line
+        # logged once per run is the signal; urllib3 repeating it per request
+        # is not.
+        import urllib3
+
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     user = env("TRINO_USER", "mobile-dbt")
     auth = trino.auth.BasicAuthentication(user, password) if password else None
 
@@ -210,7 +238,7 @@ def wait_for_query(host, port, scheme, verify, password, deadline, interval, ret
 
 def main():
     host = env("TRINO_HOST")
-    port = env("TRINO_PORT", "443")
+    port = env("TRINO_PORT", "8443")
     scheme = env("TRINO_HTTP_SCHEME", "https")
     interval = float(env("TRINO_WAIT_INTERVAL", "5"))
     timeout = float(env("TRINO_WAIT_TIMEOUT", "300"))
