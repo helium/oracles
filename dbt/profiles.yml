@@ -79,12 +79,22 @@ mobile_dbt:
       # is which hostname TRINO_HOST names, not whether the certificate happens
       # to be self-signed.
       #
-      # Rendering note: `cert` has to reach the adapter as a genuine boolean or
-      # a path, and dbt gets there via `literal_eval` on the rendered value --
-      # hence `capitalize`, which turns `false` into the `False` that parses.
-      # `as_bool` does not help; it runs the same `literal_eval` and rejects a
-      # lowercase `false` outright.
-      cert: "{{ env_var('TRINO_SSL_CERT', '') or (env_var('TRINO_SSL_VERIFY', 'true') | lower | capitalize) }}"
+      # Rendering note, and it is fiddlier than it looks. `cert` has to reach
+      # the adapter as a genuine boolean or a path, and dbt renders profile
+      # values to STRINGS unless a value is marked for native typing -- which
+      # only `as_bool`, `as_number` and `as_native` do. Without `as_bool` the
+      # boolean branch arrives as the string "False", which requests then tries
+      # to open as a CA bundle:
+      #
+      #   Could not find a suitable TLS CA certificate bundle,
+      #   invalid path: False
+      #
+      # `as_bool` runs `literal_eval`, which accepts `False` and not `false`,
+      # hence `lower | capitalize` ahead of it. And the certificate path must
+      # NOT go through `as_bool` -- a path is not a boolean and would be
+      # rejected -- hence a conditional rather than an `or`, so only the
+      # boolean branch is marked.
+      cert: "{{ env_var('TRINO_SSL_CERT') if env_var('TRINO_SSL_CERT', '') else (env_var('TRINO_SSL_VERIFY', 'true') | lower | capitalize | as_bool) }}"
       # Silences urllib3's InsecureRequestWarning, which fires on every request
       # when verification is off -- 96 runs a day of it drowns out the logs that
       # matter. Nothing is lost by hiding it: `wait_for_trino.py` announces
