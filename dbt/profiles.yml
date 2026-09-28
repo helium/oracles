@@ -42,7 +42,11 @@ mobile_dbt:
       user: "{{ env_var('TRINO_USER', 'mobile-dbt') }}"
       password: "{{ env_var('TRINO_PASSWORD') }}"
       host: "{{ env_var('TRINO_HOST') }}"
-      port: "{{ env_var('TRINO_PORT', '443') | int }}"
+      # 8443, not 443. Railway's private network has no edge proxy and no port
+      # remapping -- you reach the container on the port it actually listens on,
+      # and 443 is a public-edge convention that does not apply there. This is
+      # Trino's `http-server.https.port`.
+      port: "{{ env_var('TRINO_PORT', '8443') | int }}"
       # No `http_scheme`: this method forces HTTPS, and Trino refuses password
       # authentication over plain HTTP -- it would be sending the password in a
       # header in the clear.
@@ -51,19 +55,40 @@ mobile_dbt:
       threads: 8
       timezone: UTC
       # The cluster serves a SELF-SIGNED certificate, so the system CA store
-      # cannot validate it. Point this at the certificate itself and it
-      # validates normally. Required -- there is no default, so a deployment
-      # that forgets it fails at startup instead of connecting.
+      # cannot validate it. Two ways to deal with that:
       #
-      # Extract it once with:
-      #   openssl s_client -showcerts -connect HOST:443 </dev/null \
-      #     | openssl x509 -outform PEM > trino-ca.crt
-      # then mount it and set TRINO_SSL_CERT to the path.
+      #   TRINO_SSL_CERT=/path/to/trino.crt   verify against that certificate.
+      #                                       Only the CERTIFICATE block -- a
+      #                                       client never needs the key half.
+      #                                         openssl s_client -showcerts \
+      #                                           -connect HOST:443 </dev/null \
+      #                                           | openssl x509 -outform PEM
+      #   TRINO_SSL_VERIFY=false              connect without verifying.
       #
-      # Verification is deliberately not made skippable by an environment
-      # variable. This method sends the password on every request, so the TLS
-      # check is the only thing stopping anyone who can get between us and the
-      # coordinator from reading it -- that is a decision to take in a code
-      # change under review, not one to make by setting a variable in a cron
-      # job. (`cert: false` here is what turning it off would look like.)
-      cert: "{{ env_var('TRINO_SSL_CERT') }}"
+      # Unset both and this is `true`, which fails against a self-signed
+      # certificate rather than quietly downgrading. That is deliberate: pick
+      # one rather than inherit one.
+      #
+      # WHAT TURNING IT OFF COSTS. TLS still encrypts; what is lost is any check
+      # that the server is the server. This method sends the password on every
+      # request, so anything able to intercept the connection and present its
+      # own certificate collects that password. On a private network between two
+      # services that is a small risk and skipping verification is reasonable.
+      # Over a public hostname it is not -- the traffic leaves the platform and
+      # the password rides on an unauthenticated channel. The deciding question
+      # is which hostname TRINO_HOST names, not whether the certificate happens
+      # to be self-signed.
+      #
+      # Rendering note: `cert` has to reach the adapter as a genuine boolean or
+      # a path, and dbt gets there via `literal_eval` on the rendered value --
+      # hence `capitalize`, which turns `false` into the `False` that parses.
+      # `as_bool` does not help; it runs the same `literal_eval` and rejects a
+      # lowercase `false` outright.
+      cert: "{{ env_var('TRINO_SSL_CERT', '') or (env_var('TRINO_SSL_VERIFY', 'true') | lower | capitalize) }}"
+      # Silences urllib3's InsecureRequestWarning, which fires on every request
+      # when verification is off -- 96 runs a day of it drowns out the logs that
+      # matter. Nothing is lost by hiding it: `wait_for_trino.py` announces
+      # `TLS verification is DISABLED` once per run, which is the same fact
+      # stated once instead of continuously. Harmless when verification is on,
+      # since no such warning is raised then.
+      suppress_cert_warning: true

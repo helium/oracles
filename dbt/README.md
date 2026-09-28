@@ -200,8 +200,8 @@ Everything the container needs comes from the environment; see `profiles.yml`.
 | `TRINO_HOST` | **Required.** |
 | `TRINO_USER` | **Required in practice.** Defaults to `mobile-dbt`; must match what the cluster's PASSWORD backend knows. |
 | `TRINO_PASSWORD` | **Required.** HTTP Basic. |
-| `TRINO_SSL_CERT` | **Required.** Path to the cluster's self-signed certificate, mounted into the container. |
-| `TRINO_PORT` | 443 |
+| `TRINO_SSL_CERT` *or* `TRINO_SSL_VERIFY=false` | **One of these.** A path to the cluster's certificate, or skip verification. See below. |
+| `TRINO_PORT` | `8443` — Trino's https port. Railway's private network reaches the container directly, so the public `443` convention does not apply. |
 | `MOBILE_CATALOG` | `mobile` |
 | `TRINO_HTTP_SCHEME` | `https` — probe only; the `prod` profile forces HTTPS |
 | `TRINO_WAIT_TIMEOUT` / `TRINO_WAIT_INTERVAL` | 300 / 5 seconds |
@@ -216,18 +216,36 @@ The cluster uses Trino's PASSWORD authentication, so dbt connects with
 method forces HTTPS, because Trino refuses password auth over plain HTTP.
 
 Its certificate is self-signed, so nothing in the system CA store validates it.
-`TRINO_SSL_CERT` must point at the certificate:
+Pick one:
 
 ```bash
+# verify against the certificate -- the CERTIFICATE block only, never the key
 openssl s_client -showcerts -connect HOST:443 </dev/null \
-  | openssl x509 -outform PEM > trino-ca.crt
+  | openssl x509 -outform PEM > trino.crt
+TRINO_SSL_CERT=/certs/trino.crt
+
+# or connect without verifying
+TRINO_SSL_VERIFY=false
 ```
 
-Mount that and set `TRINO_SSL_CERT` to its path. Verification is deliberately
-not skippable by environment variable: Basic sends the password on every
-request, so the TLS check is the only thing stopping anyone in the path from
-reading it. Turning it off is a code change under review, not a variable set on
-a cron job.
+Set neither and the connection verifies against the system store, which fails
+against a self-signed certificate — deliberately, so the choice is made rather
+than inherited.
+
+**What skipping verification costs.** TLS still encrypts; what is lost is any
+check that the server is the server. This method sends the password on every
+request, so anything able to intercept the connection and present its own
+certificate collects that password. Between two services on a private network
+that is a small risk and skipping is reasonable. Over a public hostname it is
+not. The deciding question is which hostname `TRINO_HOST` names, not whether the
+certificate is self-signed. When verification is off, `wait_for_trino.py` says
+so on every run, so it cannot quietly become something nobody chose.
+
+urllib3's `InsecureRequestWarning` fires per request when verification is off,
+which at 96 runs a day drowns the logs that matter, so the profile sets
+`suppress_cert_warning` and the probe does the same. Nothing is lost: the
+`TLS verification is DISABLED` line states the same fact once per run rather
+than continuously.
 
 `scripts/wait_for_trino.py` requires `TRINO_PASSWORD` itself rather than leaving
 it to dbt. `env_var('TRINO_PASSWORD')` in a profile does *not* abort a run when
