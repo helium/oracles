@@ -1,6 +1,6 @@
-//! `poc.invalid_bans` — rejected ban reports.
+//! `hotspots.invalid_bans` — rejected ban reports.
 //!
-//! Same schema as [`super::ban`] (`poc.bans`) plus a `reason` column recording
+//! Same schema as [`super::ban`] (`hotspots.bans`) plus a `reason` column recording
 //! the `VerifiedBanIngestReportStatus` that rejected the row.
 
 use chrono::{DateTime, FixedOffset};
@@ -50,7 +50,7 @@ impl IcebergInvalidBan {
     }
 }
 
-/// Reuses the `poc.bans` definition, renamed and with a `reason` column.
+/// Reuses the `hotspots.bans` definition, renamed and with a `reason` column.
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     Ok(super::ban::table_definition()?
         .with_name(TABLE_NAME)

@@ -1,6 +1,6 @@
-//! `poc.invalid_speedtest_avgs` — rejected speedtest averages.
+//! `hotspots.invalid_speedtest_avgs` — rejected speedtest averages.
 //!
-//! Same schema as [`super::speedtest_avg`] (`poc.speedtest_avgs`), including the
+//! Same schema as [`super::speedtest_avg`] (`hotspots.speedtest_avgs`), including the
 //! nested `speedtests` sample list, plus a `reason` column recording the
 //! `SpeedtestAvgValidity` that rejected the row.
 
@@ -47,7 +47,7 @@ impl IcebergInvalidSpeedtestAvg {
     }
 }
 
-/// Reuses the `poc.speedtest_avgs` definition, renamed and with a `reason`
+/// Reuses the `hotspots.speedtest_avgs` definition, renamed and with a `reason`
 /// column.
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     Ok(super::speedtest_avg::table_definition()?

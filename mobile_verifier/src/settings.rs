@@ -48,7 +48,7 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
     pub gateway_refresh_interval: Duration,
     /// How often the last-validated-location cache is reloaded from
-    /// `poc.heartbeats` (see [`crate::heartbeats::last_location`]). The cache is
+    /// `hotspots.heartbeats` (see [`crate::heartbeats::last_location`]). The cache is
     /// process-local, so this is what picks up locations validated by another
     /// instance; keep it well under the 24-hour validity window.
     #[serde(

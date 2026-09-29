@@ -1,4 +1,4 @@
-//! Open a stream on `iceberg.poc.heartbeats` and print each event as a JSON
+//! Open a stream on `iceberg.hotspots.heartbeats` and print each event as a JSON
 //! document on stdout — snapshot metadata (id, sequence number, operation,
 //! commit time, row count), running totals, and a sample decoded row — plus a
 //! final summary document. Status messages go to stderr so stdout stays a
@@ -21,7 +21,7 @@
 //! Rows are decoded into the typed [`Heartbeat`] struct below — the stream is
 //! generic over any `T: serde::de::DeserializeOwned`, so you just define a
 //! struct whose fields match the table's columns. The poller opens a per-poller
-//! SQLite db `{WATERMARK_DIR}/poc-heartbeats-default.db` (mount the dir on a
+//! SQLite db `{WATERMARK_DIR}/hotspots-heartbeats-default.db` (mount the dir on a
 //! PVC) and `event.commit()` advances the watermark, so re-running resumes
 //! where the last run left off instead of replaying from the start.
 
@@ -32,7 +32,7 @@ use chrono::{DateTime, Utc};
 use helium_iceberg::{continuous, AuthConfig, Catalog, IcebergEvent, S3Config, Settings};
 use serde::{Deserialize, Serialize};
 
-/// A row of `iceberg.poc.heartbeats`. Field names and types match the table's
+/// A row of `iceberg.hotspots.heartbeats`. Field names and types match the table's
 /// columns; the poller decodes each Arrow row into this via serde
 /// (`batch_to_records`).
 ///
@@ -142,12 +142,12 @@ async fn main() -> Result<()> {
     let catalog = Catalog::connect(&settings_from_env()).await?;
 
     // No `.pool(...)` set, so `create` opens (and migrates) a per-poller db at
-    // `<db_dir>/poc-heartbeats-default.db`, where `db_dir` defaults to
+    // `<db_dir>/hotspots-heartbeats-default.db`, where `db_dir` defaults to
     // `$ICEBERG_STREAM_DB_DIR` (or cwd). The watermark advances via
     // `event.commit()` in `print_event`.
     let (mut rx, server) = continuous::<Heartbeat>()
         .catalog(catalog)
-        .namespace("poc")
+        .namespace("hotspots")
         .table("heartbeats")
         // Start from the beginning of the table's history. Swap for
         // `.lookback_max(Duration::from_secs(24 * 60 * 60))` to only see the
@@ -155,13 +155,13 @@ async fn main() -> Result<()> {
         .poll_duration(Duration::from_secs(5))
         .create()
         .await?;
-    eprintln!("watermark db: <ICEBERG_STREAM_DB_DIR>/poc-heartbeats-default.db");
+    eprintln!("watermark db: <ICEBERG_STREAM_DB_DIR>/hotspots-heartbeats-default.db");
 
     // Drive the poller in the background. Triggering stops it.
     let (trigger, listener) = triggered::trigger();
     let server = tokio::spawn(server.run(listener));
 
-    eprintln!("streaming iceberg.poc.heartbeats — press Ctrl-C to stop");
+    eprintln!("streaming iceberg.hotspots.heartbeats — press Ctrl-C to stop");
 
     let mut totals = Totals::default();
 

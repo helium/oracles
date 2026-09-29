@@ -15,9 +15,9 @@
 //! ```ignore
 //! let (mut rx, server) = helium_iceberg::stream::continuous::<MyRow>()
 //!     .catalog(catalog)
-//!     .namespace("poc")
+//!     .namespace("hotspots")
 //!     .table("heartbeats")
-//!     .db_dir("/data")                 // opens /data/poc-heartbeats-default.db
+//!     .db_dir("/data")                 // opens /data/hotspots-heartbeats-default.db
 //!     .lookback_start_after(start)
 //!     .create()
 //!     .await?;
