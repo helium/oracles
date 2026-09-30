@@ -94,6 +94,63 @@ async fn utc_timestamp_matches_trino_literal() -> anyhow::Result<()> {
     Ok(())
 }
 
+// A nanosecond-precision literal is `timestamp(9)`; comparing it to a
+// microsecond Iceberg column makes Trino cast the column, which disables
+// partition pruning. Bound timestamps must always reach Trino as precision 6.
+#[tokio::test]
+async fn nanosecond_utc_timestamp_binds_as_precision_6() -> anyhow::Result<()> {
+    let t = Utc
+        .with_ymd_and_hms(2024, 1, 15, 12, 34, 56)
+        .single()
+        .unwrap()
+        + chrono::Duration::nanoseconds(982_612_543);
+    let sql = Statement::new("SELECT typeof(:t) AS s")
+        .bind("t", t)
+        .render()?;
+    let rows: Vec<StringRow> = client().get_all_raw(sql).await?;
+    assert_eq!(
+        rows,
+        vec![StringRow {
+            s: "timestamp(6) with time zone".into()
+        }]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn nanosecond_naive_timestamp_binds_as_precision_6() -> anyhow::Result<()> {
+    let t = NaiveDate::from_ymd_opt(2024, 1, 15)
+        .unwrap()
+        .and_hms_nano_opt(12, 34, 56, 982_612_543)
+        .unwrap();
+    let sql = Statement::new("SELECT typeof(:t) AS s")
+        .bind("t", t)
+        .render()?;
+    let rows: Vec<StringRow> = client().get_all_raw(sql).await?;
+    assert_eq!(
+        rows,
+        vec![StringRow {
+            s: "timestamp(6)".into()
+        }]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn nanosecond_utc_timestamp_truncates_to_micros() -> anyhow::Result<()> {
+    let t = Utc
+        .with_ymd_and_hms(2024, 1, 15, 12, 34, 56)
+        .single()
+        .unwrap()
+        + chrono::Duration::nanoseconds(982_612_999);
+    let sql = Statement::new("SELECT (TIMESTAMP '2024-01-15 12:34:56.982612 UTC' = :t) AS eq")
+        .bind("t", t)
+        .render()?;
+    let rows: Vec<EqRow> = client().get_all_raw(sql).await?;
+    assert_eq!(rows, vec![EqRow { eq: true }]);
+    Ok(())
+}
+
 #[tokio::test]
 async fn string_with_apostrophe_round_trip() -> anyhow::Result<()> {
     let s = "O'Brien".to_string();

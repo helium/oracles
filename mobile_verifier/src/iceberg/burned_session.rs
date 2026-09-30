@@ -126,11 +126,11 @@ mod tests {
         assert!(rendered.contains("burn_timestamp < ?"), "{rendered}");
         // Partition-friendly, UTC-tagged timestamp literals.
         assert!(
-            rendered.contains("TIMESTAMP '2024-01-15 00:00:00 UTC'"),
+            rendered.contains("TIMESTAMP '2024-01-15 00:00:00.000000 UTC'"),
             "{rendered}"
         );
         assert!(
-            rendered.contains("TIMESTAMP '2024-01-16 00:00:00 UTC'"),
+            rendered.contains("TIMESTAMP '2024-01-16 00:00:00.000000 UTC'"),
             "{rendered}"
         );
     }
