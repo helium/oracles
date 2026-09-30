@@ -140,12 +140,13 @@ impl Param {
                 Ok(format!("X'{hex}'"))
             }
             Param::Date(d) => Ok(format!("DATE '{}'", d.format("%Y-%m-%d"))),
-            Param::Timestamp(ts) => {
-                Ok(format!("TIMESTAMP '{}'", ts.format("%Y-%m-%d %H:%M:%S%.f")))
-            }
+            Param::Timestamp(ts) => Ok(format!(
+                "TIMESTAMP '{}'",
+                ts.format("%Y-%m-%d %H:%M:%S%.6f")
+            )),
             Param::TimestampTz(ts) => Ok(format!(
                 "TIMESTAMP '{}'",
-                ts.format("%Y-%m-%d %H:%M:%S%.f UTC")
+                ts.format("%Y-%m-%d %H:%M:%S%.6f UTC")
             )),
         }
     }
@@ -562,7 +563,7 @@ mod tests {
         let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
         assert_eq!(
             r,
-            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56'"
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.000000'"
         );
     }
 
@@ -575,7 +576,7 @@ mod tests {
         let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
         assert_eq!(
             r,
-            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.789'"
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.789000'"
         );
     }
 
@@ -589,8 +590,64 @@ mod tests {
         let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
         assert_eq!(
             r,
-            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56 UTC'"
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.000000 UTC'"
         );
+    }
+
+    // Iceberg timestamps are microsecond precision. A nanosecond literal is
+    // `timestamp(9)`, which forces Trino to cast the column and disables
+    // partition pruning, so literals are always truncated to microseconds.
+    #[test]
+    fn renders_naive_timestamp_truncated_to_micros() {
+        let ts = NaiveDate::from_ymd_opt(2024, 1, 15)
+            .unwrap()
+            .and_hms_nano_opt(12, 34, 56, 982_612_543)
+            .unwrap();
+        let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
+        assert_eq!(
+            r,
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.982612'"
+        );
+    }
+
+    #[test]
+    fn renders_utc_timestamp_truncated_to_micros() {
+        let ts = NaiveDate::from_ymd_opt(2024, 1, 15)
+            .unwrap()
+            .and_hms_nano_opt(12, 34, 56, 982_612_999)
+            .unwrap()
+            .and_utc();
+        let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
+        assert_eq!(
+            r,
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.982612 UTC'"
+        );
+    }
+
+    #[test]
+    fn renders_utc_timestamp_with_micros_unchanged() {
+        let ts = NaiveDate::from_ymd_opt(2024, 1, 15)
+            .unwrap()
+            .and_hms_micro_opt(12, 34, 56, 1)
+            .unwrap()
+            .and_utc();
+        let r = Statement::new("SELECT :t").bind("t", ts).render().unwrap();
+        assert_eq!(
+            r,
+            "EXECUTE IMMEDIATE 'SELECT ?' USING TIMESTAMP '2024-01-15 12:34:56.000001 UTC'"
+        );
+    }
+
+    #[test]
+    fn renders_now_with_exactly_six_fractional_digits() {
+        let literal = Param::from(Utc::now()).to_literal().unwrap();
+        let fraction = literal
+            .strip_prefix("TIMESTAMP '")
+            .and_then(|rest| rest.strip_suffix(" UTC'"))
+            .and_then(|ts| ts.split_once('.'))
+            .map(|(_, fraction)| fraction)
+            .unwrap_or_else(|| panic!("unexpected literal: {literal}"));
+        assert_eq!(fraction.len(), 6, "{literal}");
     }
 
     #[test]
