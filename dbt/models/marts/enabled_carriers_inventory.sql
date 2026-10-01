@@ -5,7 +5,7 @@
     unique_key='hotspot_pubkey',
     on_schema_change='append_new_columns',
     schema='hotspots',
-    tags=['15m'],
+    tags=['1h'],
     properties={
       'format': "'PARQUET'"
     }
