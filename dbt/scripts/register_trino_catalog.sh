@@ -3,9 +3,9 @@
 # Register the local Polaris warehouse as a Trino catalog so dbt can reach it.
 #
 # The local Trino runs with `catalog.management=dynamic` and
-# `catalog.store=memory` (infra/trino/etc/config.properties), which means the
-# static catalog files mounted at /etc/trino/catalog are NOT loaded -- a fresh
-# Trino has only the `system` catalog, and everything else is registered at
+# `catalog.store=memory` (infra/trino/etc/config.properties), which means
+# static catalog files are not loaded -- a fresh Trino has only the `system`
+# catalog, and everything else is registered at
 # runtime with `CREATE CATALOG`. That is how helium_iceberg's test harness gets
 # its per-test catalogs (see `register_trino_catalog` in
 # helium_iceberg/src/test_harness.rs); this script does the same thing once, for
@@ -13,11 +13,6 @@
 #
 # Because the store is in memory, the registration does not survive a Trino
 # restart. Re-run this after `docker compose up`; it is idempotent.
-#
-# The connector properties below intentionally match
-# infra/trino/etc/catalog/iceberg.properties. That file is inert under dynamic
-# catalog management -- if you change it, change this too, or local Trino and
-# local dbt will disagree about where the data is.
 set -euo pipefail
 
 PROJECT="${COMPOSE_PROJECT_NAME:-oracles}"

@@ -2,8 +2,7 @@
 //! Postgres-backed tables it reads in production.
 //!
 //! Production reads `solana.public.dao_epoch_infos` / `sub_dao_epoch_infos`
-//! through a Trino postgresql-connector catalog (see
-//! `infra/trino/etc/catalog/solana.properties`). Unlike the iceberg-backed
+//! through a Trino postgresql-connector catalog. Unlike the iceberg-backed
 //! `rewarder_epoch_reward_info_trino` test, here the tables are created in the
 //! `#[sqlx::test]` database with their real Postgres column types, and a
 //! dynamic Trino catalog is registered against that database so the statement
@@ -159,8 +158,8 @@ async fn seed(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Register a Trino postgresql catalog against this test's database, using the
-/// same connector properties as `solana.properties`, plus
+/// Register a Trino postgresql catalog against this test's database: plain
+/// connection properties plus
 /// `unsupported-type-handling = CONVERT_TO_VARCHAR` so the unbounded `numeric`
 /// columns are exposed (as varchar) instead of silently dropped. Returns the
 /// catalog name.

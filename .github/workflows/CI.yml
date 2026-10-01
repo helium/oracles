@@ -176,7 +176,7 @@ jobs:
         ports:
           - 8181:8181
       trino:
-        image: trinodb/trino:480
+        image: trinodb/trino:483
         env:
           AWS_ACCESS_KEY_ID: admin
           AWS_SECRET_ACCESS_KEY: admin
