@@ -228,25 +228,35 @@ pub async fn resolve(
 /// `rewards_issued_at`, `address`) for `epoch` under `schema` (`solana.public`
 /// in prod).
 ///
-/// The indexer's numeric columns are `CAST ... AS VARCHAR` so the query is
-/// agnostic to whether they're stored as varchar or bigint; they're parsed on
-/// the Rust side. `epoch` is a varchar column, bound as its decimal string.
+/// The indexer's columns are Postgres `numeric` with no precision. How Trino
+/// exposes them depends on the version: varchar (<= 479, with
+/// `unsupported-type-handling = CONVERT_TO_VARCHAR`) or the `number` type
+/// (>= 480). `CAST(number AS VARCHAR)` renders trailing zeros in exponent form
+/// (`5197507584000` -> `5.197507584E+12`), so each column goes through
+/// `DECIMAL(38, 0)` first, which yields plain digits on both versions. They're
+/// parsed on the Rust side. `epoch` is compared the same way, against its
+/// decimal string.
 /// Qualifying the tables with `schema` (catalog.schema) makes the reference
 /// independent of the client's default catalog.
-fn epoch_statement(schema: &str, epoch: u64, dao: &str, sub_dao: &str) -> trino_client::Statement {
+pub fn epoch_statement(
+    schema: &str,
+    epoch: u64,
+    dao: &str,
+    sub_dao: &str,
+) -> trino_client::Statement {
     trino_client::Statement::new(format!(
         "
         SELECT
-            CAST(d.deployer_cap_hnt AS VARCHAR)          AS deployer_cap_hnt,
-            CAST(s.dc_burned AS VARCHAR)                 AS dc_burned,
-            CAST(s.hnt_rewards_issued AS VARCHAR)        AS hnt_rewards_issued,
-            CAST(s.delegation_rewards_issued AS VARCHAR) AS delegation_rewards_issued,
-            CAST(s.rewards_issued_at AS VARCHAR)         AS rewards_issued_at,
-            s.address                                    AS epoch_address
+            CAST(CAST(d.deployer_cap_hnt AS DECIMAL(38, 0)) AS VARCHAR)          AS deployer_cap_hnt,
+            CAST(CAST(s.dc_burned AS DECIMAL(38, 0)) AS VARCHAR)                 AS dc_burned,
+            CAST(CAST(s.hnt_rewards_issued AS DECIMAL(38, 0)) AS VARCHAR)        AS hnt_rewards_issued,
+            CAST(CAST(s.delegation_rewards_issued AS DECIMAL(38, 0)) AS VARCHAR) AS delegation_rewards_issued,
+            CAST(CAST(s.rewards_issued_at AS DECIMAL(38, 0)) AS VARCHAR)         AS rewards_issued_at,
+            s.address                                                            AS epoch_address
         FROM {schema}.dao_epoch_infos d
         JOIN {schema}.sub_dao_epoch_infos s
             ON s.epoch = d.epoch
-        WHERE d.epoch = :epoch
+        WHERE CAST(d.epoch AS DECIMAL(38, 0)) = CAST(:epoch AS DECIMAL(38, 0))
           AND d.dao = :dao
           AND s.sub_dao = :sub_dao
         "
@@ -334,7 +344,10 @@ mod tests {
         assert!(rendered.contains("hnt_rewards_issued"), "{rendered}");
         assert!(rendered.contains("delegation_rewards_issued"), "{rendered}");
         // Bound params render as positional placeholders (EXECUTE IMMEDIATE).
-        assert!(rendered.contains("d.epoch = ?"), "{rendered}");
+        assert!(
+            rendered.contains("CAST(d.epoch AS DECIMAL(38, 0)) = CAST(? AS DECIMAL(38, 0))"),
+            "{rendered}"
+        );
         assert!(rendered.contains("d.dao = ?"), "{rendered}");
         assert!(rendered.contains("s.sub_dao = ?"), "{rendered}");
     }
