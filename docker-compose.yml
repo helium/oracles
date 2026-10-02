@@ -82,7 +82,7 @@ services:
         true
 
   polaris:
-    image: apache/polaris:1.3.0-incubating
+    image: apache/polaris:1.7.0
     ports:
       - 8181:8181
     depends_on:

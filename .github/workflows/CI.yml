@@ -160,7 +160,7 @@ jobs:
           RUSTFS_ACCESS_KEY: admin
           RUSTFS_SECRET_KEY: admin
       polaris:
-        image: apache/polaris:1.3.0-incubating
+        image: apache/polaris:1.7.0
         env:
           POLARIS_PERSISTENCE_TYPE: in-memory
           POLARIS_BOOTSTRAP_CREDENTIALS: POLARIS,root,s3cr3t
