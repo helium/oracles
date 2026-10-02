@@ -26,7 +26,7 @@ pub use speedtest::IcebergSpeedtest;
 pub use speedtest_avg::IcebergSpeedtestAvg;
 pub use valid_invalid::ValidInvalidWriter;
 
-pub const NAMESPACE: &str = "poc";
+pub const NAMESPACE: &str = "hotspots";
 pub const REWARDS_NAMESPACE: &str = "rewards";
 
 /// Column appended to every `invalid_*` table, recording why a record was
@@ -40,8 +40,8 @@ pub(crate) fn reason_without_prefix(name: &str, prefix: &str) -> String {
     name.strip_prefix(prefix).unwrap_or(name).to_string()
 }
 
-// POC tables write accepted records to `poc.<table>` and rejected records to a
-// sibling `poc.invalid_<table>` (same schema plus a `reason` column). See
+// POC tables write accepted records to `hotspots.<table>` and rejected records to a
+// sibling `hotspots.invalid_<table>` (same schema plus a `reason` column). See
 // `helium_iceberg::ValidInvalidWriter`.
 pub type BanWriter = ValidInvalidWriter<IcebergBan, IcebergInvalidBan>;
 pub type HeartbeatWriter = ValidInvalidWriter<IcebergHeartbeat, IcebergInvalidHeartbeat>;

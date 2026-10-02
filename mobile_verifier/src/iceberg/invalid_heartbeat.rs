@@ -1,6 +1,6 @@
-//! `poc.invalid_heartbeats` — rejected heartbeats.
+//! `hotspots.invalid_heartbeats` — rejected heartbeats.
 //!
-//! Same schema as [`super::heartbeat`] (`poc.heartbeats`) plus a `reason`
+//! Same schema as [`super::heartbeat`] (`hotspots.heartbeats`) plus a `reason`
 //! column recording the `HeartbeatValidity` that rejected the row. The table
 //! definition is derived from the valid one so the two never drift, and rows
 //! are built from an already-converted [`IcebergHeartbeat`] so the field
@@ -54,7 +54,7 @@ impl IcebergInvalidHeartbeat {
     }
 }
 
-/// Reuses the `poc.heartbeats` definition, renamed and with a `reason` column.
+/// Reuses the `hotspots.heartbeats` definition, renamed and with a `reason` column.
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     Ok(super::heartbeat::table_definition()?
         .with_name(TABLE_NAME)

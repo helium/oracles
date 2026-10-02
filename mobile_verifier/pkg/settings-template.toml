@@ -21,7 +21,7 @@ banning_authorized_keys = "key1,key2"
 # inventory table (see [trino]). Default is 1 hour.
 # gateway_refresh_interval = "1 hour"
 
-# How often the last-validated-location cache is reloaded from `poc.heartbeats`.
+# How often the last-validated-location cache is reloaded from `hotspots.heartbeats`.
 # Default is 1 hour.
 #
 # Heartbeats that carry no location validation of their own inherit the hotspot's

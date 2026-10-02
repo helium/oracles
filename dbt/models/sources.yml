@@ -9,10 +9,11 @@ version: 2
 # own definition, and the best available for a table we do not own. Refresh the
 # copy with `SHOW CREATE TABLE` when upstream moves.
 #
-# The oracle-written tables in this catalog (`data_transfer`, `poc`, `rewards`,
-# `tokens`) are deliberately NOT declared here. Nothing models them, so their
-# declarations verified only their own accuracy, at the cost of a full
-# mobile-verifier compile in CI to create the tables to check them against.
+# The oracle-written tables in this catalog (`data_transfer`, `rewards`,
+# `tokens`, and mobile-verifier's tables in `hotspots`) are deliberately NOT
+# declared here. Nothing models them, so their declarations verified only their
+# own accuracy, at the cost of a full mobile-verifier compile in CI to create
+# the tables to check them against.
 # Declare one when a model needs it, and restore that check with it: the
 # schemas are `table_definition()` functions (helium_iceberg_oracles/src/,
 # mobile_verifier/src/iceberg/, price/src/iceberg/), and creating tables from
