@@ -149,8 +149,8 @@ Query the warehouse directly with
 Trino runs with `catalog.management=dynamic` and `catalog.store=memory`
 (`infra/trino/etc/config.properties`), which means:
 
-1. **The catalog files under `infra/trino/etc/catalog/` are inert.** A fresh
-   Trino has only the `system` catalog. `scripts/register_trino_catalog.sh`
+1. **There are no static catalog files.** A fresh Trino has only the `system`
+   catalog. `scripts/register_trino_catalog.sh`
    creates the `iceberg` one at runtime, mirroring what `helium_iceberg`'s test
    harness does for its per-test catalogs.
 2. **The registration does not survive a Trino restart.** Re-run the script

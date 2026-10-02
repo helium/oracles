@@ -65,7 +65,8 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// Local-docker defaults, mirroring `infra/trino/etc/catalog/iceberg.properties`.
+/// Local-docker defaults for the Polaris `iceberg` warehouse, the same one
+/// `dbt/scripts/register_trino_catalog.sh` registers with Trino.
 fn settings_from_env() -> Settings {
     Settings {
         catalog_uri: env_or("ICEBERG_CATALOG_URI", "http://localhost:8181/api/catalog"),

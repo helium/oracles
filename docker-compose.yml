@@ -82,7 +82,7 @@ services:
         true
 
   polaris:
-    image: apache/polaris:1.3.0-incubating
+    image: apache/polaris:1.7.0
     ports:
       - 8181:8181
     depends_on:
@@ -142,7 +142,7 @@ services:
       - ./infra/polaris/init.sh:/infra/polaris/init.sh:ro
 
   trino:
-    image: trinodb/trino:480
+    image: trinodb/trino:483
     depends_on:
       polaris:
         condition: service_healthy
@@ -163,8 +163,6 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=admin
     volumes:
-      - ./infra/trino/etc/catalog/iceberg.properties:/etc/trino/catalog/iceberg.properties:ro
-      - ./infra/trino/etc/catalog/postgres.properties:/etc/trino/catalog/postgres.properties:ro
       - ./infra/trino/etc/config.properties:/etc/trino/config.properties:ro
       - ./infra/trino/etc/jvm.config:/etc/trino/jvm.config:ro
     healthcheck:
