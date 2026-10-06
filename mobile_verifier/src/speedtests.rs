@@ -282,7 +282,7 @@ where
 /// accompanies each report can't be recovered with a per-report `SELECT`
 /// anymore. This keeps the same window the old query produced — up to
 /// `SPEEDTEST_AVG_MAX_DATA_POINTS` samples within [`SPEEDTEST_LAPSE`] hours —
-/// per hotspot instead, warmed once at startup from `poc.speedtests` in Trino so
+/// per hotspot instead, warmed once at startup from `hotspots.speedtests` in Trino so
 /// a restart doesn't reset every hotspot to a single-sample average.
 ///
 /// Entries expire on their own after [`SPEEDTEST_LAPSE`] hours of inactivity, so

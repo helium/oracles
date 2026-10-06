@@ -76,7 +76,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location() -> anyhow::Re
 }
 
 /// A restart loses the in-memory cache. The location a hotspot asserted before
-/// the restart is recovered by warming the cache from `poc.heartbeats` in Trino
+/// the restart is recovered by warming the cache from `hotspots.heartbeats` in Trino
 /// — the replacement for the per-miss `wifi_heartbeats` lookup that used to run
 /// against Postgres.
 #[tokio::test]

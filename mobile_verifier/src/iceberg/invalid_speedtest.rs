@@ -1,6 +1,6 @@
-//! `poc.invalid_speedtests` — rejected speedtests.
+//! `hotspots.invalid_speedtests` — rejected speedtests.
 //!
-//! Same schema as [`super::speedtest`] (`poc.speedtests`) plus a `reason`
+//! Same schema as [`super::speedtest`] (`hotspots.speedtests`) plus a `reason`
 //! column recording the `SpeedtestVerificationResult` that rejected the row.
 
 use chrono::{DateTime, FixedOffset};
@@ -41,7 +41,7 @@ impl IcebergInvalidSpeedtest {
     }
 }
 
-/// Reuses the `poc.speedtests` definition, renamed and with a `reason` column.
+/// Reuses the `hotspots.speedtests` definition, renamed and with a `reason` column.
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     Ok(super::speedtest::table_definition()?
         .with_name(TABLE_NAME)

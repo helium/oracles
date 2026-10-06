@@ -64,7 +64,7 @@ impl LastLocation {
 /// A cache of the last validated WiFi heartbeat location per hotspot.
 ///
 /// Entries come from two places: heartbeats validated by this process (via
-/// [`LocationCache::set`]), and a read of the last 24 hours of `poc.heartbeats`
+/// [`LocationCache::set`]), and a read of the last 24 hours of `hotspots.heartbeats`
 /// out of Trino — once at startup ([`LocationCache::from_trino`]) and again on
 /// an interval ([`LocationCacheRefresher`]). Together these replace what used to
 /// be a per-hotspot `SELECT` against the `wifi_heartbeats` Postgres table on

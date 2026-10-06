@@ -46,19 +46,20 @@ missing column rather than as a silently wrong mart — weaker than deriving the
 schema from its own definition, and the best available for a table this repo
 does not own. Refresh that file with `SHOW CREATE TABLE` when upstream moves.
 
-The oracle-written tables (`data_transfer`, `poc`, `rewards`, `tokens`) are
-deliberately not declared. Nothing models them, so declaring them verified only
-their own accuracy — and paid for it with a full `mobile-verifier` compile in
-CI, to create the tables to check them against. Declare one when a model needs
-it, and bring that check back with it.
+The oracle-written tables (`data_transfer`, `rewards`, `tokens`, and
+mobile-verifier's tables in `hotspots`) are deliberately not declared. Nothing
+models them, so declaring them verified only their own accuracy — and paid for
+it with a full `mobile-verifier` compile in CI, to create the tables to check
+them against. Declare one when a model needs it, and bring that check back with
+it.
 
 Where the rest of the catalog's schemas live, for when a model needs one:
 
 | namespace | tables | defined in |
 | --- | --- | --- |
 | `hotspots` | 1 — **declared** | *external* — mirrored in `scripts/external_sources.sql` |
+| `hotspots` | 8 | `mobile_verifier/src/iceberg/` |
 | `data_transfer` | 4 | `helium_iceberg_oracles/src/data_transfer/` |
-| `poc` | 8 | `mobile_verifier/src/iceberg/` |
 | `rewards` | 3 | `mobile_verifier/src/iceberg/` |
 | `tokens` | 1 | `price/src/iceberg/` |
 
