@@ -125,8 +125,8 @@ where
 #[expect(clippy::too_many_arguments)]
 pub async fn handle_data_transfer_session_file(
     txn: &mut Transaction<'_, Postgres>,
-    iceberg_writer: Option<&iceberg::DataTransferWriter>,
-    invalid_iceberg_writer: Option<&iceberg::InvalidDataTransferWriter>,
+    iceberg_writer: &iceberg::DataTransferWriter,
+    invalid_iceberg_writer: &iceberg::InvalidDataTransferWriter,
     write_id: &str,
     banned_radios: BannedRadios,
     resolver: &GatewayResolver,
@@ -165,9 +165,15 @@ pub async fn handle_data_transfer_session_file(
             .context("writing to file-store")?;
     }
 
-    iceberg::maybe_write_idempotent(iceberg_writer, write_id, iceberg_sessions).await?;
-    iceberg::maybe_write_idempotent(invalid_iceberg_writer, write_id, invalid_iceberg_sessions)
-        .await?;
+    iceberg_writer
+        .write_idempotent(write_id, iceberg_sessions)
+        .await
+        .context("writing data sessions")?;
+
+    invalid_iceberg_writer
+        .write_idempotent(write_id, invalid_iceberg_sessions)
+        .await
+        .context("writing invalid data sessions")?;
 
     Ok(())
 }
@@ -185,8 +191,8 @@ pub struct IngestReports {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    iceberg_writer: Option<DataTransferWriter>,
-    invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
+    iceberg_writer: DataTransferWriter,
+    invalid_iceberg_writer: InvalidDataTransferWriter,
     gateway_resolver: GatewayResolver,
     routing_keys: RoutingKeys,
 }
@@ -196,8 +202,8 @@ impl IngestReports {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-        iceberg_writer: Option<DataTransferWriter>,
-        invalid_iceberg_writer: Option<InvalidDataTransferWriter>,
+        iceberg_writer: DataTransferWriter,
+        invalid_iceberg_writer: InvalidDataTransferWriter,
         gateway_resolver: GatewayResolver,
         routing_keys: RoutingKeys,
     ) -> Self {
@@ -244,8 +250,8 @@ impl IngestReports {
 
         handle_data_transfer_session_file(
             &mut transaction,
-            self.iceberg_writer.as_ref(),
-            self.invalid_iceberg_writer.as_ref(),
+            &self.iceberg_writer,
+            &self.invalid_iceberg_writer,
             &write_id,
             banned_radios,
             &self.gateway_resolver,
@@ -264,7 +270,7 @@ impl IngestReports {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct Cmd {}
+pub struct Cmd;
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
@@ -308,27 +314,11 @@ impl Cmd {
             )
             .await?;
 
-        let writers = if let Some(ref iceberg_settings) = settings.iceberg_settings {
-            tracing::info!("iceberg settings provided, connecting...");
-            Some(iceberg::get_writers(iceberg_settings).await?)
-        } else {
-            tracing::info!("no iceberg settings provided");
-            None
-        };
-        let (
-            session_writer,
-            invalid_session_writer,
-            burned_session_writer,
-            multiplier_ticket_writer,
-        ) = match writers {
-            Some(w) => (
-                Some(w.session),
-                Some(w.invalid_session),
-                Some(w.burned_session),
-                Some(w.multiplier_ticket),
-            ),
-            None => (None, None, None, None),
-        };
+        let writers = iceberg::get_writers(&settings.iceberg_settings).await?;
+        let session_writer = writers.session;
+        let invalid_session_writer = writers.invalid_session;
+        let burned_session_writer = writers.burned_session;
+        let multiplier_ticket_writer = writers.multiplier_ticket;
 
         let burner = Burner::new(
             valid_sessions,

@@ -1,6 +1,5 @@
 use anyhow::Context;
 use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
-use serde::Serialize;
 
 // `data_transfer` schemas live in `helium-iceberg-oracles`; re-exported here so
 // existing `iceberg::*` paths keep resolving.
@@ -51,20 +50,4 @@ pub async fn get_writers(settings: &helium_iceberg::Settings) -> anyhow::Result<
         burned_session: burned_session_writer.boxed(),
         multiplier_ticket: multiplier_ticket_writer.boxed(),
     })
-}
-
-/// Optional idempotent append — no-op when `writer` is `None` (iceberg
-/// writes are optional in some deployments).
-pub async fn maybe_write_idempotent<T: Serialize + Send + 'static>(
-    writer: Option<&BoxedDataWriter<T>>,
-    id: &str,
-    records: Vec<T>,
-) -> anyhow::Result<()> {
-    if let Some(data_writer) = writer {
-        data_writer
-            .write_idempotent(id, records)
-            .await
-            .context("writing idempotent")?;
-    }
-    Ok(())
 }

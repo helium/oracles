@@ -26,9 +26,20 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
 
-    let mut report_rx =
-        run_accumulate_sessions(&pool, &harness, vec![], vec![], vec![], Some(writer)).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        vec![],
+        vec![],
+        vec![],
+        &writer,
+        &invalid_session_writer,
+    )
+    .await?;
 
     report_rx.assert_is_empty()?;
 
@@ -43,6 +54,9 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![1]);
@@ -96,7 +110,8 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -116,6 +131,9 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![0]);
@@ -147,7 +165,8 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -164,6 +183,9 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![0]);
@@ -195,7 +217,8 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -212,6 +235,9 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let reports = vec![DataTransferSessionIngestReport {
@@ -238,8 +264,16 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
 
     // CBRS reports are dropped before the gateway/routing checks run, so no
     // gateway needs to be seeded and no routing key allow-listed.
-    let mut report_rx =
-        run_accumulate_sessions(&pool, &harness, reports, vec![], vec![], Some(writer)).await?;
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        reports,
+        vec![],
+        vec![],
+        &writer,
+        &invalid_session_writer,
+    )
+    .await?;
 
     // record not written to file or db
     report_rx.assert_is_empty()?;
@@ -255,6 +289,9 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![0]);
@@ -288,7 +325,8 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -306,6 +344,9 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![0]);
@@ -339,7 +380,8 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![key.clone()],
         vec![],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -357,6 +399,9 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![1]);
@@ -392,7 +437,8 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -410,6 +456,9 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![1]);
@@ -444,7 +493,8 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -462,6 +512,9 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![1]);
@@ -498,7 +551,8 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -515,6 +569,9 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let key = PublicKeyBinary::from(vec![1]);
@@ -573,7 +630,8 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
         reports,
         vec![key.clone()],
         vec![key.clone()],
-        Some(writer),
+        &writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -592,12 +650,10 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
 ) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let session_writer = harness
-        .get_table_writer::<iceberg::IcebergDataTransferSession>(iceberg::session::TABLE_NAME)
+        .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
     let invalid_session_writer = harness
-        .get_table_writer::<iceberg::IcebergInvalidDataTransferSession>(
-            iceberg::invalid_session::TABLE_NAME,
-        )
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
     let valid_gateway = PublicKeyBinary::from(vec![1]);
@@ -625,8 +681,8 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
 
     handle_data_transfer_session_file(
         &mut txn,
-        Some(&session_writer),
-        Some(&invalid_session_writer),
+        &session_writer,
+        &invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,
@@ -665,6 +721,9 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
     let session_writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
 
     let gateway = PublicKeyBinary::from(vec![1]);
 
@@ -688,8 +747,8 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
     handle_data_transfer_session_file(
         &mut txn,
-        Some(&session_writer),
-        None,
+        &session_writer,
+        &invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,
@@ -720,6 +779,9 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
     let session_writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
 
     let gateway = PublicKeyBinary::from(vec![1]);
     let report_time = Utc::now() - Duration::hours(1);
@@ -740,8 +802,8 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
     let banned_radios = banning::get_banned_radios(&mut txn, report_time).await?;
     handle_data_transfer_session_file(
         &mut txn,
-        Some(&session_writer),
-        None,
+        &session_writer,
+        &invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,
@@ -801,7 +863,8 @@ async fn run_accumulate_sessions(
     reports: Vec<DataTransferSessionIngestReport>,
     known_gateways: Vec<PublicKeyBinary>,
     routing_keys: Vec<PublicKeyBinary>,
-    iceberg_writer: Option<iceberg::DataTransferWriter>,
+    iceberg_writer: &iceberg::DataTransferWriter,
+    invalid_session_writer: &iceberg::InvalidDataTransferWriter,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     // Mark each known gateway as present on-chain, comfortably before the
     // reports' received timestamps so the `inserted_at <= query timestamp` check passes.
@@ -826,8 +889,8 @@ async fn run_accumulate_sessions(
 
     handle_data_transfer_session_file(
         &mut txn,
-        iceberg_writer.as_ref(),
-        None,
+        iceberg_writer,
+        invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,

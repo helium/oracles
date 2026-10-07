@@ -21,7 +21,7 @@ pub struct Burner<S> {
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
-    iceberg_writer: Option<BurnedDataTransferWriter>,
+    iceberg_writer: BurnedDataTransferWriter,
 }
 
 impl<S> Burner<S> {
@@ -30,7 +30,7 @@ impl<S> Burner<S> {
         solana: S,
         failed_retry_attempts: usize,
         failed_check_interval: std::time::Duration,
-        iceberg_writer: Option<BurnedDataTransferWriter>,
+        iceberg_writer: BurnedDataTransferWriter,
     ) -> Self {
         Self {
             valid_sessions,
@@ -79,7 +79,7 @@ where
                 write_burned_data_transfer_sessions(
                     sessions,
                     &self.valid_sessions,
-                    self.iceberg_writer.as_ref(),
+                    &self.iceberg_writer,
                 )
                 .await?;
 
@@ -132,7 +132,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        self.iceberg_writer.as_ref(),
+                        &self.iceberg_writer,
                     )
                     .await?;
                 }
@@ -187,7 +187,7 @@ where
                         total_dcs,
                         sessions,
                         &self.valid_sessions,
-                        self.iceberg_writer.as_ref(),
+                        &self.iceberg_writer,
                     )
                     .await;
                     if let Err(err) = txn_success {
@@ -228,7 +228,7 @@ async fn handle_transaction_success(
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
-    iceberg_writer: Option<&BurnedDataTransferWriter>,
+    iceberg_writer: &BurnedDataTransferWriter,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
     metrics::counter!(
@@ -254,7 +254,7 @@ async fn handle_transaction_success(
 async fn write_burned_data_transfer_sessions(
     sessions: Vec<pending_burns::DataTransferSession>,
     file_sink: &FileSinkClient<proto::ValidDataTransferSession>,
-    iceberg_sink: Option<&BurnedDataTransferWriter>,
+    iceberg_sink: &BurnedDataTransferWriter,
 ) -> anyhow::Result<()> {
     // Fallible now: a session whose multiplier cannot be applied has no price,
     // and a burned record without one would be a lie about what was charged.
@@ -287,17 +287,15 @@ async fn write_burned_data_transfer_sessions(
 
     file_sink.write_all(sessions.clone()).await?;
 
-    if let Some(writer) = iceberg_sink {
-        let sessions = sessions
-            .into_iter()
-            .map(IcebergBurnedDataTransferSession::from)
-            .collect::<Vec<_>>();
+    let sessions = sessions
+        .into_iter()
+        .map(IcebergBurnedDataTransferSession::from)
+        .collect::<Vec<_>>();
 
-        // NOTE: Burned Sessions are not tied to a file like regular data
-        // transfer sessions. Do we want to use transaction semantics here? The
-        // associated file-store sink above is in Automatic Commit mode.
-        writer.write(sessions).await?;
-    }
+    // NOTE: Burned Sessions are not tied to a file like regular data
+    // transfer sessions. Do we want to use transaction semantics here? The
+    // associated file-store sink above is in Automatic Commit mode.
+    iceberg_sink.write(sessions).await?;
 
     Ok(())
 }

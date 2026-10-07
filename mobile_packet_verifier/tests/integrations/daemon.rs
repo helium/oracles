@@ -145,18 +145,6 @@ async fn save_data_transfer_sessions(
     Ok(())
 }
 
-/// Build a no-op `Burner` that discards all output (for tests that don't exercise burn).
-fn noop_burner() -> Burner<TestSolanaClientMap> {
-    let (valid_tx, _valid_rx) = tokio::sync::mpsc::channel(100);
-    Burner::new(
-        FileSinkClient::new(valid_tx, "test"),
-        TestSolanaClientMap::default(),
-        0,
-        std::time::Duration::default(),
-        None,
-    )
-}
-
 /// Verify that the daemon correctly processes incoming data transfer ingest reports.
 /// The primary ingest path is exercised end-to-end:
 ///   - one ingest report → pending burn in DB
@@ -174,6 +162,12 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let session_writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
+    let burned_writer = harness
+        .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
 
     let awsl = AwsLocal::new().await;
@@ -236,10 +230,19 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         pool.clone(),
         reports,
         verified_sessions_sink,
-        Some(session_writer),
-        None,
+        session_writer,
+        invalid_session_writer,
         resolver,
         RoutingKeys::from_iter([PublicKeyBinary::from(vec![1])]),
+    );
+
+    let (valid_tx, _valid_rx) = tokio::sync::mpsc::channel(100);
+    let burner = Burner::new(
+        FileSinkClient::new(valid_tx, "test"),
+        TestSolanaClientMap::default(),
+        0,
+        std::time::Duration::default(),
+        burned_writer,
     );
 
     let daemon = Daemon::new(
@@ -248,7 +251,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         NO_BURN,
         NO_BURN, // initial_burn_delay — burn never fires in this test
         ingest_reports,
-        noop_burner(),
+        burner,
     );
 
     let (trigger, listener) = triggered::trigger();
@@ -309,6 +312,12 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
     pending_burns::initialize(&pool).await?;
 
     let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
     let burned_writer = harness
         .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
@@ -355,7 +364,7 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         solana,
         0,
         std::time::Duration::default(),
-        Some(burned_writer),
+        burned_writer,
     );
 
     // Keep reports channel sender alive so the daemon's ingest arm just blocks.
@@ -371,8 +380,8 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         pool.clone(),
         reports_rx,
         FileSinkClient::new(verified_tx, "test"),
-        None,
-        None,
+        session_writer,
+        invalid_session_writer,
         resolver,
         RoutingKeys::default(),
     );
@@ -548,7 +557,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         TestSolanaClientMap::with(&[(&payer, 1_000_000_000)]).await,
         0,
         std::time::Duration::default(),
-        Some(burned_writer),
+        burned_writer,
     );
 
     let (reports, reports_server) = file_source::continuous_source()
@@ -577,8 +586,8 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         pool.clone(),
         reports,
         verified_sessions_sink,
-        Some(session_writer),
-        Some(invalid_session_writer),
+        session_writer,
+        invalid_session_writer,
         resolver,
         RoutingKeys::from_iter([valid_routing.clone()]),
     );
