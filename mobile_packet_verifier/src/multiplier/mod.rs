@@ -99,7 +99,7 @@ pub async fn create_managed_task(
     signers: TicketSigners,
     resolver: GatewayResolver,
     store_base_path: &std::path::Path,
-    history_writer: Option<crate::iceberg::MultiplierTicketWriter>,
+    history_writer: crate::iceberg::MultiplierTicketWriter,
 ) -> anyhow::Result<impl ManagedTask> {
     if signers.is_empty() {
         tracing::warn!(

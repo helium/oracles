@@ -57,7 +57,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
 
     // Burn what we can
@@ -156,7 +156,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
     burner.confirm_pending_txns(&pool).await?;
 
@@ -226,7 +226,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
     burner.confirm_pending_txns(&pool).await?;
 
@@ -324,7 +324,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
 
     // Txn fails to be finalized here
@@ -398,7 +398,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
     burner
         .burn(&pool)

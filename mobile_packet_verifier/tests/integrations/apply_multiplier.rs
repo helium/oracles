@@ -24,6 +24,7 @@ use file_store_oracles::mobile_session::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
+use mobile_packet_verifier::iceberg;
 use mobile_packet_verifier::{
     banning, bytes_to_dc,
     daemon::handle_data_transfer_session_file,
@@ -107,6 +108,13 @@ async fn accumulate(
     file_ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
+
     common::hotspot_inventory::seed(
         &harness,
         gateways
@@ -125,8 +133,8 @@ async fn accumulate(
 
     handle_data_transfer_session_file(
         &mut txn,
-        None,
-        None,
+        &session_writer,
+        &invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,
@@ -571,7 +579,7 @@ async fn each_side_of_the_boundary_carries_its_own_bytes(pool: PgPool) -> anyhow
         solana,
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     )
     .burn(&pool)
     .await?;
@@ -627,7 +635,7 @@ async fn the_burned_record_carries_the_multiplier(pool: PgPool) -> anyhow::Resul
         solana,
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     );
     burner.burn(&pool).await?;
 
@@ -703,7 +711,7 @@ async fn a_frozen_multiplier_survives_the_pending_round_trip(pool: PgPool) -> an
         solana,
         0,
         std::time::Duration::default(),
-        Some(burn_writer),
+        burn_writer,
     )
     .confirm_pending_txns(&pool)
     .await?;

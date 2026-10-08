@@ -41,6 +41,9 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
     let session_writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
         .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
     let burn_writer = harness
         .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
@@ -85,7 +88,8 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
         reports,
         vec![PublicKeyBinary::from(vec![1])],
         vec![PublicKeyBinary::from(vec![1])],
-        Some(session_writer),
+        &session_writer,
+        &invalid_session_writer,
     )
     .await?;
     // ...and a second payer whose hotspot carries a 1.5 multiplier.
@@ -102,7 +106,8 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
         )],
         vec![multiplied_gateway.clone()],
         vec![multiplied_gateway.clone()],
-        None,
+        &session_writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -119,7 +124,8 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
         vec![mk_dt_for(&broke_gateway, &broke_payer, dc_to_bytes(500))],
         vec![broke_gateway.clone()],
         vec![broke_gateway.clone()],
-        None,
+        &session_writer,
+        &invalid_session_writer,
     )
     .await?;
 
@@ -127,7 +133,7 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
         &pool,
         &[&payer_key, &multiplied_payer],
         &[(&broke_payer, 10)],
-        Some(burn_writer),
+        burn_writer.clone(),
     )
     .await?;
 
@@ -148,10 +154,11 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
         vec![mk_dt_for(&broke_gateway, &broke_payer, dc_to_bytes(300))],
         vec![broke_gateway.clone()],
         vec![broke_gateway.clone()],
-        None,
+        &session_writer,
+        &invalid_session_writer,
     )
     .await?;
-    run_burner(&pool, &[], &[(&broke_payer, 10)], None).await?;
+    run_burner(&pool, &[], &[(&broke_payer, 10)], burn_writer).await?;
     // 800 DC of bytes now, still at 1.5x.
     metrics.assert_pending_dc_burn(&broke_payer, 1200).await?;
 
@@ -177,6 +184,12 @@ async fn burn_metric_reports_0_for_burned_payers_and_the_debt_for_stuck_ones(
 #[sqlx::test]
 async fn burned_dc_is_split_by_multiplier(pool: PgPool) -> anyhow::Result<()> {
     let harness = crate::common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
     let burn_writer = harness
         .get_table_writer(iceberg::burned_session::TABLE_NAME)
         .await?;
@@ -199,10 +212,11 @@ async fn burned_dc_is_split_by_multiplier(pool: PgPool) -> anyhow::Result<()> {
         ],
         vec![plain.clone(), boosted.clone()],
         vec![plain.clone(), boosted.clone()],
-        None,
+        &session_writer,
+        &invalid_session_writer,
     )
     .await?;
-    run_burner(&pool, &[&payer_key], &[], Some(burn_writer)).await?;
+    run_burner(&pool, &[&payer_key], &[], burn_writer).await?;
 
     // 100 DC at 1x, and 200 DC at 1.5x charged as 300.
     metrics.assert_burned_at(&payer_key, "1", 100).await?;
@@ -270,7 +284,8 @@ async fn run_accumulate_sessions(
     reports: Vec<DataTransferSessionIngestReport>,
     known_gateways: Vec<PublicKeyBinary>,
     routing_keys: Vec<PublicKeyBinary>,
-    iceberg_writer: Option<iceberg::DataTransferWriter>,
+    iceberg_writer: &iceberg::DataTransferWriter,
+    invalid_session_writer: &iceberg::InvalidDataTransferWriter,
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let seed_ts = Utc::now() - Duration::hours(1);
     let rows = known_gateways
@@ -291,8 +306,8 @@ async fn run_accumulate_sessions(
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
     handle_data_transfer_session_file(
         &mut txn,
-        iceberg_writer.as_ref(),
-        None,
+        iceberg_writer,
+        invalid_session_writer,
         "test_write_id",
         banned_radios,
         &resolver,
@@ -314,7 +329,7 @@ async fn run_burner(
     pool: &PgPool,
     funded: &[&PublicKeyBinary],
     underfunded: &[(&PublicKeyBinary, u64)],
-    iceberg_writer: Option<iceberg::BurnedDataTransferWriter>,
+    iceberg_writer: iceberg::BurnedDataTransferWriter,
 ) -> anyhow::Result<()> {
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");

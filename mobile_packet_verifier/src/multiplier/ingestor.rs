@@ -45,7 +45,7 @@ pub struct TicketIngestor {
     signers: TicketSigners,
     resolver: GatewayResolver,
     ticket_max_age: Duration,
-    history_writer: Option<MultiplierTicketWriter>,
+    history_writer: MultiplierTicketWriter,
 }
 
 impl ChannelConsumer for TicketIngestor {
@@ -75,7 +75,7 @@ impl TicketIngestor {
         signers: TicketSigners,
         resolver: GatewayResolver,
         ticket_max_age: Duration,
-        history_writer: Option<MultiplierTicketWriter>,
+        history_writer: MultiplierTicketWriter,
     ) -> Self {
         Self {
             pool,
@@ -108,9 +108,7 @@ impl TicketIngestor {
 
             // Refusals get a history row too. A multiplier the column cannot
             // hold is stored as NULL, and the status says why.
-            if self.history_writer.is_some() {
-                history.push(IcebergMultiplierTicket::from(&verified));
-            }
+            history.push(IcebergMultiplierTicket::from(&verified));
 
             if let Some(grant) = granted_multiplier(&verified) {
                 granted.push(grant);
@@ -126,9 +124,7 @@ impl TicketIngestor {
         db::save(&mut txn, &granted).await?;
 
         // Keyed on the file, so reprocessing one cannot duplicate its rows.
-        if let Some(writer) = self.history_writer.as_ref() {
-            writer.write_idempotent(&file, history).await?;
-        }
+        self.history_writer.write_idempotent(&file, history).await?;
 
         txn.commit().await?;
         self.verified_sink.commit().await?;

@@ -62,6 +62,21 @@ user = "mobile-packet-verifier"
 # path = "/var/run/secrets/trino.jwt"
 # refresh_interval = "60s"
 
+# Iceberg catalog. REQUIRED.
+#
+# Data transfer sessions, invalid sessions, burned sessions and multiplier
+# ticket history are written here. The service will not start without it.
+[iceberg_settings]
+catalog_uri = "http://iceberg-catalog:8181"
+catalog_name = "nova"
+warehouse = "s3://warehouse-bucket/iceberg"
+
+# [iceberg_settings.auth]
+# # (optional) OAuth2 / token config
+
+# [iceberg_settings.s3]
+# region = "us-west-2"
+
 [solana]
 # Solana RPC. This may contain a secret
 rpc_url = "http://localhost:8899"
