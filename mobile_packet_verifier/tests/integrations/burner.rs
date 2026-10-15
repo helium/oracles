@@ -484,6 +484,111 @@ fn pending_txn_from_previous_binary_is_released_once_expired(pool: PgPool) -> an
     Ok(())
 }
 
+/// One payer with sessions ready to burn and the balance to pay for them,
+/// and a burner whose settle loop tolerates `rpc_errors` failed reads.
+async fn burn_setup(
+    pool: &PgPool,
+    harness: &helium_iceberg::IcebergTestHarness,
+    solana_network: &TestSolanaClientMap,
+    rpc_errors: usize,
+) -> anyhow::Result<(PublicKeyBinary, Burner<TestSolanaClientMap>)> {
+    let payer = PublicKeyBinary::from(vec![0]);
+    let pubkey = PublicKeyBinary::from(vec![1]);
+    save_data_transfer_sessions(pool, &[(&payer, &pubkey, 1_000)]).await?;
+    solana_network.insert(&payer, 10_000).await;
+
+    let burn_writer = harness.get_table_writer(burned_session::TABLE_NAME).await?;
+    let burner = Burner::new(
+        solana_network.clone(),
+        rpc_errors,
+        std::time::Duration::default(),
+        burn_writer,
+    );
+    Ok((payer, burner))
+}
+
+#[sqlx::test]
+fn failed_submission_that_landed_is_burned(pool: PgPool) -> anyhow::Result<()> {
+    // The send reports an error, but the burn landed. Settling it straight
+    // away finds that and records the burn.
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    let (_payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+
+    burner.burn(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    assert!(pending_burns::get_all_payer_burns(&pool).await?.is_empty());
+    let burned = burned_session::get_all(harness.trino()).await?;
+    assert_eq!(burned.len(), 1);
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn failed_submission_that_never_lands_moves_sessions_back(pool: PgPool) -> anyhow::Result<()> {
+    // The send reports an error and the burn never finalizes. Settling waits
+    // for the blockhash to expire, then puts the sessions back to be burned
+    // in the next cycle.
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.add_confirmed(Signature::new_unique()).await;
+    solana_network.advance_block_height_by(100).await;
+    let (payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+
+    burner.burn(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
+    assert_eq!(payer_burns.len(), 1, "sessions are back for burning");
+    assert_eq!(payer_burns[0].payer, payer);
+    assert!(burned_session::get_all(harness.trino()).await?.is_empty());
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn settle_retries_rpc_errors_up_to_the_limit(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.fail_height_reads(2).await;
+    let (_payer, burner) = burn_setup(&pool, &harness, &solana_network, 2).await?;
+
+    burner.burn(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    assert_eq!(burned_session::get_all(harness.trino()).await?.len(), 1);
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn settle_past_the_rpc_error_limit_leaves_txn_for_next_cycle(pool: PgPool) -> anyhow::Result<()> {
+    // Giving up must not release the burn: it may have landed. It stays
+    // pending, and the next cycle settles it.
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.fail_height_reads(3).await;
+    let (_payer, burner) = burn_setup(&pool, &harness, &solana_network, 2).await?;
+
+    burner.burn(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 1);
+    assert!(burned_session::get_all(harness.trino()).await?.is_empty());
+
+    // The RPC recovers by the next cycle.
+    burner.confirm_pending_txns(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    assert_eq!(burned_session::get_all(harness.trino()).await?.len(), 1);
+
+    Ok(())
+}
+
 async fn save_data_transfer_sessions(
     pool: &PgPool,
     sessions: &[(&PublicKeyBinary, &PublicKeyBinary, u64)],

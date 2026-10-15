@@ -650,6 +650,9 @@ pub struct TestSolanaClientMap {
     confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
     failed_txns: Arc<Mutex<HashSet<Signature>>>,
     block_height: Arc<Mutex<u64>>,
+    block_height_step: Arc<Mutex<u64>>,
+    failing_submissions: Arc<Mutex<bool>>,
+    failing_height_reads: Arc<Mutex<usize>>,
 }
 
 impl Default for TestSolanaClientMap {
@@ -660,6 +663,9 @@ impl Default for TestSolanaClientMap {
             confirmed_txns: Default::default(),
             failed_txns: Default::default(),
             block_height: Default::default(),
+            block_height_step: Default::default(),
+            failing_submissions: Default::default(),
+            failing_height_reads: Default::default(),
         }
     }
 }
@@ -707,6 +713,24 @@ impl TestSolanaClientMap {
     pub async fn set_block_height(&self, height: u64) {
         *self.block_height.lock().await = height;
     }
+
+    /// Advance the finalized block height by `step` every time it is read, so
+    /// a burn that never finalizes eventually expires.
+    pub async fn advance_block_height_by(&self, step: u64) {
+        *self.block_height_step.lock().await = step;
+    }
+
+    /// Make every later submission return an error. Whether the burn landed
+    /// anyway is up to [`Self::add_confirmed`] and [`Self::add_failed`]; with
+    /// neither called, every burn reads as succeeded.
+    pub async fn fail_submissions(&self) {
+        *self.failing_submissions.lock().await = true;
+    }
+
+    /// Make the next `count` block height reads return an RPC error.
+    pub async fn fail_height_reads(&self, count: usize) {
+        *self.failing_height_reads.lock().await = count;
+    }
 }
 
 #[async_trait]
@@ -731,6 +755,10 @@ impl SolanaNetwork for TestSolanaClientMap {
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
+        if *self.failing_submissions.lock().await {
+            return Err(SolanaRpcError::Test("submission failed".to_string()));
+        }
+
         *self
             .payer_balances
             .lock()
@@ -760,7 +788,16 @@ impl SolanaNetwork for TestSolanaClientMap {
     }
 
     async fn finalized_block_height(&self) -> Result<u64, SolanaRpcError> {
-        Ok(*self.block_height.lock().await)
+        let mut failing = self.failing_height_reads.lock().await;
+        if *failing > 0 {
+            *failing -= 1;
+            return Err(SolanaRpcError::Test("block height read failed".to_string()));
+        }
+
+        let mut height = self.block_height.lock().await;
+        let current = *height;
+        *height += *self.block_height_step.lock().await;
+        Ok(current)
     }
 }
 
