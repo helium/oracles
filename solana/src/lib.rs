@@ -98,6 +98,12 @@ impl GetSignature for Signature {
     }
 }
 
+/// The block height a transaction's blockhash expires at. Past it, the
+/// transaction can never be included.
+pub trait GetLastValidBlockHeight {
+    fn last_valid_block_height(&self) -> u64;
+}
+
 pub fn deserialize_solana_keypair<'a, D>(deserializer: D) -> Result<Keypair, D::Error>
 where
     D: serde::Deserializer<'a>,

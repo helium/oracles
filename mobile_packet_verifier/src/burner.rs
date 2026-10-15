@@ -2,7 +2,10 @@ use anyhow::Context;
 use chrono::{Duration, Utc};
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
+use solana::{
+    burn::{SolanaNetwork, TransactionStatus},
+    GetSignature, Signature, SolanaRpcError,
+};
 use sqlx::PgPool;
 use tracing::Instrument;
 
@@ -61,7 +64,10 @@ where
             }
 
             let signature = pending.signature;
-            let confirmed = self.solana.confirm_transaction(&signature).await?;
+            let confirmed = matches!(
+                self.solana.transaction_status(&signature).await?,
+                TransactionStatus::Succeeded
+            );
             tracing::info!(?pending, confirmed, "confirming pending txn");
 
             if confirmed {
@@ -163,8 +169,8 @@ where
         let mut attempt = 0;
         while attempt <= self.failed_retry_attempts {
             tokio::time::sleep(self.failed_check_interval).await;
-            match self.solana.confirm_transaction(signature).await {
-                Ok(true) => {
+            match self.solana.transaction_status(signature).await {
+                Ok(TransactionStatus::Succeeded) => {
                     tracing::debug!("txn confirmed on chain");
                     let txn_success = handle_transaction_success(
                         pool,
@@ -181,7 +187,7 @@ where
 
                     return;
                 }
-                Ok(false) => {
+                Ok(_) => {
                     tracing::info!(attempt, "txn not confirmed, yet...");
                     attempt += 1;
                     continue;
