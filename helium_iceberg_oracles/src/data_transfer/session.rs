@@ -11,6 +11,11 @@ pub const TABLE_NAME: &str = "sessions";
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergDataTransferSession {
     pub file_ts: u64,
+    /// Position of the report among the protos read from its ingest file,
+    /// including ones that failed to convert. A frame that is not a valid
+    /// proto is dropped by `prost_source` and takes no index. With `file_ts`
+    /// it identifies the record, the same way glacon numbers rows.
+    pub record_index: u64,
     pub report_received_timestamp: DateTime<FixedOffset>,
     // -- request
     pub request_pub_key: String,
@@ -31,6 +36,7 @@ pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     TableDefinition::builder(NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_long("file_ts"),
+            FieldDefinition::required_long("record_index"),
             FieldDefinition::required_timestamptz("report_received_timestamp"),
             FieldDefinition::required_string("request_pub_key"),
             FieldDefinition::required_long("rewardable_bytes"),
@@ -65,12 +71,17 @@ pub async fn get_all(
 }
 
 impl IcebergDataTransferSession {
-    pub fn new(file_ts: DateTime<Utc>, value: DataTransferSessionIngestReport) -> Self {
+    pub fn new(
+        file_ts: DateTime<Utc>,
+        record_index: u64,
+        value: DataTransferSessionIngestReport,
+    ) -> Self {
         let request_pub_key = value.report.pub_key.to_string();
         let data_transfer_event_pub_key = value.report.data_transfer_usage.pub_key.to_string();
 
         Self {
             file_ts: file_ts.timestamp_millis() as u64,
+            record_index,
             report_received_timestamp: value.received_timestamp.into(),
             request_pub_key,
             rewardable_bytes: value.report.rewardable_bytes,
