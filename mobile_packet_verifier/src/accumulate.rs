@@ -7,7 +7,7 @@ use file_store_oracles::mobile_session::{
 use futures::{Stream, StreamExt};
 use helium_proto::services::poc_mobile::{
     verified_data_transfer_ingest_report_v1::ReportStatus, DataTransferRadioAccessTechnology,
-    VerifiedDataTransferIngestReportV1,
+    DataTransferSessionIngestReportV1, VerifiedDataTransferIngestReportV1,
 };
 use sqlx::{Postgres, Transaction};
 
@@ -35,16 +35,34 @@ pub async fn accumulate_sessions(
     routing_keys: &RoutingKeys,
     banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
-    reports: impl Stream<Item = DataTransferSessionIngestReport>,
+    reports: impl Stream<Item = DataTransferSessionIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
 ) -> anyhow::Result<AccumulatedSessions> {
+    // Numbered before converting, as glacon does, so a record that fails to
+    // convert still takes its place. Frames that are not valid protos were
+    // already dropped by `prost_source`, in glacon as here.
+    let reports = reports.enumerate();
     tokio::pin!(reports);
 
     let mut metrics = AccumulateMetrics::new();
 
     let mut result = AccumulatedSessions::default();
 
-    while let Some(mut report) = reports.next().await {
+    while let Some((record_index, report)) = reports.next().await {
+        let record_index = record_index as u64;
+        let mut report = match DataTransferSessionIngestReport::try_from(report) {
+            Ok(report) => report,
+            Err(err) => {
+                tracing::error!(
+                    %curr_file_ts,
+                    record_index,
+                    ?err,
+                    "skipping data transfer session report that failed to decode"
+                );
+                continue;
+            }
+        };
+
         if report.is_cbrs() {
             continue;
         }
@@ -73,11 +91,15 @@ pub async fn accumulate_sessions(
         if report_validity == ReportStatus::Valid {
             result
                 .iceberg_sessions
-                .push(report.to_iceberg_session(curr_file_ts));
+                .push(report.to_iceberg_session(curr_file_ts, record_index));
         } else {
             result
                 .invalid_iceberg_sessions
-                .push(report.to_invalid_iceberg_session(report_validity, curr_file_ts));
+                .push(report.to_invalid_iceberg_session(
+                    report_validity,
+                    curr_file_ts,
+                    record_index,
+                ));
         }
 
         if report_validity != ReportStatus::Valid {
@@ -104,12 +126,17 @@ trait DataTransferIngestReportExt {
 
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
 
-    fn to_iceberg_session(&self, file_ts: DateTime<Utc>) -> IcebergDataTransferSession;
+    fn to_iceberg_session(
+        &self,
+        file_ts: DateTime<Utc>,
+        record_index: u64,
+    ) -> IcebergDataTransferSession;
 
     fn to_invalid_iceberg_session(
         &self,
         status: ReportStatus,
         file_ts: DateTime<Utc>,
+        record_index: u64,
     ) -> IcebergInvalidDataTransferSession;
 
     fn no_rewardable_bytes(&self) -> bool;
@@ -140,17 +167,22 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
         DataTransferSession::from_req(&self.report, file_ts)
     }
 
-    fn to_iceberg_session(&self, file_ts: DateTime<Utc>) -> IcebergDataTransferSession {
-        IcebergDataTransferSession::new(file_ts, self.clone())
+    fn to_iceberg_session(
+        &self,
+        file_ts: DateTime<Utc>,
+        record_index: u64,
+    ) -> IcebergDataTransferSession {
+        IcebergDataTransferSession::new(file_ts, record_index, self.clone())
     }
 
     fn to_invalid_iceberg_session(
         &self,
         status: ReportStatus,
         file_ts: DateTime<Utc>,
+        record_index: u64,
     ) -> IcebergInvalidDataTransferSession {
         IcebergInvalidDataTransferSession::new(
-            IcebergDataTransferSession::new(file_ts, self.clone()),
+            IcebergDataTransferSession::new(file_ts, record_index, self.clone()),
             status,
         )
     }
