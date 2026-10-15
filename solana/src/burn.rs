@@ -55,7 +55,12 @@ pub enum BurnOutcome {
     /// The DC were not burned, and this transaction can never burn them.
     Failed,
     /// The transaction may still land. Ask again later.
-    Pending,
+    Pending {
+        /// The finalized block height this answer was based on. It is
+        /// released once this passes its expiry plus
+        /// [`BLOCKHASH_EXPIRY_MARGIN`].
+        finalized_block_height: u64,
+    },
 }
 
 #[async_trait]
@@ -112,7 +117,9 @@ pub trait SolanaNetwork: Clone + Send + Sync + 'static {
             TransactionStatus::Succeeded => BurnOutcome::Burned,
             TransactionStatus::Failed(_) => BurnOutcome::Failed,
             TransactionStatus::NotFinalized if expired => BurnOutcome::Failed,
-            TransactionStatus::NotFinalized => BurnOutcome::Pending,
+            TransactionStatus::NotFinalized => BurnOutcome::Pending {
+                finalized_block_height: finalized_height,
+            },
         })
     }
 }
@@ -793,7 +800,12 @@ mod tests {
             .burn_outcome(&txn.signature, txn.last_valid_block_height)
             .await
             .unwrap();
-        assert_eq!(outcome, BurnOutcome::Pending);
+        assert_eq!(
+            outcome,
+            BurnOutcome::Pending {
+                finalized_block_height: expires_at
+            }
+        );
 
         solana.set_block_height(expires_at + 1).await;
         let outcome = solana

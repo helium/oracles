@@ -673,14 +673,13 @@ async fn a_frozen_multiplier_survives_the_pending_round_trip(pool: PgPool) -> an
     assert_eq!(burns[0].total_dcs, 3, "2 DC at 1.5x");
 
     let signature = Signature::new_unique();
-    pending_txns::do_add_pending_txn(
+    pending_txns::add_pending_txn(
         &pool,
         &payer(),
         burns[0].total_dcs,
         &signature,
+        0,
         &burns[0].rows,
-        // Backdated so the confirm path does not sleep waiting for finality.
-        Utc::now() - Duration::minutes(2),
     )
     .await?;
 

@@ -1,10 +1,9 @@
 use anyhow::Context;
-use chrono::{Duration, Utc};
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
 use solana::{
-    burn::{SolanaNetwork, TransactionStatus},
-    GetSignature, Signature, SolanaRpcError,
+    burn::{BurnOutcome, SolanaNetwork, BLOCKHASH_EXPIRY_MARGIN},
+    GetLastValidBlockHeight, GetSignature, Signature, SolanaRpcError,
 };
 use sqlx::PgPool;
 use tracing::Instrument;
@@ -54,23 +53,13 @@ where
         tracing::info!(count = pending_txns.len(), "confirming pending txns");
 
         for pending in pending_txns {
-            // Sleep for at least a minute since the time of submission to
-            // give the transaction plenty of time to be finalized
-            let time_since_submission = Utc::now() - pending.time_of_submission;
-            if Duration::minutes(1) > time_since_submission {
-                let delay = Duration::minutes(1) - time_since_submission;
-                tracing::info!(?pending, %delay, "waiting to confirm pending txn");
-                tokio::time::sleep(delay.to_std()?).await;
-            }
-
             let signature = pending.signature;
-            let confirmed = matches!(
-                self.solana.transaction_status(&signature).await?,
-                TransactionStatus::Succeeded
-            );
-            tracing::info!(?pending, confirmed, "confirming pending txn");
+            let burned = self
+                .settle(&signature, pending.last_valid_block_height)
+                .await?;
+            tracing::info!(?pending, burned, "settled pending txn");
 
-            if confirmed {
+            if burned {
                 let sessions =
                     pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
 
@@ -113,9 +102,16 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature(), &rows)
-                .await
-                .context("adding pending txns and moving sessions")?;
+            pending_txns::add_pending_txn(
+                pool,
+                &payer,
+                total_dcs,
+                txn.get_signature(),
+                txn.last_valid_block_height(),
+                &rows,
+            )
+            .await
+            .context("adding pending txns and moving sessions")?;
             match self.solana.submit_transaction(&txn).await {
                 Ok(()) => {
                     handle_transaction_success(
@@ -129,16 +125,16 @@ where
                     .await?;
                 }
                 Err(err) => {
-                    // NOTE: The next time we burn, pending txns will be
-                    // checked. If this txn is not finalized by that time, th
-                    // txn and pending data sessions will be moved back to the
-                    // pending_burns table in `confirm_pending_txns()`
+                    // The send failed, but the txn may still land. Wait for
+                    // the chain to settle it. If the chain can't be reached,
+                    // the txn stays pending and `confirm_pending_txns()`
+                    // settles it on the next burn.
                     let span = tracing::info_span!(
                         "txn_confirmation",
                         signature = %txn.get_signature(),
                         %payer,
                         total_dcs,
-                        max_attempts = self.failed_retry_attempts
+                        max_rpc_errors = self.failed_retry_attempts
                     );
 
                     // block on confirmation
@@ -165,42 +161,37 @@ where
         // We don't know if the txn actually made it, maybe it did
 
         let signature = txn.get_signature();
-
-        let mut attempt = 0;
-        while attempt <= self.failed_retry_attempts {
-            tokio::time::sleep(self.failed_check_interval).await;
-            match self.solana.transaction_status(signature).await {
-                Ok(TransactionStatus::Succeeded) => {
-                    tracing::debug!("txn confirmed on chain");
-                    let txn_success = handle_transaction_success(
-                        pool,
-                        signature,
-                        payer,
-                        total_dcs,
-                        sessions,
-                        &self.iceberg_writer,
-                    )
-                    .await;
-                    if let Err(err) = txn_success {
-                        tracing::error!(?err, "txn succeeded, something else failed");
-                    }
-
-                    return;
-                }
-                Ok(_) => {
-                    tracing::info!(attempt, "txn not confirmed, yet...");
-                    attempt += 1;
-                    continue;
-                }
-                Err(err) => {
-                    // Client errors do not count against retry attempts
-                    tracing::error!(?err, attempt, "failed to confirm txn");
-                    continue;
-                }
+        let burned = match self.settle(signature, txn.last_valid_block_height()).await {
+            Ok(burned) => burned,
+            Err(err) => {
+                tracing::error!(?err, "failed to confirm txn, leaving it pending");
+                return;
             }
+        };
+
+        if burned {
+            tracing::debug!("txn confirmed on chain");
+            let txn_success = handle_transaction_success(
+                pool,
+                signature,
+                payer,
+                total_dcs,
+                sessions,
+                &self.iceberg_writer,
+            )
+            .await;
+            if let Err(err) = txn_success {
+                tracing::error!(?err, "txn succeeded, something else failed");
+            }
+
+            return;
         }
 
-        tracing::warn!("failed to confirm txn");
+        tracing::warn!("txn can no longer land, moving its sessions back");
+        if let Err(err) = pending_txns::remove_pending_txn_failure(pool, signature).await {
+            // Still pending, so `confirm_pending_txns()` releases it next burn.
+            tracing::error!(?err, "failed to move sessions back");
+        }
 
         // We have failed to burn data credits:
         metrics::counter!(
@@ -209,6 +200,81 @@ where
             "success" => "false"
         )
         .increment(total_dcs);
+    }
+
+    /// Wait for the chain to settle a burn, and return whether it spent the DC.
+    ///
+    /// Loops while the burn is [`BurnOutcome::Pending`]. That ends once the
+    /// finalized block height passes the burn's expiry, about two minutes
+    /// after it was signed. RPC errors are retried `failed_retry_attempts`
+    /// times in a row before giving up.
+    async fn settle(
+        &self,
+        signature: &Signature,
+        last_valid_block_height: u64,
+    ) -> anyhow::Result<bool> {
+        let expiry = last_valid_block_height.saturating_add(BLOCKHASH_EXPIRY_MARGIN);
+        let started = std::time::Instant::now();
+        let mut checks = 0;
+        let mut rpc_errors = 0;
+
+        tracing::info!(%signature, last_valid_block_height, expiry, "settling txn");
+
+        loop {
+            checks += 1;
+            match self
+                .solana
+                .burn_outcome(signature, last_valid_block_height)
+                .await
+            {
+                Ok(BurnOutcome::Pending {
+                    finalized_block_height,
+                }) => {
+                    rpc_errors = 0;
+                    tracing::info!(
+                        %signature,
+                        checks,
+                        elapsed = ?started.elapsed(),
+                        finalized_block_height,
+                        blocks_until_expiry = expiry.saturating_sub(finalized_block_height),
+                        next_check_in = ?self.failed_check_interval,
+                        "txn not settled yet, waiting"
+                    );
+                }
+                Ok(outcome) => {
+                    tracing::info!(
+                        %signature,
+                        ?outcome,
+                        checks,
+                        elapsed = ?started.elapsed(),
+                        "txn settled"
+                    );
+                    return Ok(outcome == BurnOutcome::Burned);
+                }
+                Err(err) if rpc_errors < self.failed_retry_attempts => {
+                    rpc_errors += 1;
+                    tracing::warn!(
+                        ?err,
+                        %signature,
+                        checks,
+                        rpc_errors,
+                        max_rpc_errors = self.failed_retry_attempts,
+                        "failed to check txn, retrying"
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        %signature,
+                        checks,
+                        rpc_errors,
+                        elapsed = ?started.elapsed(),
+                        "too many rpc errors, giving up settling txn"
+                    );
+                    return Err(err).context("checking burn outcome");
+                }
+            }
+            tokio::time::sleep(self.failed_check_interval).await;
+        }
     }
 }
 

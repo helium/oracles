@@ -46,12 +46,12 @@ pub struct Settings {
     pub purger_interval: Duration,
     #[serde(with = "humantime_serde", default = "default_purger_max_age")]
     pub purger_max_age: Duration,
-    /// When a burn transaction is not a success, how many times should
-    /// we try to confirm the transaction before considering it a failure?
+    /// While waiting to learn whether a burn landed, how many RPC errors in a
+    /// row to tolerate before leaving it for the next burn to settle.
     #[serde(default = "default_txn_confirmation_retry_attempts")]
     pub txn_confirmation_retry_attempts: usize,
-    /// When a burn transaction is not a success, how long should we
-    /// wait between trying to confirm if the transaction made it to Solana?
+    /// While waiting to learn whether a burn landed, how long to wait between
+    /// checks. The wait ends once the burn's blockhash expires.
     #[serde(
         with = "humantime_serde",
         default = "default_txn_confirmation_check_interval"

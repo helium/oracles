@@ -11,6 +11,9 @@ pub struct PendingTxn {
     pub payer: PublicKeyBinary,
     pub amount: u64,
     pub time_of_submission: DateTime<Utc>,
+    /// The block height the burn's blockhash expires at. Past it, the burn can
+    /// never land.
+    pub last_valid_block_height: u64,
 }
 
 impl FromRow<'_, PgRow> for PendingTxn {
@@ -19,6 +22,7 @@ impl FromRow<'_, PgRow> for PendingTxn {
             payer: row.try_get("payer")?,
             amount: row.try_get::<i64, _>("amount")? as u64,
             time_of_submission: row.try_get("time_of_submission")?,
+            last_valid_block_height: row.try_get::<i64, _>("last_valid_block_height")? as u64,
             signature: row
                 .try_get::<String, _>("signature")?
                 .parse()
@@ -72,30 +76,21 @@ pub async fn add_pending_txn(
     payer: &PublicKeyBinary,
     amount: u64,
     signature: &Signature,
+    last_valid_block_height: u64,
     priced: &[DataTransferSession],
-) -> Result<(), sqlx::Error> {
-    do_add_pending_txn(conn, payer, amount, signature, priced, Utc::now()).await
-}
-
-pub async fn do_add_pending_txn(
-    conn: &PgPool,
-    payer: &PublicKeyBinary,
-    amount: u64,
-    signature: &Signature,
-    priced: &[DataTransferSession],
-    time_of_submission: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let mut txn = conn.begin().await?;
     sqlx::query(
         r#"
-        INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO pending_txns (signature, payer, amount, time_of_submission, last_valid_block_height)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(signature.to_string())
     .bind(payer)
     .bind(amount as i64)
-    .bind(time_of_submission)
+    .bind(Utc::now())
+    .bind(last_valid_block_height as i64)
     .execute(&mut *txn)
     .await?;
 
