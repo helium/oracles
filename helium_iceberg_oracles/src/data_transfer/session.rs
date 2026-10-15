@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
 use helium_iceberg::{FieldDefinition, PartitionDefinition, TableDefinition};
 use helium_proto::services::poc_mobile::CarrierIdV2;
@@ -10,6 +10,7 @@ pub const TABLE_NAME: &str = "sessions";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergDataTransferSession {
+    pub file_ts: u64,
     pub report_received_timestamp: DateTime<FixedOffset>,
     // -- request
     pub request_pub_key: String,
@@ -29,6 +30,7 @@ pub struct IcebergDataTransferSession {
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
     TableDefinition::builder(NAMESPACE, TABLE_NAME)
         .with_fields([
+            FieldDefinition::required_long("file_ts"),
             FieldDefinition::required_timestamptz("report_received_timestamp"),
             FieldDefinition::required_string("request_pub_key"),
             FieldDefinition::required_long("rewardable_bytes"),
@@ -62,12 +64,13 @@ pub async fn get_all(
     Ok(all)
 }
 
-impl From<DataTransferSessionIngestReport> for IcebergDataTransferSession {
-    fn from(value: DataTransferSessionIngestReport) -> Self {
+impl IcebergDataTransferSession {
+    pub fn new(file_ts: DateTime<Utc>, value: DataTransferSessionIngestReport) -> Self {
         let request_pub_key = value.report.pub_key.to_string();
         let data_transfer_event_pub_key = value.report.data_transfer_usage.pub_key.to_string();
 
         Self {
+            file_ts: file_ts.timestamp_millis() as u64,
             report_received_timestamp: value.received_timestamp.into(),
             request_pub_key,
             rewardable_bytes: value.report.rewardable_bytes,

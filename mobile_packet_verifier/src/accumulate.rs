@@ -71,11 +71,13 @@ pub async fn accumulate_sessions(
         // go to iceberg only if it's valid, even if it's zero rewardable bytes;
         // rejected reports go to the sibling invalid table tagged with the status
         if report_validity == ReportStatus::Valid {
-            result.iceberg_sessions.push(report.to_iceberg_session());
+            result
+                .iceberg_sessions
+                .push(report.to_iceberg_session(curr_file_ts));
         } else {
             result
                 .invalid_iceberg_sessions
-                .push(report.to_invalid_iceberg_session(report_validity));
+                .push(report.to_invalid_iceberg_session(report_validity, curr_file_ts));
         }
 
         if report_validity != ReportStatus::Valid {
@@ -102,10 +104,13 @@ trait DataTransferIngestReportExt {
 
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
 
-    fn to_iceberg_session(&self) -> IcebergDataTransferSession;
+    fn to_iceberg_session(&self, file_ts: DateTime<Utc>) -> IcebergDataTransferSession;
 
-    fn to_invalid_iceberg_session(&self, status: ReportStatus)
-        -> IcebergInvalidDataTransferSession;
+    fn to_invalid_iceberg_session(
+        &self,
+        status: ReportStatus,
+        file_ts: DateTime<Utc>,
+    ) -> IcebergInvalidDataTransferSession;
 
     fn no_rewardable_bytes(&self) -> bool;
 
@@ -135,16 +140,17 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
         DataTransferSession::from_req(&self.report, file_ts)
     }
 
-    fn to_iceberg_session(&self) -> IcebergDataTransferSession {
-        IcebergDataTransferSession::from(self.clone())
+    fn to_iceberg_session(&self, file_ts: DateTime<Utc>) -> IcebergDataTransferSession {
+        IcebergDataTransferSession::new(file_ts, self.clone())
     }
 
     fn to_invalid_iceberg_session(
         &self,
         status: ReportStatus,
+        file_ts: DateTime<Utc>,
     ) -> IcebergInvalidDataTransferSession {
         IcebergInvalidDataTransferSession::new(
-            IcebergDataTransferSession::from(self.clone()),
+            IcebergDataTransferSession::new(file_ts, self.clone()),
             status,
         )
     }
