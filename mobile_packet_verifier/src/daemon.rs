@@ -273,6 +273,18 @@ impl IngestReports {
     }
 }
 
+/// Apply this binary's migrations.
+///
+/// A rolled-back binary must still start after a newer one has migrated the
+/// schema, so migrations it doesn't know are ignored. That makes every
+/// migration responsible for working with the binary before it.
+pub async fn run_migrations(pool: &Pool<Postgres>) -> Result<()> {
+    let mut migrator = sqlx::migrate!();
+    migrator.set_ignore_missing(true);
+    migrator.run(pool).await?;
+    Ok(())
+}
+
 #[derive(Debug, clap::Args)]
 pub struct Cmd;
 
@@ -282,7 +294,7 @@ impl Cmd {
 
         // Set up the postgres pool:
         let pool = settings.database.connect("mobile-packet-verifier").await?;
-        sqlx::migrate!().run(&pool).await?;
+        run_migrations(&pool).await?;
 
         pending_burns::initialize(&pool).await?;
 
@@ -365,7 +377,10 @@ impl Cmd {
             pool.clone(),
             settings.burn_period,
             settings.min_burn_period,
-            Duration::from_secs(60),
+            // Long enough that a burn the previous binary sent before it
+            // stopped has finalized or expired before this one settles it, so a
+            // deploy or rollback never races an in-flight burn.
+            Duration::from_secs(5 * 60),
             ingest_reports,
             burner,
         );
