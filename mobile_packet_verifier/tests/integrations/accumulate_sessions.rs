@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_sink::{FileSinkClient, MessageReceiver};
+use file_store::file_sink::{FileSinkClient, Message, MessageReceiver};
 use file_store_oracles::{
     mobile_ban::{
         BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType,
@@ -10,7 +10,8 @@ use file_store_oracles::{
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
-    CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
+    verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
+    DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
     banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
@@ -395,7 +396,9 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
+async fn ban_type_all_sessions_are_valid_with_zero_rewardable_bytes(
+    pool: PgPool,
+) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
@@ -430,7 +433,6 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     // Ban radio
     ban_hotspot(&pool, key.clone(), BanType::All).await?;
 
-    // Otherwise-valid gateway/routing so the ban is the reason for rejection.
     let mut report_rx = run_accumulate_sessions(
         &pool,
         &harness,
@@ -442,17 +444,13 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    // record written to file, but not db
-    report_rx.assert_not_empty()?;
-
-    let pending = pending_burns::get_all(&pool).await?;
-    assert!(pending.is_empty());
-
-    Ok(())
+    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness, &mut report_rx).await
 }
 
 #[sqlx::test]
-async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
+async fn ban_type_data_sessions_are_valid_with_zero_rewardable_bytes(
+    pool: PgPool,
+) -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
     let writer = harness
         .get_table_writer(iceberg::session::TABLE_NAME)
@@ -498,11 +496,43 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
     )
     .await?;
 
-    // record written to file, but not db
-    report_rx.assert_not_empty()?;
+    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness, &mut report_rx).await
+}
 
-    let pending = pending_burns::get_all(&pool).await?;
-    assert!(pending.is_empty());
+#[sqlx::test]
+async fn banned_sessions_still_fail_other_validity_checks(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
+
+    let key = PublicKeyBinary::from(vec![1]);
+
+    ban_hotspot(&pool, key.clone(), BanType::All).await?;
+
+    // Gateway is not known, so the session is rejected regardless of the ban
+    let mut report_rx = run_accumulate_sessions(
+        &pool,
+        &harness,
+        vec![make_report(&key)],
+        vec![],
+        vec![key.clone()],
+        &writer,
+        &invalid_session_writer,
+    )
+    .await?;
+
+    let verified = recv_verified_report(&mut report_rx);
+    assert_eq!(verified.status(), ReportStatus::InvalidGatewayKey);
+
+    let trino = harness.trino();
+    assert!(iceberg::session::get_all(trino).await?.is_empty());
+    let invalids = iceberg::invalid_session::get_all(trino).await?;
+    assert_eq!(invalids.len(), 1);
+    assert_eq!(invalids[0].reason, "invalid_gateway_key");
 
     Ok(())
 }
@@ -904,6 +934,44 @@ async fn run_accumulate_sessions(
     txn.commit().await?;
 
     Ok(verified_sessions_rx)
+}
+
+fn recv_verified_report(
+    report_rx: &mut MessageReceiver<VerifiedDataTransferIngestReportV1>,
+) -> VerifiedDataTransferIngestReportV1 {
+    match report_rx.try_recv() {
+        Ok(Message::Data(_, report)) => report,
+        other => panic!("expected verified report in channel: {other:?}"),
+    }
+}
+
+/// A banned hotspot's session is written as valid (to the verified report file
+/// and the iceberg sessions table) with its rewardable bytes zeroed, so nothing
+/// is burned or rewarded.
+async fn assert_banned_session_written_with_zero_rewardable_bytes(
+    pool: &PgPool,
+    harness: &IcebergTestHarness,
+    report_rx: &mut MessageReceiver<VerifiedDataTransferIngestReportV1>,
+) -> anyhow::Result<()> {
+    let verified = recv_verified_report(report_rx);
+    assert_eq!(verified.status(), ReportStatus::Valid);
+    let report = verified.report.expect("verified report has a session");
+    assert_eq!(
+        report.report.expect("session has a req").rewardable_bytes,
+        0
+    );
+    report_rx.assert_is_empty()?;
+
+    let trino = harness.trino();
+    let sessions = iceberg::session::get_all(trino).await?;
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].rewardable_bytes, 0);
+    assert!(iceberg::invalid_session::get_all(trino).await?.is_empty());
+
+    let pending = pending_burns::get_all(pool).await?;
+    assert!(pending.is_empty());
+
+    Ok(())
 }
 
 async fn ban_hotspot(

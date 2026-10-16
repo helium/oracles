@@ -44,14 +44,26 @@ pub async fn accumulate_sessions(
 
     let mut result = AccumulatedSessions::default();
 
-    while let Some(report) = reports.next().await {
+    while let Some(mut report) = reports.next().await {
         if report.is_cbrs() {
             continue;
         }
 
-        let report_validity = report
-            .report_status(txn, resolver, routing_keys, &banned_radios)
-            .await?;
+        let report_validity = report.report_status(txn, resolver, routing_keys).await?;
+
+        // Sessions from banned hotspots are still valid, but earn no rewards
+        if report_validity == ReportStatus::Valid
+            && banned_radios.contains(&report.report.data_transfer_usage.pub_key)
+        {
+            tracing::debug!(
+                hotspot_pubkey = %report.report.data_transfer_usage.pub_key,
+                event_id = report.report.data_transfer_usage.event_id,
+                rewardable_bytes = report.report.rewardable_bytes,
+                "zeroing rewardable bytes for banned hotspot"
+            );
+            report.report.rewardable_bytes = 0;
+        }
+
         result
             .proto_sessions
             .push(report.to_verified_proto(report_validity));
@@ -104,7 +116,6 @@ trait DataTransferIngestReportExt {
         txn: &mut Transaction<'_, Postgres>,
         resolver: &GatewayResolver,
         routing_keys: &RoutingKeys,
-        banned_radios: &BannedRadios,
     ) -> anyhow::Result<ReportStatus>;
 
     async fn is_duplicate(&self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool>;
@@ -155,7 +166,6 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
         txn: &mut Transaction<'_, Postgres>,
         resolver: &GatewayResolver,
         routing_keys: &RoutingKeys,
-        banned_radios: &BannedRadios,
     ) -> anyhow::Result<ReportStatus> {
         if self.is_duplicate(txn).await? {
             return Ok(ReportStatus::Duplicate);
@@ -163,10 +173,6 @@ impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
 
         let gw_pub_key = &self.report.data_transfer_usage.pub_key;
         let routing_pub_key = &self.report.pub_key;
-
-        if banned_radios.contains(gw_pub_key) {
-            return Ok(ReportStatus::Banned);
-        }
 
         if !resolver
             .is_gateway_known(gw_pub_key, &self.received_timestamp)
