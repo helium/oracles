@@ -589,6 +589,33 @@ fn settle_past_the_rpc_error_limit_leaves_txn_for_next_cycle(pool: PgPool) -> an
     Ok(())
 }
 
+#[sqlx::test]
+fn settle_gives_up_at_the_timeout_and_leaves_txn_for_next_cycle(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    // The burn neither finalizes nor expires, so it could still land. Giving
+    // up at the timeout must leave it pending, both after the send and in
+    // the next cycle.
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.add_confirmed(Signature::new_unique()).await;
+    let (_payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+    let burner = burner.with_settle_timeout(std::time::Duration::ZERO);
+
+    burner.burn(&pool).await?;
+
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 1);
+    assert!(burned_session::get_all(harness.trino()).await?.is_empty());
+
+    let err = burner.confirm_pending_txns(&pool).await.unwrap_err();
+    assert!(format!("{err:#}").contains("still pending"), "{err:#}");
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 1);
+    assert!(pending_burns::get_all_payer_burns(&pool).await?.is_empty());
+
+    Ok(())
+}
+
 async fn save_data_transfer_sessions(
     pool: &PgPool,
     sessions: &[(&PublicKeyBinary, &PublicKeyBinary, u64)],

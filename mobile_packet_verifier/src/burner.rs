@@ -13,10 +13,16 @@ use crate::{
     pending_burns, pending_txns,
 };
 
+/// How long [`Burner::settle`] waits on a burn that is still pending before
+/// leaving it for the next cycle. A burn normally settles within about two
+/// minutes of being signed.
+const SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 pub struct Burner<S> {
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
+    settle_timeout: std::time::Duration,
     iceberg_writer: BurnedDataTransferWriter,
 }
 
@@ -31,8 +37,16 @@ impl<S> Burner<S> {
             solana,
             failed_retry_attempts,
             failed_check_interval,
+            settle_timeout: SETTLE_TIMEOUT,
             iceberg_writer,
         }
+    }
+
+    /// How long to wait on a burn that is still pending before leaving it for
+    /// the next cycle. Five minutes unless set.
+    pub fn with_settle_timeout(mut self, settle_timeout: std::time::Duration) -> Self {
+        self.settle_timeout = settle_timeout;
+        self
     }
 }
 
@@ -208,6 +222,11 @@ where
     /// finalized block height passes the burn's expiry, about two minutes
     /// after it was signed. RPC errors are retried `failed_retry_attempts`
     /// times in a row before giving up.
+    ///
+    /// A burn still pending after `settle_timeout` is an error, so a stalled
+    /// chain or a lagging RPC can't hold the daemon here. The burn may still
+    /// land, so it is left as it is, never released, and the next cycle
+    /// settles it.
     async fn settle(
         &self,
         signature: &Signature,
@@ -231,6 +250,20 @@ where
                     finalized_block_height,
                 }) => {
                     rpc_errors = 0;
+                    if started.elapsed() >= self.settle_timeout {
+                        tracing::warn!(
+                            %signature,
+                            checks,
+                            elapsed = ?started.elapsed(),
+                            finalized_block_height,
+                            blocks_until_expiry = expiry.saturating_sub(finalized_block_height),
+                            "txn still pending at the settle timeout, leaving it for the next cycle"
+                        );
+                        anyhow::bail!(
+                            "txn {signature} still pending after {:?}",
+                            self.settle_timeout
+                        );
+                    }
                     tracing::info!(
                         %signature,
                         checks,
