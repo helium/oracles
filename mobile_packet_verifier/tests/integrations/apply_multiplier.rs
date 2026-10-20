@@ -141,7 +141,7 @@ async fn accumulate(
         &routing_keys,
         &verified_sink,
         file_ts,
-        futures::stream::iter(reports),
+        futures::stream::iter(reports.into_iter().map(Into::into)),
     )
     .await?;
     txn.commit().await?;

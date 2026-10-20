@@ -9,3 +9,4 @@ pub mod daemon;
 pub mod gateway_sharing;
 pub mod gateway_trino;
 pub mod multiplier_tickets;
+pub mod startup;

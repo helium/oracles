@@ -18,6 +18,8 @@ pub const TABLE_NAME: &str = "invalid_sessions";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergInvalidDataTransferSession {
+    pub file_ts: u64,
+    pub record_index: u64,
     pub report_received_timestamp: DateTime<FixedOffset>,
     pub request_pub_key: String,
     pub rewardable_bytes: u64,
@@ -37,6 +39,8 @@ impl IcebergInvalidDataTransferSession {
     /// Tag an already-converted session with the status that rejected it.
     pub fn new(session: IcebergDataTransferSession, status: ReportStatus) -> Self {
         Self {
+            file_ts: session.file_ts,
+            record_index: session.record_index,
             report_received_timestamp: session.report_received_timestamp,
             request_pub_key: session.request_pub_key,
             rewardable_bytes: session.rewardable_bytes,
