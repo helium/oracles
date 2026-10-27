@@ -1,25 +1,11 @@
-
 # log settings for the application (RUST_LOG format). Default below
-# 
-# log = "reward_index=debug"
-
-# Interval for checking verifier bucket (in seconds). Default below (15 minutes)
 #
-# interval = "15 minutes"
+# log = "reward_index=debug,poc_store=info"
 
-# Mode to operate the indexer in. "iot" or "mobile"
+# Key the unallocated rewards are indexed under. Default below
 #
-mode = "iot"
+# unallocated_reward_entity_key = "not_emitted"
 
-# Operation Fund key is required when mode = "iot"
-#
-operation_fund_key = "iot-operation-fund-key"
-
-# Unallocated reward entity key is always required
-#
-unallocated_reward_entity_key = "unallocated-reward-entity-key"
-
-#
 [database]
 
 # Postgres Connection Information
@@ -39,22 +25,32 @@ iam_region = "us-west-2"
 # Max connections to the database.
 max_connections = 10
 
-[verifier]
-# Input bucket details for verified reward share data
+[iceberg]
 
-# Name of bucket to access verified data. Required
+# `start_period` of the first reward epoch to index from Iceberg. Earlier
+# epochs are skipped; they were indexed from reward manifest files. Required
 #
-bucket = "mainnet-verified-bucket"
+start_epoch_period = "2026-10-28T00:00:00Z"
 
-# Region for bucket. Defaults to below
+# Only snapshots committed after this time are read on first start. Must be
+# before the commit time of the `start_epoch_period` snapshots. Defaults to
+# reading every snapshot.
 #
-# region = "us-west-2"
+# snapshot_start_after = "2026-10-27T00:00:00Z"
 
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
+# Directory for the stream watermark dbs (mount on a PVC). Defaults to
+# $ICEBERG_STREAM_DB_DIR, falling back to the current directory.
 #
-# endpoint = "https://aws-s3-bucket.aws.com"
+# db_dir = "/data"
 
+# How often to poll for new snapshots. Default below
+#
+# poll_duration = "5 minutes"
+
+[iceberg.catalog]
+catalog_uri = "http://localhost:8181/api/catalog"
+catalog_name = "iceberg"
+warehouse = "iceberg"
 
 [metrics]
 
