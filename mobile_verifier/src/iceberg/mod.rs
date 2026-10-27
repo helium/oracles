@@ -1,19 +1,19 @@
 use anyhow::Context;
 use helium_iceberg::{BoxedDataWriter, IntoBoxedDataWriter};
+use helium_iceberg_oracles::rewards::{
+    self, IcebergGatewayReward, IcebergServiceProviderReward, IcebergUnallocatedReward,
+};
 use serde::Serialize;
 
 pub mod ban;
 pub mod burned_session;
-pub mod gateway_reward;
 pub mod heartbeat;
 pub mod invalid_ban;
 pub mod invalid_heartbeat;
 pub mod invalid_speedtest;
 pub mod invalid_speedtest_avg;
-pub mod service_provider_reward;
 pub mod speedtest;
 pub mod speedtest_avg;
-pub mod unallocated_reward;
 pub mod valid_invalid;
 
 pub use ban::IcebergBan;
@@ -27,7 +27,6 @@ pub use speedtest_avg::IcebergSpeedtestAvg;
 pub use valid_invalid::ValidInvalidWriter;
 
 pub const NAMESPACE: &str = "hotspots";
-pub const REWARDS_NAMESPACE: &str = "rewards";
 
 /// Column appended to every `invalid_*` table, recording why a record was
 /// rejected (a validity/status enum's string name).
@@ -98,16 +97,16 @@ impl PocWriters {
 }
 
 pub struct RewardWriters {
-    data_transfer: BoxedDataWriter<gateway_reward::IcebergGatewayReward>,
-    service_provider: BoxedDataWriter<service_provider_reward::IcebergServiceProviderReward>,
-    unallocated: BoxedDataWriter<unallocated_reward::IcebergUnallocatedReward>,
+    data_transfer: BoxedDataWriter<IcebergGatewayReward>,
+    service_provider: BoxedDataWriter<IcebergServiceProviderReward>,
+    unallocated: BoxedDataWriter<IcebergUnallocatedReward>,
 }
 
 impl RewardWriters {
     pub async fn write_data_transfer(
         &self,
         id: &str,
-        rows: Vec<gateway_reward::IcebergGatewayReward>,
+        rows: Vec<IcebergGatewayReward>,
     ) -> anyhow::Result<()> {
         self.data_transfer
             .write_idempotent(id, rows)
@@ -118,7 +117,7 @@ impl RewardWriters {
     pub async fn write_service_provider(
         &self,
         id: &str,
-        rows: Vec<service_provider_reward::IcebergServiceProviderReward>,
+        rows: Vec<IcebergServiceProviderReward>,
     ) -> anyhow::Result<()> {
         self.service_provider
             .write_idempotent(id, rows)
@@ -129,7 +128,7 @@ impl RewardWriters {
     pub async fn write_unallocated(
         &self,
         id: &str,
-        rows: Vec<unallocated_reward::IcebergUnallocatedReward>,
+        rows: Vec<IcebergUnallocatedReward>,
     ) -> anyhow::Result<()> {
         self.unallocated
             .write_idempotent(id, rows)
@@ -144,17 +143,17 @@ pub async fn get_reward_writers(
     let catalog = settings.connect().await.context("connecting to catalog")?;
 
     catalog
-        .create_namespace_if_not_exists(REWARDS_NAMESPACE)
+        .create_namespace_if_not_exists(rewards::NAMESPACE)
         .await?;
 
     let data_transfer = catalog
-        .create_table_if_not_exists(gateway_reward::table_definition()?)
+        .create_table_if_not_exists(rewards::data_transfer::table_definition()?)
         .await?;
     let service_provider = catalog
-        .create_table_if_not_exists(service_provider_reward::table_definition()?)
+        .create_table_if_not_exists(rewards::service_provider::table_definition()?)
         .await?;
     let unallocated = catalog
-        .create_table_if_not_exists(unallocated_reward::table_definition()?)
+        .create_table_if_not_exists(rewards::unallocated::table_definition()?)
         .await?;
 
     Ok(RewardWriters {

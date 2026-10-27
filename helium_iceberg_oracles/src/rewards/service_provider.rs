@@ -7,21 +7,21 @@ mod proto {
     pub use helium_proto::services::poc_mobile::ServiceProviderReward;
 }
 
-use super::REWARDS_NAMESPACE;
+use super::NAMESPACE;
 
 pub const TABLE_NAME: &str = "service_provider";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergServiceProviderReward {
-    service_provider_id: i32,
-    amount: u64,
-    rewardable_entity_key: String,
-    start_period: DateTime<FixedOffset>,
-    end_period: DateTime<FixedOffset>,
+    pub service_provider_id: i32,
+    pub amount: u64,
+    pub rewardable_entity_key: String,
+    pub start_period: DateTime<FixedOffset>,
+    pub end_period: DateTime<FixedOffset>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(REWARDS_NAMESPACE, TABLE_NAME)
+    TableDefinition::builder(NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_int("service_provider_id"),
             FieldDefinition::required_long("amount"),
@@ -59,7 +59,7 @@ mod tests {
     fn table_definition_builds_successfully() {
         let def = table_definition().expect("table definition should build");
         assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), REWARDS_NAMESPACE);
+        assert_eq!(def.namespace(), NAMESPACE);
     }
 
     #[test]

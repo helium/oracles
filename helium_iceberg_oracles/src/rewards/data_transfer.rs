@@ -10,22 +10,22 @@ mod proto {
     pub use helium_proto::services::poc_mobile::GatewayReward;
 }
 
-use super::REWARDS_NAMESPACE;
+use super::NAMESPACE;
 
 pub const TABLE_NAME: &str = "data_transfer";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergGatewayReward {
-    hotspot_key: String,
-    dc_transfer_reward: u64,
-    rewardable_bytes: u64,
-    price: u64,
-    start_period: DateTime<FixedOffset>,
-    end_period: DateTime<FixedOffset>,
+    pub hotspot_key: String,
+    pub dc_transfer_reward: u64,
+    pub rewardable_bytes: u64,
+    pub price: u64,
+    pub start_period: DateTime<FixedOffset>,
+    pub end_period: DateTime<FixedOffset>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(REWARDS_NAMESPACE, TABLE_NAME)
+    TableDefinition::builder(NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_string("hotspot_key"),
             FieldDefinition::required_long("dc_transfer_reward"),
@@ -67,7 +67,7 @@ mod tests {
     fn table_definition_builds_successfully() {
         let def = table_definition().expect("table definition should build");
         assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), REWARDS_NAMESPACE);
+        assert_eq!(def.namespace(), NAMESPACE);
     }
 
     #[test]

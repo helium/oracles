@@ -11,6 +11,7 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use crate::reward_shares::{dc_to_hnt_bones, RewardableEntityKey};
+use helium_iceberg_oracles::rewards::{IcebergServiceProviderReward, IcebergUnallocatedReward};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -434,13 +435,11 @@ pub async fn reward_service_providers(
     reward_writers
         .write_service_provider(
             write_id,
-            vec![
-                iceberg::service_provider_reward::IcebergServiceProviderReward::from_sp_reward(
-                    &network_share,
-                    reward_info.epoch_period.start,
-                    reward_info.epoch_period.end,
-                ),
-            ],
+            vec![IcebergServiceProviderReward::from_sp_reward(
+                &network_share,
+                reward_info.epoch_period.start,
+                reward_info.epoch_period.end,
+            )],
         )
         .await?;
 
@@ -475,13 +474,11 @@ async fn write_unallocated_reward(
     reward_writers
         .write_unallocated(
             write_id,
-            vec![
-                iceberg::unallocated_reward::IcebergUnallocatedReward::from_reward(
-                    &reward,
-                    reward_info.epoch_period.start,
-                    reward_info.epoch_period.end,
-                ),
-            ],
+            vec![IcebergUnallocatedReward::from_reward(
+                &reward,
+                reward_info.epoch_period.start,
+                reward_info.epoch_period.end,
+            )],
         )
         .await?;
 
