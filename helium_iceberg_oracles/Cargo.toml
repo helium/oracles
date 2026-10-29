@@ -13,6 +13,7 @@ chrono = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+helium-crypto = { workspace = true }
 helium-proto = { workspace = true }
 trino-rust-client = { workspace = true }
 

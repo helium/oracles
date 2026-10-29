@@ -4042,6 +4042,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "file-store-oracles",
+ "helium-crypto",
  "helium-iceberg",
  "helium-proto",
  "rust_decimal",

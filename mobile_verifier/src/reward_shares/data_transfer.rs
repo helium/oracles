@@ -30,7 +30,7 @@ use helium_crypto::PublicKeyBinary;
 use rust_decimal::Decimal;
 
 use super::floor_to_u64;
-use crate::iceberg::gateway_reward::IcebergGatewayReward;
+use helium_iceberg_oracles::rewards::IcebergGatewayReward;
 
 mod proto {
     pub use helium_proto::services::poc_mobile::mobile_reward_share::Reward;

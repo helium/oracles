@@ -7,20 +7,20 @@ mod proto {
     pub use helium_proto::services::poc_mobile::UnallocatedReward;
 }
 
-use super::REWARDS_NAMESPACE;
+use super::NAMESPACE;
 
 pub const TABLE_NAME: &str = "unallocated";
 
 #[derive(Debug, Clone, Trino, Serialize, Deserialize, PartialEq)]
 pub struct IcebergUnallocatedReward {
-    reward_type: String,
-    amount: u64,
-    start_period: DateTime<FixedOffset>,
-    end_period: DateTime<FixedOffset>,
+    pub reward_type: String,
+    pub amount: u64,
+    pub start_period: DateTime<FixedOffset>,
+    pub end_period: DateTime<FixedOffset>,
 }
 
 pub fn table_definition() -> helium_iceberg::Result<TableDefinition> {
-    TableDefinition::builder(REWARDS_NAMESPACE, TABLE_NAME)
+    TableDefinition::builder(NAMESPACE, TABLE_NAME)
         .with_fields([
             FieldDefinition::required_string("reward_type"),
             FieldDefinition::required_long("amount"),
@@ -56,7 +56,7 @@ mod tests {
     fn table_definition_builds_successfully() {
         let def = table_definition().expect("table definition should build");
         assert_eq!(def.name(), TABLE_NAME);
-        assert_eq!(def.namespace(), REWARDS_NAMESPACE);
+        assert_eq!(def.namespace(), NAMESPACE);
     }
 
     #[test]
