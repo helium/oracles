@@ -206,7 +206,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
 
     // Reports poller: no idle_timeout — this is a continuous source that should
     // never exit on its own.
-    let (reports, reports_server) = file_source::continuous_source()
+    let (reports, reports_server) = file_source::Continuous::prost_source()
         .state(pool.clone())
         .bucket_client(awsl.bucket_client())
         .prefix(FileType::DataTransferSessionIngestReport.to_string())
@@ -560,7 +560,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         burned_writer,
     );
 
-    let (reports, reports_server) = file_source::continuous_source()
+    let (reports, reports_server) = file_source::Continuous::prost_source()
         .state(pool.clone())
         .bucket_client(awsl.bucket_client())
         .prefix(FileType::DataTransferSessionIngestReport.to_string())

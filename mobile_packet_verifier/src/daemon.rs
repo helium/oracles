@@ -13,13 +13,13 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source};
 use file_store_oracles::{
-    mobile_session::DataTransferSessionIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
 use futures::Stream;
 use helium_proto::services::{
-    packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
+    packet_verifier::ValidDataTransferSession,
+    poc_mobile::{DataTransferSessionIngestReportV1, VerifiedDataTransferIngestReportV1},
 };
 use solana::burn::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres, Transaction};
@@ -133,7 +133,7 @@ pub async fn handle_data_transfer_session_file(
     routing_keys: &RoutingKeys,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
-    reports: impl Stream<Item = DataTransferSessionIngestReport>,
+    reports: impl Stream<Item = DataTransferSessionIngestReportV1>,
 ) -> anyhow::Result<()> {
     let sessions = accumulate_sessions(
         resolver,
@@ -180,6 +180,10 @@ pub async fn handle_data_transfer_session_file(
 
 /// Handles the real-time `DataTransferSessionIngestReport` stream for the daemon.
 ///
+/// Files are read as raw protos and converted in [`accumulate_sessions`], so a
+/// record that fails to convert still counts toward each record's
+/// `record_index`.
+///
 /// The Daemon holds one of these, calls `recv()` in its `select!`, and forwards
 /// each file to `handle`. The channel is never expected to close while the daemon
 /// is running — a dropped sender is an error.
@@ -189,7 +193,7 @@ pub async fn handle_data_transfer_session_file(
 /// top-level `TaskManager`) and the static `routing_keys` allow-list.
 pub struct IngestReports {
     pool: Pool<Postgres>,
-    reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+    reports: Receiver<FileInfoStream<DataTransferSessionIngestReportV1>>,
     verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     iceberg_writer: DataTransferWriter,
     invalid_iceberg_writer: InvalidDataTransferWriter,
@@ -200,7 +204,7 @@ pub struct IngestReports {
 impl IngestReports {
     pub fn new(
         pool: Pool<Postgres>,
-        reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
+        reports: Receiver<FileInfoStream<DataTransferSessionIngestReportV1>>,
         verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
         iceberg_writer: DataTransferWriter,
         invalid_iceberg_writer: InvalidDataTransferWriter,
@@ -218,7 +222,7 @@ impl IngestReports {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<FileInfoStream<DataTransferSessionIngestReport>> {
+    pub async fn recv(&mut self) -> Option<FileInfoStream<DataTransferSessionIngestReportV1>> {
         self.reports.recv().await
     }
 
@@ -228,7 +232,7 @@ impl IngestReports {
     /// — an unexpected condition that should propagate as a task failure.
     pub async fn handle(
         &self,
-        file: Option<FileInfoStream<DataTransferSessionIngestReport>>,
+        file: Option<FileInfoStream<DataTransferSessionIngestReportV1>>,
     ) -> anyhow::Result<()> {
         let Some(file_info_stream) = file else {
             anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
@@ -238,7 +242,7 @@ impl IngestReports {
 
     async fn handle_file(
         &self,
-        file: FileInfoStream<DataTransferSessionIngestReport>,
+        file: FileInfoStream<DataTransferSessionIngestReportV1>,
     ) -> anyhow::Result<()> {
         tracing::info!("Verifying file: {}", file.file_info);
         let ts = file.file_info.timestamp;
@@ -269,6 +273,18 @@ impl IngestReports {
     }
 }
 
+/// Apply this binary's migrations.
+///
+/// A rolled-back binary must still start after a newer one has migrated the
+/// schema, so migrations it doesn't know are ignored. That makes every
+/// migration responsible for working with the binary before it.
+pub async fn run_migrations(pool: &Pool<Postgres>) -> Result<()> {
+    let mut migrator = sqlx::migrate!();
+    migrator.set_ignore_missing(true);
+    migrator.run(pool).await?;
+    Ok(())
+}
+
 #[derive(Debug, clap::Args)]
 pub struct Cmd;
 
@@ -278,7 +294,7 @@ impl Cmd {
 
         // Set up the postgres pool:
         let pool = settings.database.connect("mobile-packet-verifier").await?;
-        sqlx::migrate!().run(&pool).await?;
+        run_migrations(&pool).await?;
 
         pending_burns::initialize(&pool).await?;
 
@@ -328,7 +344,7 @@ impl Cmd {
             burned_session_writer,
         );
 
-        let (reports, reports_server) = file_source::continuous_source()
+        let (reports, reports_server) = file_source::Continuous::prost_source()
             .state(pool.clone())
             .bucket_client(settings.ingest_bucket.connect().await)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
@@ -361,7 +377,10 @@ impl Cmd {
             pool.clone(),
             settings.burn_period,
             settings.min_burn_period,
-            Duration::from_secs(60),
+            // Long enough that a burn the previous binary sent before it
+            // stopped has finalized or expired before this one settles it, so a
+            // deploy or rollback never races an in-flight burn.
+            Duration::from_secs(5 * 60),
             ingest_reports,
             burner,
         );
