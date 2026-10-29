@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -12,24 +15,37 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
-    /// Check interval in seconds. (Default is 900; 15 minutes)
-    #[serde(with = "humantime_serde", default = "default_interval")]
-    pub interval: Duration,
     #[serde(default = "default_unallocated_reward_entity_key")]
     pub unallocated_reward_entity_key: String,
-    #[serde(default = "default_start_after")]
-    pub start_after: DateTime<Utc>,
-
     pub database: db_store::Settings,
     #[serde(default)]
-    pub file_store: file_store::Settings,
-    pub input_bucket: String,
-    #[serde(default)]
     pub metrics: poc_metrics::Settings,
+    pub iceberg: IcebergSettings,
 }
 
-fn default_interval() -> Duration {
-    humantime::parse_duration("15 minutes").unwrap()
+#[derive(Debug, Deserialize, Serialize)]
+pub struct IcebergSettings {
+    pub catalog: helium_iceberg::Settings,
+    /// `start_period` of the first reward epoch to index from Iceberg. Rows for
+    /// earlier epochs are skipped; they were indexed from reward manifest files
+    /// before reward-index read Iceberg.
+    pub start_epoch_period: DateTime<Utc>,
+    /// Only snapshots committed after this time are read on first start (before
+    /// any watermark exists). Must be before the commit time of the
+    /// `start_epoch_period` snapshots; anything earlier is skipped by
+    /// `start_epoch_period`. Defaults to reading every snapshot.
+    #[serde(default = "default_start_after")]
+    pub snapshot_start_after: DateTime<Utc>,
+    /// Directory for the stream watermark dbs. Mount on a PVC. Defaults to
+    /// `$ICEBERG_STREAM_DB_DIR`, falling back to the current directory.
+    pub db_dir: Option<PathBuf>,
+    /// How often to poll the tables for new snapshots. (Default is 5 minutes)
+    #[serde(with = "humantime_serde", default = "default_iceberg_poll_duration")]
+    pub poll_duration: Duration,
+}
+
+fn default_iceberg_poll_duration() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
 
 fn default_start_after() -> DateTime<Utc> {
