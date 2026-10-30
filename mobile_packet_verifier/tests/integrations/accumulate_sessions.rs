@@ -10,7 +10,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
 use mobile_packet_verifier::{
-    banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
+    bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
     routing::RoutingKeys,
 };
 use sqlx::PgPool;
@@ -427,7 +427,7 @@ async fn ban_type_all_sessions_are_valid_with_zero_rewardable_bytes(
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key.clone(), BanType::All).await?;
+    ban_hotspot(&harness, key.clone(), BanType::All).await?;
 
     run_accumulate_sessions(
         &pool,
@@ -479,7 +479,7 @@ async fn ban_type_data_sessions_are_valid_with_zero_rewardable_bytes(
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key.clone(), BanType::Data).await?;
+    ban_hotspot(&harness, key.clone(), BanType::Data).await?;
 
     run_accumulate_sessions(
         &pool,
@@ -507,7 +507,7 @@ async fn banned_sessions_still_fail_other_validity_checks(pool: PgPool) -> anyho
 
     let key = PublicKeyBinary::from(vec![1]);
 
-    ban_hotspot(&pool, key.clone(), BanType::All).await?;
+    ban_hotspot(&harness, key.clone(), BanType::All).await?;
 
     // Gateway is not known, so the session is rejected regardless of the ban
     run_accumulate_sessions(
@@ -564,7 +564,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     }];
 
     // Ban radio
-    ban_hotspot(&pool, key.clone(), BanType::Poc).await?;
+    ban_hotspot(&harness, key.clone(), BanType::Poc).await?;
 
     // A POC ban doesn't block data transfer, so the gateway/routing must be
     // valid for the session to be burned.
@@ -621,10 +621,9 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     }];
 
     // Ban radio with expiration in the past
-    let mut conn = pool.acquire().await?;
-    banning::db::update_hotspot_ban(
-        &mut conn,
-        VerifiedBanReport {
+    common::bans::record(
+        &harness,
+        [VerifiedBanReport {
             verified_timestamp: Utc::now(),
             status: VerifiedBanIngestReportStatus::Valid,
             report: BanReport {
@@ -643,7 +642,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
                     }),
                 },
             },
-        },
+        }],
     )
     .await?;
 
@@ -698,7 +697,10 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
     let routing_keys: RoutingKeys = [valid_gateway.clone()].into_iter().collect();
 
     let mut txn = pool.begin().await?;
-    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    let banned_radios = common::bans::resolver(&harness)
+        .await?
+        .banned_radios(Utc::now())
+        .await?;
 
     handle_data_transfer_session_file(
         &mut txn,
@@ -762,7 +764,10 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
     .await?;
 
     let mut txn = pool.begin().await?;
-    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    let banned_radios = common::bans::resolver(&harness)
+        .await?
+        .banned_radios(Utc::now())
+        .await?;
     handle_data_transfer_session_file(
         &mut txn,
         &session_writer,
@@ -814,7 +819,10 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
     common::hotspot_inventory::seed(&harness, vec![row]).await?;
 
     let mut txn = pool.begin().await?;
-    let banned_radios = banning::get_banned_radios(&mut txn, report_time).await?;
+    let banned_radios = common::bans::resolver(&harness)
+        .await?
+        .banned_radios(report_time)
+        .await?;
     handle_data_transfer_session_file(
         &mut txn,
         &session_writer,
@@ -896,7 +904,10 @@ async fn run_accumulate_sessions(
 
     let ts = Utc::now();
 
-    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    let banned_radios = common::bans::resolver(harness)
+        .await?
+        .banned_radios(Utc::now())
+        .await?;
 
     handle_data_transfer_session_file(
         &mut txn,
@@ -943,14 +954,13 @@ async fn assert_banned_session_written_with_zero_rewardable_bytes(
 }
 
 async fn ban_hotspot(
-    pool: &PgPool,
+    harness: &IcebergTestHarness,
     hotspot_pubkey: PublicKeyBinary,
     ban_type: BanType,
 ) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
-    banning::db::update_hotspot_ban(
-        &mut conn,
-        VerifiedBanReport {
+    common::bans::record(
+        harness,
+        [VerifiedBanReport {
             verified_timestamp: Utc::now(),
             status: VerifiedBanIngestReportStatus::Valid,
             report: BanReport {
@@ -969,7 +979,7 @@ async fn ban_hotspot(
                     }),
                 },
             },
-        },
+        }],
     )
     .await?;
 

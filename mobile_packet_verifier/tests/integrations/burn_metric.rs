@@ -8,7 +8,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
 use mobile_packet_verifier::{
-    banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg, routing::RoutingKeys,
+    banning::BannedRadios, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg,
+    routing::RoutingKeys,
 };
 use sqlx::{types::Uuid, PgPool};
 
@@ -297,7 +298,7 @@ async fn run_accumulate_sessions(
 
     let ts = Utc::now();
 
-    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    let banned_radios = BannedRadios::default();
     handle_data_transfer_session_file(
         &mut txn,
         iceberg_writer,
