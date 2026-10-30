@@ -26,8 +26,6 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
 #[tokio::test]
 async fn test_dc_rewards() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
@@ -41,7 +39,6 @@ async fn test_dc_rewards() -> anyhow::Result<()> {
     // run data-transfer rewards, reading burned sessions from Trino
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -49,11 +46,7 @@ async fn test_dc_rewards() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
-
-    // PoC is disabled, so no radios are rewarded for coverage.
-    let poc_rewards = &rewards.radio_reward_v2s;
-    assert!(poc_rewards.is_empty());
+    let rewards = common::written_rewards(&harness).await?;
 
     // DC now consumes the whole data-transfer pool. The three hotspots burned
     // equal DC, so they split the pool evenly (scaled up well past their raw DC
@@ -90,8 +83,6 @@ async fn test_dc_rewards() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     // The iceberg tables are created but no data sessions are seeded, so there is
@@ -102,7 +93,6 @@ async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
 
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -110,7 +100,7 @@ async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
 
     // No DC rewards; the entire data-transfer pool falls through to a single
     // unallocated reward.
@@ -125,8 +115,6 @@ async fn test_no_data_sessions_unallocate_whole_pool() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
@@ -146,7 +134,6 @@ async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
     let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -154,7 +141,7 @@ async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
 
     // DC is strictly increasing, so the sorted rewards are HOTSPOT_1/2/3's and
     // should track the 1:2:3 ratio (modulo per-hotspot floor rounding).
@@ -184,8 +171,6 @@ async fn test_unequal_dc_rewards_proportionally() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
@@ -209,7 +194,6 @@ async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
     let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         price_info.clone(),
         &reward_writers,
@@ -217,7 +201,7 @@ async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
     let dc_rewards = &rewards.gateway_rewards;
     assert_eq!(dc_rewards.len(), 3);
 
@@ -245,8 +229,6 @@ async fn test_oversubscribed_distributes_whole_pool() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
@@ -258,7 +240,6 @@ async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
     let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -266,7 +247,7 @@ async fn test_single_hotspot_takes_whole_pool() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
 
     // The lone hotspot's share is 100% of the pool, so it consumes it whole with
     // no rounding remainder.
@@ -321,8 +302,6 @@ fn expected_data_transfer_pool(reward_info: &EpochRewardInfo) -> u64 {
 
 #[tokio::test]
 async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     // 3× cap moved 14% of emissions out of the data bucket into delegation:
     // delegation 6%+14%=20%, issued HNT 80%. Data transfer takes the whole issued
     // amount (HIP-150), so it absorbs the entire cut (94% → 80%).
@@ -338,7 +317,6 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -346,7 +324,7 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
     assert_eq!(rewards.gateway_rewards.len(), 3);
 
     // The whole pool is distributed, and it is the cap-shrunk residual.
@@ -363,8 +341,6 @@ async fn test_cap_shrinks_data_transfer_pool() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     // Backstop re-emitted HNT into the data bucket: issued HNT rises to 98%
     // (delegation 2%). Data transfer takes the whole issued amount (HIP-150), so
     // it absorbs the entire boost (94% → 98%).
@@ -380,7 +356,6 @@ async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     let reward_writers = common::reward_writers(&harness).await?;
     rewarder::reward_dc(
         &trino,
-        mobile_rewards_client,
         &reward_info,
         default_price_info(),
         &reward_writers,
@@ -388,7 +363,7 @@ async fn test_backstop_grows_data_transfer_pool() -> anyhow::Result<()> {
     )
     .await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
     assert_eq!(rewards.gateway_rewards.len(), 3);
 
     // The whole pool is distributed, and it is the backstop-grown residual.
