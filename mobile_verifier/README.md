@@ -6,8 +6,13 @@
 | :--- | :-- | :-- |
 | CellHeartbeatIngestReport | heartbeat_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L50) |
 | CellSpeedtestIngestReport | speedtest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L25) |
-| ValidDataTransferSession | valid_data_transfer_session.\* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/packet_verifier.proto#L24) |
 | CoverageObjectIngestReport | coverage_object_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L157) |
+
+## Iceberg Inputs
+
+| Table | Contents |
+| :-- | :-- |
+| data_transfer.burned_sessions | Burned data transfer sessions written by mobile-packet-verifier, read through Trino for the data transfer reward pool |
 
 ## S3 Outputs
 
