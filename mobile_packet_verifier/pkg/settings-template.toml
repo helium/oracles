@@ -152,7 +152,7 @@ region = "us-west-2"
 
 # HIP-150 data transfer multiplier tickets
 #
-# Every ticket ruled on is written to s3 and to the append-only
+# Every ticket ruled on is written to the append-only
 # data_transfer.multiplier_ticket_history table, refusals included.
 #
 # Granted multipliers are also written to the data_transfer_multipliers table in
