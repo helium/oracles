@@ -26,9 +26,6 @@ pub struct Settings {
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     pub buckets: Buckets,
-    /// Buckets every verified report is written to, and the directory they
-    /// stage under.
-    pub file_upload: file_store::file_upload::Settings,
     /// Reward period in hours. (Default is 24 hours)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
     pub reward_period: Duration,
@@ -157,10 +154,6 @@ impl Settings {
         Ok(h3o::Resolution::try_from(
             self.usa_and_mexico_fencing_resolution,
         )?)
-    }
-
-    pub fn store_base_path(&self) -> &std::path::Path {
-        &self.file_upload.root
     }
 
     /// The static authorization allow-list, parsed from settings. The list is

@@ -1,24 +1,17 @@
 use crate::{
     iceberg, resolve_dao_pubkey, resolve_subdao_pubkey,
     reward_shares::{
-        data_transfer::{self, into_proto_rewards, to_iceberg_rewards, DataTransferAllocation},
+        data_transfer::{self, to_iceberg_rewards, DataTransferAllocation},
         hip_149_reward_pools,
     },
     telemetry, PriceInfo, Settings,
 };
 use chrono::{DateTime, Utc};
-use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
-use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use crate::reward_shares::{dc_to_hnt_bones, RewardableEntityKey};
 use helium_iceberg_oracles::rewards::{IcebergServiceProviderReward, IcebergUnallocatedReward};
 use helium_proto::{
-    reward_manifest::RewardData::MobileRewardData,
-    services::poc_mobile::{
-        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-        UnallocatedReward, UnallocatedRewardType,
-    },
-    MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
+    services::poc_mobile::{self as proto, UnallocatedReward, UnallocatedRewardType},
     ServiceProvider,
 };
 use reward_scheduler::Scheduler;
@@ -41,8 +34,6 @@ pub struct Rewarder {
     pool: Pool<Postgres>,
     reward_period_duration: Duration,
     reward_offset: Duration,
-    pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    reward_manifests: FileSinkClient<RewardManifest>,
     /// Trino client, used both to resolve the epoch's on-chain reward inputs
     /// (see [`epoch_reward_info`]) and to read burned data-transfer sessions for
     /// the reward pool (see [`crate::iceberg::burned_session`]).
@@ -57,54 +48,26 @@ impl Rewarder {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        file_upload: FileUpload,
         reward_writers: iceberg::RewardWriters,
         trino: trino_client::Client,
         state: RewarderState,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
-            settings.store_base_path(),
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Default,
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
-        let (reward_manifests, reward_manifests_server) = RewardManifest::file_sink(
-            settings.store_base_path(),
-            file_upload,
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Default,
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let rewarder = Rewarder::new(
             pool.clone(),
             settings.reward_period,
             settings.reward_period_offset,
-            mobile_rewards,
-            reward_manifests,
             trino,
             reward_writers,
             state,
         )?;
 
-        Ok(TaskManager::builder()
-            .add_task(mobile_rewards_server)
-            .add_task(reward_manifests_server)
-            .add_task(rewarder)
-            .build())
+        Ok(TaskManager::builder().add_task(rewarder).build())
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         reward_period_duration: Duration,
         reward_offset: Duration,
-        mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-        reward_manifests: FileSinkClient<RewardManifest>,
         trino: trino_client::Client,
         reward_writers: iceberg::RewardWriters,
         state: RewarderState,
@@ -122,8 +85,6 @@ impl Rewarder {
             pool,
             reward_period_duration,
             reward_offset,
-            mobile_rewards,
-            reward_manifests,
             trino,
             reward_writers,
             state,
@@ -258,7 +219,6 @@ impl Rewarder {
         // HIP-149: data transfer consumes the entire pool; PoC is not rewarded.
         reward_dc(
             &self.trino,
-            self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
             &self.reward_writers,
@@ -267,15 +227,7 @@ impl Rewarder {
         .await?;
 
         // process rewards for service providers
-        reward_service_providers(
-            self.mobile_rewards.clone(),
-            &reward_info,
-            &self.reward_writers,
-            &write_id,
-        )
-        .await?;
-
-        let written_files = self.mobile_rewards.commit().await?.await??;
+        reward_service_providers(&reward_info, &self.reward_writers, &write_id).await?;
 
         let mut transaction = self.pool.begin().await?;
         self.state
@@ -287,30 +239,6 @@ impl Rewarder {
         // Mirror the committed state, if a mirror file is configured.
         self.state.mirror_to_file().await?;
 
-        // now that the db has been purged, safe to write out the manifest
-        let reward_data = ManifestMobileRewardData {
-            // HIP-149: PoC is not rewarded, so the per-share value is the zero default.
-            poc_bones_per_reward_share: None,
-            boosted_poc_bones_per_reward_share: None,
-            service_provider_promotions: vec![],
-            token: MobileRewardToken::Hnt as i32,
-        };
-        self.reward_manifests
-            .write(
-                RewardManifest {
-                    start_timestamp: reward_info.epoch_period.start.encode_timestamp(),
-                    end_timestamp: reward_info.epoch_period.end.encode_timestamp(),
-                    written_files,
-                    reward_data: Some(MobileRewardData(reward_data)),
-                    epoch: reward_info.epoch_day,
-                    price: price_info.price_in_bones,
-                },
-                [],
-            )
-            .await?
-            .await??;
-
-        self.reward_manifests.commit().await?;
         telemetry::last_rewarded_end_time(reward_info.epoch_period.end);
         Ok(())
     }
@@ -326,7 +254,6 @@ impl ManagedTask for Rewarder {
 /// emissions pool and Proof-of-Coverage is not rewarded.
 pub async fn reward_dc(
     trino: &trino_client::Client,
-    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
     reward_writers: &iceberg::RewardWriters,
@@ -385,13 +312,9 @@ pub async fn reward_dc(
         .write_data_transfer(write_id, rewards)
         .await?;
 
-    let proto_rewards = into_proto_rewards(gw_rewards, &reward_info.epoch_period);
-    mobile_rewards.write_all(proto_rewards).await?;
-
     // Data transfer consumes the whole pool; only integer-rounding dust (or the
     // entire pool when there was no data transfer) is written out as unallocated.
     write_unallocated_reward(
-        &mobile_rewards,
         UnallocatedRewardType::Data,
         unallocated,
         reward_info,
@@ -404,7 +327,6 @@ pub async fn reward_dc(
 }
 
 pub async fn reward_service_providers(
-    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     reward_writers: &iceberg::RewardWriters,
     write_id: &str,
@@ -443,19 +365,10 @@ pub async fn reward_service_providers(
         )
         .await?;
 
-    let network_reward = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::ServiceProviderReward(network_share)),
-    };
-
-    mobile_rewards.write(network_reward, []).await?.await??;
-
     Ok(())
 }
 
 async fn write_unallocated_reward(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_info: &'_ EpochRewardInfo,
@@ -481,13 +394,6 @@ async fn write_unallocated_reward(
             )],
         )
         .await?;
-
-    let reward_share = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::UnallocatedReward(reward)),
-    };
-    mobile_rewards.write(reward_share, []).await?.await??;
 
     Ok(())
 }

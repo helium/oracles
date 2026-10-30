@@ -2,18 +2,11 @@ use std::ops::ControlFlow;
 
 use chrono::Utc;
 use file_store::BucketClient;
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source};
 use file_store_oracles::mobile_ban::{
-    proto::{VerifiedBanIngestReportStatus, VerifiedBanIngestReportV1},
-    BanReport, VerifiedBanReport,
+    proto::VerifiedBanIngestReportStatus, BanReport, VerifiedBanReport,
 };
-use file_store_oracles::{
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileType,
-};
+use file_store_oracles::FileType;
 use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use sqlx::PgPool;
@@ -31,7 +24,6 @@ pub struct BanIngestor {
     pool: PgPool,
     authorized_keys: AuthorizedKeys,
     report_rx: Receiver<FileInfoStream<BanReport>>,
-    verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
     iceberg_writer: iceberg::BanWriter,
 }
 
@@ -57,21 +49,11 @@ impl ChannelConsumer for BanIngestor {
 impl BanIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
-        file_upload: FileUpload,
         bucket_client: BucketClient,
         authorized_keys: AuthorizedKeys,
         settings: &Settings,
         iceberg_writer: iceberg::BanWriter,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = VerifiedBanIngestReportV1::file_sink(
-            settings.store_base_path(),
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Default,
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let (report_rx, ingest_server) = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -80,16 +62,9 @@ impl BanIngestor {
             .create()
             .await?;
 
-        let ingestor = Self::new(
-            pool,
-            authorized_keys,
-            report_rx,
-            verified_sink,
-            iceberg_writer,
-        );
+        let ingestor = Self::new(pool, authorized_keys, report_rx, iceberg_writer);
 
         Ok(TaskManager::builder()
-            .add_task(verified_sink_server)
             .add_task(ingest_server)
             .add_task(task_manager::channel_consumer(ingestor))
             .build())
@@ -99,14 +74,12 @@ impl BanIngestor {
         pool: PgPool,
         authorized_keys: AuthorizedKeys,
         report_rx: Receiver<FileInfoStream<BanReport>>,
-        verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
         iceberg_writer: iceberg::BanWriter,
     ) -> Self {
         Self {
             pool,
             authorized_keys,
             report_rx,
-            verified_sink,
             iceberg_writer,
         }
     }
@@ -137,17 +110,12 @@ impl BanIngestor {
                     verified_report.status,
                 ));
             }
-            let status = verified_report.status.as_str_name();
-            self.verified_sink
-                .write(verified_report, &[("status", status)])
-                .await?;
         }
 
         self.iceberg_writer
             .write(&write_id, iceberg_records, invalid_iceberg_records)
             .await?;
 
-        self.verified_sink.commit().await?;
         txn.commit().await?;
 
         Ok(())
@@ -156,7 +124,8 @@ impl BanIngestor {
 
 /// Stamp a ban report with whether its submitter was authorized to issue bans.
 ///
-/// The verdict is the whole product: the report is republished for
+/// The verdict is the whole product: the report is written to the
+/// `hotspots.bans` (or `hotspots.invalid_bans`) Iceberg table for
 /// mobile-packet-verifier to act on, and nothing is recorded locally.
 pub fn process_ban_report(
     auth_verifier: &impl AuthorizationVerifier,
