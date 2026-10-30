@@ -1,6 +1,6 @@
 use crate::{
     accumulate::{accumulate_sessions, AccumulatedSessions},
-    banning::{self, BannedRadios},
+    banning::{BanResolver, BannedRadios},
     burner::Burner,
     event_ids::EventIdPurger,
     gateway::GatewayResolver,
@@ -165,13 +165,15 @@ pub async fn handle_data_transfer_session_file(
 ///
 /// Holds the inputs used to verify each report: the `gateway_resolver` (whose
 /// snapshot is refreshed by a separate `GatewaySnapshotRefresher` task on the
-/// top-level `TaskManager`) and the static `routing_keys` allow-list.
+/// top-level `TaskManager`), the `ban_resolver` (queried once per file) and the
+/// static `routing_keys` allow-list.
 pub struct IngestReports {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     iceberg_writer: DataTransferWriter,
     invalid_iceberg_writer: InvalidDataTransferWriter,
     gateway_resolver: GatewayResolver,
+    ban_resolver: BanResolver,
     routing_keys: RoutingKeys,
 }
 
@@ -182,6 +184,7 @@ impl IngestReports {
         iceberg_writer: DataTransferWriter,
         invalid_iceberg_writer: InvalidDataTransferWriter,
         gateway_resolver: GatewayResolver,
+        ban_resolver: BanResolver,
         routing_keys: RoutingKeys,
     ) -> Self {
         Self {
@@ -190,6 +193,7 @@ impl IngestReports {
             iceberg_writer,
             invalid_iceberg_writer,
             gateway_resolver,
+            ban_resolver,
             routing_keys,
         }
     }
@@ -221,7 +225,7 @@ impl IngestReports {
         let write_id = file.file_info.key.clone();
         let mut transaction = self.pool.begin().await?;
 
-        let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
+        let banned_radios = self.ban_resolver.banned_radios(ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
         handle_data_transfer_session_file(
@@ -288,11 +292,9 @@ impl Cmd {
             .create()
             .await?;
 
-        let gw_resolver = GatewayResolver::new(
-            trino_client::Client::from_settings(&settings.trino)?,
-            settings.gateway_refresh_interval,
-        )
-        .await;
+        let trino = trino_client::Client::from_settings(&settings.trino)?;
+        let gw_resolver =
+            GatewayResolver::new(trino.clone(), settings.gateway_refresh_interval).await;
         let gw_refresher = gw_resolver.refresher();
         // Shared, not a second resolver: clones point at the same snapshot, so
         // the refresher above keeps the ticket path current too. Building
@@ -305,6 +307,7 @@ impl Cmd {
             session_writer,
             invalid_session_writer,
             gw_resolver,
+            BanResolver::new(trino),
             settings.routing_keys()?,
         );
 
@@ -318,7 +321,6 @@ impl Cmd {
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
-        let banning = banning::create_managed_task(pool.clone(), &settings.banning).await?;
 
         let multipliers = multiplier::create_managed_task(
             pool,
@@ -331,7 +333,6 @@ impl Cmd {
 
         TaskManager::builder()
             .add_task(reports_server)
-            .add_task(banning)
             .add_task(multipliers)
             .add_task(task_manager::periodic(event_id_purger))
             .add_task(task_manager::periodic(gw_refresher))
