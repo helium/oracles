@@ -13,7 +13,6 @@ use helium_proto::services::poc_mobile::{
     CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
 };
 use mobile_packet_verifier::{
-    banning::handle_verified_ban_report,
     burner::Burner,
     daemon::{Daemon, IngestReports},
     iceberg,
@@ -203,6 +202,7 @@ async fn daemon_processes_ingest_reports(pool: PgPool) -> anyhow::Result<()> {
         session_writer,
         invalid_session_writer,
         resolver,
+        common::bans::resolver(&harness).await?,
         RoutingKeys::from_iter([PublicKeyBinary::from(vec![1])]),
     );
 
@@ -307,6 +307,7 @@ async fn daemon_burns_sessions(pool: PgPool) -> anyhow::Result<()> {
         session_writer,
         invalid_session_writer,
         resolver,
+        common::bans::resolver(&harness).await?,
         RoutingKeys::default(),
     );
 
@@ -417,10 +418,9 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    // Bans are not injected into the Daemon, so we ban through the DB.
-    let mut conn = pool.acquire().await?;
+    // Ban through the bans table mobile-verifier writes.
     let ban_report = make_ban_report(Utc::now() - Duration::hours(2), &banned_gw, None);
-    handle_verified_ban_report(&mut conn, ban_report).await?;
+    common::bans::record(&harness, [ban_report]).await?;
 
     // Solana mock configured with sufficient payer balance.
     let burner = Burner::new(
@@ -458,6 +458,7 @@ async fn daemon_full_flow(pool: PgPool) -> anyhow::Result<()> {
         session_writer,
         invalid_session_writer,
         resolver,
+        common::bans::resolver(&harness).await?,
         RoutingKeys::from_iter([valid_routing.clone()]),
     );
 
