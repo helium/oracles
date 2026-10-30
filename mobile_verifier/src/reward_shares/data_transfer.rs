@@ -25,7 +25,6 @@
 use std::ops::Range;
 
 use chrono::{DateTime, Utc};
-use file_store::traits::TimestampEncode;
 use helium_crypto::PublicKeyBinary;
 use rust_decimal::Decimal;
 
@@ -33,9 +32,7 @@ use super::floor_to_u64;
 use helium_iceberg_oracles::rewards::IcebergGatewayReward;
 
 mod proto {
-    pub use helium_proto::services::poc_mobile::mobile_reward_share::Reward;
     pub use helium_proto::services::poc_mobile::GatewayReward;
-    pub use helium_proto::services::poc_mobile::MobileRewardShare;
 }
 
 /// A gateway's rewardable data transfer for an epoch — the input to [`allocate`].
@@ -152,19 +149,6 @@ pub fn to_iceberg_rewards(
 ) -> Vec<IcebergGatewayReward> {
     coll.iter()
         .map(|gateway| IcebergGatewayReward::from_gateway_reward(gateway, period))
-        .collect()
-}
-
-pub fn into_proto_rewards(
-    coll: Vec<proto::GatewayReward>,
-    period: &Range<DateTime<Utc>>,
-) -> Vec<proto::MobileRewardShare> {
-    coll.into_iter()
-        .map(|gateway| proto::MobileRewardShare {
-            start_period: period.start.encode_timestamp(),
-            end_period: period.end.encode_timestamp(),
-            reward: Some(proto::Reward::GatewayReward(gateway)),
-        })
         .collect()
 }
 

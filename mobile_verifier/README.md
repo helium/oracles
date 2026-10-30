@@ -14,34 +14,17 @@
 | :-- | :-- |
 | data_transfer.burned_sessions | Burned data transfer sessions written by mobile-packet-verifier, read through Trino for the data transfer reward pool |
 
-## S3 Outputs
+## Iceberg Outputs
 
-| File Type | Pattern | |
-| :--- | :-- | :-- |
-| ValidatedHeartbeat | validated_heartbeat.\* | [Proto](https://github.com/helium/proto/blob/b13b21f12819e30ebcf249bad462bdd196d1fe76/src/service/poc_mobile.proto#L80) |
-| SpeedtestAvg | speedtest_avg.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L97) | 
-| CoverageObject | coverage_object.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L202) |
-| SeniorityUpdate | seniority_update.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L252) |
-| RadioRewardShare (deprecated) | radio_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L118) |
-| MobileRewardShare | mobile_reward_share.\* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/poc_mobile.proto#L145) |
-| RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
-
-This crates provides a command line utility and server that validates shares within an S3 bucket. 
-
-Upon completion of a given time range, the mobile verifier will write the following files to the 
-given output bucket: 
-
-- `file_list`: List of files processed during verification.
-- `shares`: List of validated shares with their rewarded bones (`weight`).
-- `speed_shares`: List of validated speedtest shares. 
-- `invalid_shares`: List of invalid shares. 
-- `invalid_speed_shares`: List of invalid speedtest shares. 
-- `speed_shares_moving_avg`
-- `cell_shares`
-- `hotspot_shares`
-- `owner_shares`
-- `missing_owner_shares`
-- `owner_emissions` 
+| Table | Contents |
+| :-- | :-- |
+| hotspots.heartbeats / hotspots.invalid_heartbeats | Validated wifi heartbeats, valid and rejected |
+| hotspots.speedtests / hotspots.invalid_speedtests | Validated speedtests, valid and rejected |
+| hotspots.speedtest_avgs / hotspots.invalid_speedtest_avgs | Speedtest averages, valid and failing |
+| hotspots.bans / hotspots.invalid_bans | Ban and unban reports, authorized and rejected |
+| rewards.data_transfer | Per-hotspot data transfer rewards for each epoch |
+| rewards.service_provider | Service provider rewards for each epoch |
+| rewards.unallocated | Unallocated rewards for each epoch |
 
 ## Server 
 
@@ -53,9 +36,6 @@ The server accepts the following environmental variables for configuration:
 - `INPUT_BUCKET_ENDPOINT`
 - `INPUT_BUCKET_REGION`
 - `INPUT_BUCKET` 
-- `OUTPUT_BUCKET_ENDPOINT`
-- `OUTPUT_BUCKET_REGION`
-- `OUTPUT_BUCKET`
 
 ## Client 
 

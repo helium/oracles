@@ -5,13 +5,12 @@ use crate::DeviceType;
 use crate::{cell_type::CellType, geofence::GeofenceValidator, GatewayResolution, GatewayResolver};
 use anyhow::Context;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::file_sink::FileSinkClient;
 use file_store_oracles::wifi_heartbeat::WifiHeartbeatIngestReport;
 use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::{ops::Range, pin::pin};
 use uuid::Uuid;
@@ -283,45 +282,10 @@ impl ValidatedHeartbeat {
             .await
         })
     }
-
-    pub async fn write(&self, heartbeats: &FileSinkClient<proto::Heartbeat>) -> file_store::Result {
-        heartbeats
-            .write(
-                proto::Heartbeat {
-                    cbsd_id: String::default(),
-                    pub_key: self.heartbeat.hotspot_key.as_ref().into(),
-                    cell_type: self.cell_type as i32,
-                    validity: self.validity as i32,
-                    timestamp: self.heartbeat.timestamp.timestamp() as u64,
-                    location_trust_score_multiplier: (self.location_trust_score_multiplier
-                        * dec!(1000))
-                    .to_u32()
-                    .unwrap_or_default(),
-                    coverage_object: self
-                        .heartbeat
-                        .coverage_object
-                        .map(|x| Vec::from(x.into_bytes()))
-                        .unwrap_or_default(),
-                    lat: self.heartbeat.lat,
-                    lon: self.heartbeat.lon,
-                    location_validation_timestamp: self
-                        .heartbeat
-                        .location_validation_timestamp
-                        .map_or(0, |v| v.timestamp() as u64),
-                    distance_to_asserted: self.distance_to_asserted.map_or(0, |v| v as u64),
-                    location_source: self.heartbeat.location_source.into(),
-                    ..Default::default()
-                },
-                &[("validity", self.validity.as_str_name())],
-            )
-            .await?;
-        Ok(())
-    }
 }
 
 pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
-    heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
     iceberg_writer: &crate::iceberg::HeartbeatWriter,
     write_id: &str,
 ) -> anyhow::Result<()> {
@@ -329,8 +293,6 @@ pub(crate) async fn process_validated_heartbeats(
     let mut invalid_iceberg_records = Vec::new();
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
-        validated_heartbeat.write(heartbeat_sink).await?;
-
         let record = crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat);
         if validated_heartbeat.is_valid() {
             iceberg_records.push(record);
