@@ -17,9 +17,12 @@ for rewards.
 | :-- | :-- | :-- |
 | DataTransferSessionIngestReport | data_transfer_session_ingest_report.* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/poc_mobile.proto#L212) |
 
-## S3 Outputs
+## Iceberg Outputs
 
-| File Type | Pattern | |
-| :-- | :-- | :-- |
-| ValidDataTransferSession | valid_data_transfer_session.* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/packet_verifier.proto#L24) |
+| Table | Contents |
+| :-- | :-- |
+| data_transfer.sessions | Valid data transfer sessions |
+| data_transfer.invalid_sessions | Rejected data transfer sessions, with the reason |
+| data_transfer.burned_sessions | Sessions whose data credits have been burned |
+| data_transfer.multiplier_ticket_history | Every multiplier ticket, accepted or refused |
 

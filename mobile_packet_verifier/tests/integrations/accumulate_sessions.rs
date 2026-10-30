@@ -1,5 +1,4 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_sink::{FileSinkClient, Message, MessageReceiver};
 use file_store_oracles::{
     mobile_ban::{
         BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType,
@@ -9,17 +8,14 @@ use file_store_oracles::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
-use helium_proto::services::poc_mobile::{
-    verified_data_transfer_ingest_report_v1::ReportStatus, CarrierIdV2,
-    DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
-};
+use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
 use mobile_packet_verifier::{
     banning, bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
     routing::RoutingKeys,
 };
 use sqlx::PgPool;
 
-use crate::common::{self, hotspot_inventory::MobileHotspotInventory, TestChannelExt};
+use crate::common::{self, hotspot_inventory::MobileHotspotInventory};
 
 #[sqlx::test]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
@@ -31,7 +27,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
         .get_table_writer(iceberg::invalid_session::TABLE_NAME)
         .await?;
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         vec![],
@@ -42,7 +38,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    report_rx.assert_is_empty()?;
+    assert_eq!(written_session_count(&harness).await?, 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
@@ -105,7 +101,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
         },
     ];
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -116,7 +112,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    report_rx.assert_num_msgs(2)?;
+    assert_eq!(written_session_count(&harness).await?, 2);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
@@ -160,7 +156,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
         received_timestamp: Utc::now(),
     }];
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -171,7 +167,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     )
     .await?;
 
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
@@ -212,7 +208,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
         },
     }];
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -223,7 +219,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert_eq!(pending.len(), 1);
@@ -265,7 +261,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
 
     // CBRS reports are dropped before the gateway/routing checks run, so no
     // gateway needs to be seeded and no routing key allow-listed.
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -277,7 +273,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // record not written to file or db
-    report_rx.assert_is_empty()?;
+    assert_eq!(written_session_count(&harness).await?, 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
@@ -320,7 +316,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
 
     // Gateway is NOT seeded into the inventory -> InvalidGatewayKey. The routing
     // key is allow-listed so the gateway check is unambiguously the cause.
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -332,7 +328,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // record written to file, but not db
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
@@ -375,7 +371,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
 
     // Gateway is seeded (known) but the routing key is NOT allow-listed ->
     // InvalidRoutingKey.
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -387,7 +383,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // record written to file, but not db
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(pending.is_empty());
@@ -433,7 +429,7 @@ async fn ban_type_all_sessions_are_valid_with_zero_rewardable_bytes(
     // Ban radio
     ban_hotspot(&pool, key.clone(), BanType::All).await?;
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -444,7 +440,7 @@ async fn ban_type_all_sessions_are_valid_with_zero_rewardable_bytes(
     )
     .await?;
 
-    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness, &mut report_rx).await
+    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness).await
 }
 
 #[sqlx::test]
@@ -485,7 +481,7 @@ async fn ban_type_data_sessions_are_valid_with_zero_rewardable_bytes(
     // Ban radio
     ban_hotspot(&pool, key.clone(), BanType::Data).await?;
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -496,7 +492,7 @@ async fn ban_type_data_sessions_are_valid_with_zero_rewardable_bytes(
     )
     .await?;
 
-    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness, &mut report_rx).await
+    assert_banned_session_written_with_zero_rewardable_bytes(&pool, &harness).await
 }
 
 #[sqlx::test]
@@ -514,7 +510,7 @@ async fn banned_sessions_still_fail_other_validity_checks(pool: PgPool) -> anyho
     ban_hotspot(&pool, key.clone(), BanType::All).await?;
 
     // Gateway is not known, so the session is rejected regardless of the ban
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         vec![make_report(&key)],
@@ -524,9 +520,6 @@ async fn banned_sessions_still_fail_other_validity_checks(pool: PgPool) -> anyho
         &invalid_session_writer,
     )
     .await?;
-
-    let verified = recv_verified_report(&mut report_rx);
-    assert_eq!(verified.status(), ReportStatus::InvalidGatewayKey);
 
     let trino = harness.trino();
     assert!(iceberg::session::get_all(trino).await?.is_empty());
@@ -575,7 +568,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
 
     // A POC ban doesn't block data transfer, so the gateway/routing must be
     // valid for the session to be burned.
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -587,7 +580,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // record written to file and db
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(!pending.is_empty());
@@ -654,7 +647,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     )
     .await?;
 
-    let mut report_rx = run_accumulate_sessions(
+    run_accumulate_sessions(
         &pool,
         &harness,
         reports,
@@ -666,7 +659,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     .await?;
 
     // record written to file and db
-    report_rx.assert_not_empty()?;
+    assert!(written_session_count(&harness).await? > 0);
 
     let pending = pending_burns::get_all(&pool).await?;
     assert!(!pending.is_empty());
@@ -705,8 +698,6 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
     let routing_keys: RoutingKeys = [valid_gateway.clone()].into_iter().collect();
 
     let mut txn = pool.begin().await?;
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
-    let verified_sink = FileSinkClient::new(verified_tx, "test");
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
 
     handle_data_transfer_session_file(
@@ -717,7 +708,6 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sink,
         Utc::now(),
         futures::stream::iter(reports),
     )
@@ -772,8 +762,6 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
     .await?;
 
     let mut txn = pool.begin().await?;
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
-    let verified_sink = FileSinkClient::new(verified_tx, "test");
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
     handle_data_transfer_session_file(
         &mut txn,
@@ -783,7 +771,6 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sink,
         Utc::now(),
         futures::stream::iter(vec![make_report(&gateway)]),
     )
@@ -827,8 +814,6 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
     common::hotspot_inventory::seed(&harness, vec![row]).await?;
 
     let mut txn = pool.begin().await?;
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
-    let verified_sink = FileSinkClient::new(verified_tx, "test");
     let banned_radios = banning::get_banned_radios(&mut txn, report_time).await?;
     handle_data_transfer_session_file(
         &mut txn,
@@ -838,7 +823,6 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sink,
         report_time,
         futures::stream::iter(vec![make_report_at(&gateway, report_time)]),
     )
@@ -895,7 +879,7 @@ async fn run_accumulate_sessions(
     routing_keys: Vec<PublicKeyBinary>,
     iceberg_writer: &iceberg::DataTransferWriter,
     invalid_session_writer: &iceberg::InvalidDataTransferWriter,
-) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+) -> anyhow::Result<()> {
     // Mark each known gateway as present on-chain, comfortably before the
     // reports' received timestamps so the `inserted_at <= query timestamp` check passes.
     let seed_ts = Utc::now() - Duration::hours(1);
@@ -912,9 +896,6 @@ async fn run_accumulate_sessions(
 
     let ts = Utc::now();
 
-    let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
-
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
 
     handle_data_transfer_session_file(
@@ -925,7 +906,6 @@ async fn run_accumulate_sessions(
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sessions,
         ts,
         futures::stream::iter(reports),
     )
@@ -933,35 +913,23 @@ async fn run_accumulate_sessions(
 
     txn.commit().await?;
 
-    Ok(verified_sessions_rx)
+    Ok(())
 }
 
-fn recv_verified_report(
-    report_rx: &mut MessageReceiver<VerifiedDataTransferIngestReportV1>,
-) -> VerifiedDataTransferIngestReportV1 {
-    match report_rx.try_recv() {
-        Ok(Message::Data(_, report)) => report,
-        other => panic!("expected verified report in channel: {other:?}"),
-    }
+/// Every session written to Iceberg, valid or rejected.
+async fn written_session_count(harness: &IcebergTestHarness) -> anyhow::Result<usize> {
+    let trino = harness.trino();
+    let valid = iceberg::session::get_all(trino).await?.len();
+    let invalid = iceberg::invalid_session::get_all(trino).await?.len();
+    Ok(valid + invalid)
 }
 
-/// A banned hotspot's session is written as valid (to the verified report file
-/// and the iceberg sessions table) with its rewardable bytes zeroed, so nothing
-/// is burned or rewarded.
+/// A banned hotspot's session is written as valid (to the iceberg sessions
+/// table) with its rewardable bytes zeroed, so nothing is burned or rewarded.
 async fn assert_banned_session_written_with_zero_rewardable_bytes(
     pool: &PgPool,
     harness: &IcebergTestHarness,
-    report_rx: &mut MessageReceiver<VerifiedDataTransferIngestReportV1>,
 ) -> anyhow::Result<()> {
-    let verified = recv_verified_report(report_rx);
-    assert_eq!(verified.status(), ReportStatus::Valid);
-    let report = verified.report.expect("verified report has a session");
-    assert_eq!(
-        report.report.expect("session has a req").rewardable_bytes,
-        0
-    );
-    report_rx.assert_is_empty()?;
-
     let trino = harness.trino();
     let sessions = iceberg::session::get_all(trino).await?;
     assert_eq!(sessions.len(), 1);

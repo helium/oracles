@@ -11,16 +11,9 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source};
-use file_store_oracles::{
-    mobile_session::DataTransferSessionIngestReport,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileType,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source};
+use file_store_oracles::{mobile_session::DataTransferSessionIngestReport, FileType};
 use futures::Stream;
-use helium_proto::services::{
-    packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
-};
 use solana::burn::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
@@ -31,13 +24,9 @@ use tokio::{
 
 // This enum exists to help with testing the Daemon.
 //
-// Normal setup for this service is for burned sessions to be part of a
-// FileSinkClient that commits itself automatically. The timing for that commit
-// is far beyond what we want in testing. We can allow tests to hook into the
-// runtime of Daemon by providing Events that is has done, and make decisions
-// based off those events. The easiest example of that is waiting for a
-// DaemonEvent::BurnSuccess and manually calling sink.commit() in a test to
-// ensure the correct items were written to s3.
+// Tests hook into the runtime of the Daemon by watching for the events it has
+// done and making decisions based off them, such as waiting for a
+// DaemonEvent::BurnSuccess before checking what was written to Iceberg.
 #[derive(Debug, Clone, Copy)]
 pub enum DaemonEvent {
     BurnSuccess,
@@ -131,7 +120,6 @@ pub async fn handle_data_transfer_session_file(
     banned_radios: BannedRadios,
     resolver: &GatewayResolver,
     routing_keys: &RoutingKeys,
-    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
@@ -149,21 +137,12 @@ pub async fn handle_data_transfer_session_file(
     let AccumulatedSessions {
         iceberg_sessions,
         invalid_iceberg_sessions,
-        proto_sessions,
         db_sessions,
     } = sessions;
 
     pending_burns::save_data_transfer_sessions(txn, &db_sessions)
         .await
         .context("saving to db")?;
-
-    for session in proto_sessions {
-        let status = session.status().as_str_name();
-        verified_data_session_report_sink
-            .write(session, &[("status", status)])
-            .await
-            .context("writing to file-store")?;
-    }
 
     iceberg_writer
         .write_idempotent(write_id, iceberg_sessions)
@@ -190,7 +169,6 @@ pub async fn handle_data_transfer_session_file(
 pub struct IngestReports {
     pool: Pool<Postgres>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-    verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     iceberg_writer: DataTransferWriter,
     invalid_iceberg_writer: InvalidDataTransferWriter,
     gateway_resolver: GatewayResolver,
@@ -201,7 +179,6 @@ impl IngestReports {
     pub fn new(
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        verified_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
         iceberg_writer: DataTransferWriter,
         invalid_iceberg_writer: InvalidDataTransferWriter,
         gateway_resolver: GatewayResolver,
@@ -210,7 +187,6 @@ impl IngestReports {
         Self {
             pool,
             reports,
-            verified_sink,
             iceberg_writer,
             invalid_iceberg_writer,
             gateway_resolver,
@@ -256,14 +232,12 @@ impl IngestReports {
             banned_radios,
             &self.gateway_resolver,
             &self.routing_keys,
-            &self.verified_sink,
             ts,
             reports,
         )
         .await?;
 
         transaction.commit().await?;
-        self.verified_sink.commit().await?;
 
         Ok(())
     }
@@ -293,27 +267,6 @@ impl Cmd {
             None
         };
 
-        let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
-
-        let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
-            &settings.file_upload.root,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Automatic,
-            FileSinkRollTime::Default,
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
-        let (verified_sessions, verified_sessions_server) =
-            VerifiedDataTransferIngestReportV1::file_sink(
-                &settings.file_upload.root,
-                file_upload.clone(),
-                FileSinkCommitStrategy::Manual,
-                FileSinkRollTime::Default,
-                env!("CARGO_PKG_NAME"),
-            )
-            .await?;
-
         let writers = iceberg::get_writers(&settings.iceberg_settings).await?;
         let session_writer = writers.session;
         let invalid_session_writer = writers.invalid_session;
@@ -321,7 +274,6 @@ impl Cmd {
         let multiplier_ticket_writer = writers.multiplier_ticket;
 
         let burner = Burner::new(
-            valid_sessions,
             solana,
             settings.txn_confirmation_retry_attempts,
             settings.txn_confirmation_check_interval,
@@ -350,7 +302,6 @@ impl Cmd {
         let ingest_reports = IngestReports::new(
             pool.clone(),
             reports,
-            verified_sessions,
             session_writer,
             invalid_session_writer,
             gw_resolver,
@@ -371,19 +322,14 @@ impl Cmd {
 
         let multipliers = multiplier::create_managed_task(
             pool,
-            file_upload,
             &settings.multiplier,
             settings.ticket_signers()?,
             ticket_resolver,
-            &settings.file_upload.root,
             multiplier_ticket_writer,
         )
         .await?;
 
         TaskManager::builder()
-            .add_task(file_upload_tasks)
-            .add_task(valid_sessions_server)
-            .add_task(verified_sessions_server)
             .add_task(reports_server)
             .add_task(banning)
             .add_task(multipliers)

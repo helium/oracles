@@ -1,6 +1,5 @@
 use anyhow::Context;
 use chrono::Utc;
-use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
@@ -13,7 +12,6 @@ use mobile_packet_verifier::{
 };
 use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
-use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::common;
 
@@ -50,10 +48,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(pre_burns.len(), 2, "2 burns for 2 payers");
 
     // Setup the Burner
-    let (valid_sessions_tx, mut valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),
@@ -86,9 +81,6 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Ensure successful data transfer sessions were output
-    let written_sessions = get_written_sessions(&mut valid_sessions_rx);
-    assert_eq!(written_sessions.len(), 1, "1 data transfer session written");
-
     let iceburg_burns = burned_session::get_all(harness.trino()).await?;
     assert_eq!(iceburg_burns.len(), 1);
 
@@ -149,10 +141,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     solana_network.add_confirmed(confirmed_signature).await;
     // solana_network.add_confirmed(unconfirmed_signature).await; // uncomment for failure
 
-    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),
@@ -219,10 +208,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     .await?;
 
     let solana_network = TestSolanaClientMap::default();
-    let (valid_sessions_tx, mut valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),
@@ -231,13 +217,6 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
     burner.confirm_pending_txns(&pool).await?;
 
     // In flight session is written out
-    let written_sessions = get_written_sessions(&mut valid_sessions_rx);
-    assert_eq!(
-        written_sessions.len(),
-        2,
-        "2 data transfer sessions written"
-    );
-
     let iceberg_burns = burned_session::get_all(harness.trino()).await?;
     assert_eq!(iceberg_burns.len(), 2);
 
@@ -317,10 +296,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     let solana_network = TestSolanaClientMap::default();
     solana_network.add_confirmed(Signature::new_unique()).await;
 
-    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),
@@ -391,10 +367,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let solana_network = TestSolanaClientMap::default();
     solana_network.insert(&payer, 10_000).await;
 
-    let (valid_sessions_tx, mut valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),
@@ -406,12 +379,6 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         .context("burning with pending txn")?;
 
     // No sessions written because of pending txn
-    match valid_sessions_rx.try_recv() {
-        Ok(_) => panic!("nothing should be written"),
-        Err(TryRecvError::Disconnected) => panic!("file sink client was incorrectly dropped"),
-        Err(TryRecvError::Empty) => (),
-    }
-
     let iceberg_burns = burned_session::get_all(harness.trino()).await?;
     assert!(iceberg_burns.is_empty());
 
@@ -421,19 +388,13 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     burner.burn(&pool).await.context("burning after ")?;
 
     // Written sessions should be all combined values
-    let written_sessions = get_written_sessions(&mut valid_sessions_rx);
-    assert_eq!(written_sessions.len(), 2, "2 data transfer session written");
-    let total_rewardable = written_sessions
+    let iceberg_burns = burned_session::get_all(harness.trino()).await?;
+    assert_eq!(iceberg_burns.len(), 2, "2 data transfer session written");
+    let total_rewardable = iceberg_burns
         .iter()
-        .map(|x| match x {
-            file_store::file_sink::Message::Data(_confirm, session) => session.rewardable_bytes,
-            _ => panic!("wrong type of Message"),
-        })
+        .map(|session| session.rewardable_bytes)
         .sum::<u64>();
     assert_eq!(total_rewardable, 12_000);
-
-    let iceberg_burns = burned_session::get_all(harness.trino()).await?;
-    assert_eq!(iceberg_burns.len(), 2);
 
     Ok(())
 }
@@ -481,12 +442,4 @@ async fn save_data_transfer_sessions(
     txn.commit().await?;
 
     Ok(())
-}
-
-fn get_written_sessions<T>(rx: &mut tokio::sync::mpsc::Receiver<T>) -> Vec<T> {
-    let mut written_sessions = vec![];
-    while let Ok(session) = rx.try_recv() {
-        written_sessions.push(session);
-    }
-    written_sessions
 }
