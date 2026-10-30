@@ -3,6 +3,7 @@ use std::time::Duration;
 use helium_iceberg::IcebergTestHarness;
 use mobile_packet_verifier::{gateway::GatewayResolver, iceberg};
 
+pub mod bans;
 pub mod hotspot_inventory;
 
 pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
@@ -12,6 +13,7 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
         iceberg::burned_session::table_definition()?,
         iceberg::multiplier_ticket_history::table_definition()?,
         hotspot_inventory::table_definition()?,
+        helium_iceberg_oracles::hotspots::ban::table_definition()?,
     ])
     .await?;
 

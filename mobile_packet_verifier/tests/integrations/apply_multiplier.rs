@@ -25,7 +25,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
 use mobile_packet_verifier::iceberg;
 use mobile_packet_verifier::{
-    banning, bytes_to_dc,
+    banning::BannedRadios,
+    bytes_to_dc,
     daemon::handle_data_transfer_session_file,
     multiplier::db::{self, GrantedMultiplier},
     pending_burns,
@@ -126,7 +127,7 @@ async fn accumulate(
     let routing_keys: RoutingKeys = gateways.iter().cloned().collect();
 
     let mut txn = pool.begin().await?;
-    let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
+    let banned_radios = BannedRadios::default();
 
     handle_data_transfer_session_file(
         &mut txn,

@@ -5,7 +5,7 @@ use helium_iceberg_oracles::rewards::{
 };
 use serde::Serialize;
 
-pub mod ban;
+pub use helium_iceberg_oracles::hotspots::ban;
 pub mod burned_session;
 pub mod heartbeat;
 pub mod invalid_ban;
@@ -26,7 +26,7 @@ pub use speedtest::IcebergSpeedtest;
 pub use speedtest_avg::IcebergSpeedtestAvg;
 pub use valid_invalid::ValidInvalidWriter;
 
-pub const NAMESPACE: &str = "hotspots";
+pub use helium_iceberg_oracles::hotspots::NAMESPACE;
 
 /// Column appended to every `invalid_*` table, recording why a record was
 /// rejected (a validity/status enum's string name).

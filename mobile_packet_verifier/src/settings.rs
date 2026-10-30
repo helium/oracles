@@ -6,7 +6,7 @@ use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::Path, str::FromStr, time::Duration};
 
-use crate::{banning, multiplier, routing::RoutingKeys};
+use crate::{multiplier, routing::RoutingKeys};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -58,8 +58,6 @@ pub struct Settings {
     )]
     pub txn_confirmation_check_interval: Duration,
 
-    /// Settings for Banning
-    pub banning: banning::BanSettings,
     /// HIP-150 data transfer multiplier tickets.
     pub multiplier: multiplier::MultiplierSettings,
 
