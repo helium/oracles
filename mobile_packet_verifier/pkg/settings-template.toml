@@ -30,8 +30,9 @@ routing_keys = ""
 # Default: 1 hour
 # gateway_refresh_interval = "1 hour"
 
-# Trino connection used to resolve gateway identities. `is_gateway_known`
-# queries network.chain.mobile_hotspot_inventory over this connection.
+# Trino connection used to resolve gateway identities and hotspot bans.
+# `is_gateway_known` queries network.chain.mobile_hotspot_inventory and the ban
+# lookup queries mobile.hotspots.bans over this connection.
 [trino]
 # Trino coordinator host. Required.
 host = "localhost"
@@ -40,8 +41,8 @@ port = 8080
 # Trino user. Required.
 user = "mobile-packet-verifier"
 
-# Catalog/schema are optional; the gateway query is fully qualified
-# (network.chain.mobile_hotspot_inventory), so these are usually left unset.
+# Catalog/schema are optional; both queries are fully qualified, so these are
+# usually left unset.
 # catalog = "network"
 # schema = "chain"
 
@@ -124,31 +125,6 @@ region = "us-west-2"
 # Endpoint for metrics. Default below
 #
 # endpoint = "127.0.0.1:19000"
-
-# Ban Settings
-#
-[banning]
-# How often do we remove expired bans?
-# Default: 24 hours
-#
-# purge_interval = "24 hour"
-
-# How far back do we read ban files?
-# Default: UNIX_EPOCH
-#
-# start_after = "2024-12-15 01:00:00Z"
-
-# Verifier bucket details for ban data
-#
-[banning.input_bucket]
-
-# Name of bucket to access ingest data. Required
-#
-bucket = "helium-mainnet-mobile-verified"
-
-# Region for bucket. Defaults to below
-#
-region = "us-west-2"
 
 # HIP-150 data transfer multiplier tickets
 #

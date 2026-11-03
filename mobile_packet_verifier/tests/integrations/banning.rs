@@ -4,11 +4,13 @@ use file_store_oracles::mobile_ban::{
     VerifiedBanIngestReportStatus, VerifiedBanReport,
 };
 use helium_crypto::PublicKeyBinary;
-use mobile_packet_verifier::banning::{get_banned_radios, handle_verified_ban_report};
-use sqlx::PgPool;
 
-#[sqlx::test]
-async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
+use crate::common;
+
+#[tokio::test]
+async fn extremities_of_banning() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     const EPOCH_LENGTH: i64 = 60 * 60 * 24;
     let epoch = chrono::Utc::now().timestamp() / EPOCH_LENGTH;
 
@@ -74,12 +76,9 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
         mk_ban_report(start + hours(2), &expired_after,     Some(end + hours(2))),
     ];
 
-    let mut conn = pool.acquire().await?;
-    for report in reports {
-        handle_verified_ban_report(&mut conn, report).await?;
-    }
+    common::bans::record(&harness, reports).await?;
 
-    let banned = get_banned_radios(&mut conn, end).await?;
+    let banned = bans.banned_radios(end).await?;
 
     assert!(banned.contains(&banned_before), "banned before");
     assert!(banned.contains(&banned_on_start), "banned on start");
@@ -96,9 +95,10 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
-async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn ban_unban() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     let key = PublicKeyBinary::from(vec![1]);
 
     let ban_report = VerifiedBanReport {
@@ -140,21 +140,22 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
     };
 
     // Ban radio
-    handle_verified_ban_report(&mut conn, ban_report).await?;
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    common::bans::record(&harness, [ban_report]).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(banned.contains(&key));
 
     // Unban radio
-    handle_verified_ban_report(&mut conn, unban_report).await?;
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    common::bans::record(&harness, [unban_report]).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(!banned.contains(&key));
 
     Ok(())
 }
 
-#[sqlx::test]
-async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn past_ban_future_unban() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     let key = PublicKeyBinary::from(vec![1]);
 
     let yesterday = Utc::now() - Duration::hours(12);
@@ -200,23 +201,24 @@ async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
     };
 
     // Ban the radio yesterday, unban today.
-    handle_verified_ban_report(&mut conn, ban_report).await?;
-    handle_verified_ban_report(&mut conn, unban_report).await?;
+    common::bans::record(&harness, [ban_report]).await?;
+    common::bans::record(&harness, [unban_report]).await?;
 
     // Yesterday, radio was banned for today.
-    let yesterday_banned = get_banned_radios(&mut conn, today).await?;
+    let yesterday_banned = bans.banned_radios(today).await?;
     assert!(yesterday_banned.contains(&key));
 
     // Now, not banned
-    let today_banned = get_banned_radios(&mut conn, now).await?;
+    let today_banned = bans.banned_radios(now).await?;
     assert!(!today_banned.contains(&key));
 
     Ok(())
 }
 
-#[sqlx::test]
-async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn past_poc_ban_future_data_ban() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     let key = PublicKeyBinary::from(vec![1]);
 
     let yesterday = Utc::now() - Duration::hours(12);
@@ -265,23 +267,24 @@ async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
     };
 
     // Ban the radio yesterday, unban today.
-    handle_verified_ban_report(&mut conn, data_ban_report).await?;
-    handle_verified_ban_report(&mut conn, poc_ban_report).await?;
+    common::bans::record(&harness, [data_ban_report]).await?;
+    common::bans::record(&harness, [poc_ban_report]).await?;
 
     // Yesterday, radio was banned for today.
-    let yesterday_banned = get_banned_radios(&mut conn, today).await?;
+    let yesterday_banned = bans.banned_radios(today).await?;
     assert!(yesterday_banned.contains(&key));
 
     // Now, not banned
-    let today_banned = get_banned_radios(&mut conn, now).await?;
+    let today_banned = bans.banned_radios(now).await?;
     assert!(!today_banned.contains(&key));
 
     Ok(())
 }
 
-#[sqlx::test]
-async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn new_ban_replaces_old_ban() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     let key = PublicKeyBinary::from(vec![1]);
 
     let mk_ban_report = |ban_type: BanType| VerifiedBanReport {
@@ -305,20 +308,21 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
         },
     };
 
-    handle_verified_ban_report(&mut conn, mk_ban_report(BanType::Data)).await?;
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    common::bans::record(&harness, [mk_ban_report(BanType::Data)]).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(banned.contains(&key));
 
-    handle_verified_ban_report(&mut conn, mk_ban_report(BanType::Poc)).await?;
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    common::bans::record(&harness, [mk_ban_report(BanType::Poc)]).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(!banned.contains(&key));
 
     Ok(())
 }
 
-#[sqlx::test]
-async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn expired_bans_are_not_used() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
     let expired_hotspot_pubkey = PublicKeyBinary::from(vec![1]);
     let banned_hotspot_pubkey = PublicKeyBinary::from(vec![2]);
 
@@ -364,53 +368,20 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
         },
     };
 
-    handle_verified_ban_report(&mut conn, expired_ban_report).await?;
-    handle_verified_ban_report(&mut conn, ban_report).await?;
+    common::bans::record(&harness, [expired_ban_report]).await?;
+    common::bans::record(&harness, [ban_report]).await?;
 
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(!banned.contains(&expired_hotspot_pubkey));
     assert!(banned.contains(&banned_hotspot_pubkey));
 
     Ok(())
 }
 
-#[sqlx::test]
-async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
-    let hotspot_pubkey = PublicKeyBinary::from(vec![1]);
-
-    let ban_report = VerifiedBanReport {
-        verified_timestamp: Utc::now(),
-        status: VerifiedBanIngestReportStatus::InvalidBanKey,
-        report: BanReport {
-            received_timestamp: Utc::now(),
-            report: BanRequest {
-                hotspot_pubkey: hotspot_pubkey.clone(),
-                timestamp: Utc::now(),
-                ban_pubkey: PublicKeyBinary::from(vec![1]),
-                signature: vec![],
-                ban_action: BanAction::Ban(BanDetails {
-                    hotspot_serial: "test-serial".to_string(),
-                    message: "test-ban".to_string(),
-                    reason: BanReason::LocationGaming,
-                    ban_type: BanType::All,
-                    expiration_timestamp: None,
-                }),
-            },
-        },
-    };
-
-    // Unverified Ban radio
-    handle_verified_ban_report(&mut conn, ban_report).await?;
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
-    assert!(!banned.contains(&hotspot_pubkey));
-
-    Ok(())
-}
-
-#[sqlx::test]
-async fn bans_outside_of_rewardable_period_are_not_used(pool: PgPool) -> anyhow::Result<()> {
-    let mut conn = pool.acquire().await?;
+#[tokio::test]
+async fn bans_outside_of_rewardable_period_are_not_used() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
 
     let current_hotspot_pubkey = PublicKeyBinary::from(vec![1]);
     let future_hotspot_pubkey = PublicKeyBinary::from(vec![2]);
@@ -460,12 +431,69 @@ async fn bans_outside_of_rewardable_period_are_not_used(pool: PgPool) -> anyhow:
         },
     };
 
-    handle_verified_ban_report(&mut conn, current_ban_report).await?;
-    handle_verified_ban_report(&mut conn, future_ban_report).await?;
+    common::bans::record(&harness, [current_ban_report]).await?;
+    common::bans::record(&harness, [future_ban_report]).await?;
 
-    let banned = get_banned_radios(&mut conn, Utc::now()).await?;
+    let banned = bans.banned_radios(Utc::now()).await?;
     assert!(banned.contains(&current_hotspot_pubkey));
     assert!(!banned.contains(&future_hotspot_pubkey));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn ban_after_unban_applies() -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let bans = common::bans::resolver(&harness).await?;
+    let key = PublicKeyBinary::from(vec![1]);
+
+    let mk_report = |received_timestamp: DateTime<Utc>, ban_action: BanAction| VerifiedBanReport {
+        verified_timestamp: received_timestamp,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp,
+            report: BanRequest {
+                hotspot_pubkey: key.clone(),
+                timestamp: received_timestamp,
+                ban_pubkey: vec![0].into(),
+                signature: vec![],
+                ban_action,
+            },
+        },
+    };
+    let ban = || {
+        BanAction::Ban(BanDetails {
+            hotspot_serial: "test-serial".to_string(),
+            message: "test-message".to_string(),
+            reason: BanReason::LocationGaming,
+            ban_type: BanType::All,
+            expiration_timestamp: None,
+        })
+    };
+    let unban = BanAction::Unban(UnbanDetails {
+        hotspot_serial: "test-serial".to_string(),
+        message: "test-message".to_string(),
+    });
+
+    let now = Utc::now();
+    let first_ban = now - Duration::hours(3);
+    let unbanned = now - Duration::hours(2);
+    let second_ban = now - Duration::hours(1);
+
+    common::bans::record(
+        &harness,
+        [
+            mk_report(first_ban, ban()),
+            mk_report(unbanned, unban),
+            mk_report(second_ban, ban()),
+        ],
+    )
+    .await?;
+
+    // Banned by the first ban, lifted by the unban, banned again by the second.
+    assert!(bans.banned_radios(unbanned).await?.contains(&key));
+    assert!(!bans.banned_radios(second_ban).await?.contains(&key));
+    assert!(bans.banned_radios(now).await?.contains(&key));
 
     Ok(())
 }
