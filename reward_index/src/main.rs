@@ -1,8 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::file_source;
-use file_store_oracles::FileType;
-use reward_index::{settings::Settings, telemetry, Indexer};
+use helium_iceberg_oracles::rewards::{
+    IcebergGatewayReward, IcebergServiceProviderReward, IcebergUnallocatedReward,
+};
+use reward_index::{iceberg, settings::Settings, telemetry};
+use sqlx::PgPool;
 use std::path::PathBuf;
 use task_manager::TaskManager;
 
@@ -57,35 +59,50 @@ impl Server {
 
         telemetry::initialize(&pool).await?;
 
-        let file_store_client = settings.file_store.connect().await;
-        let (receiver, server) = file_source::continuous_source()
-            .state(pool.clone())
-            .file_store(file_store_client.clone(), settings.input_bucket.clone())
-            .prefix(FileType::RewardManifest.to_string())
-            .lookback_start_after(settings.start_after)
-            .poll_duration(settings.interval)
-            .offset(settings.interval * 2)
-            .create()
-            .await?;
+        run(settings, pool).await
+    }
+}
 
-        // Reward server
-        let indexer = Indexer::from_settings(
-            settings,
-            pool,
-            file_store_client,
-            settings.input_bucket.clone(),
-            receiver,
+/// Index rewards from the `rewards` Iceberg tables.
+async fn run(settings: &Settings, pool: PgPool) -> Result<()> {
+    let iceberg_settings = &settings.iceberg;
+    let catalog = iceberg_settings.catalog.connect().await?;
+    let unallocated_reward_key = &settings.unallocated_reward_entity_key;
+
+    let (data_transfer_server, data_transfer_indexer) = iceberg::create::<IcebergGatewayReward>(
+        catalog.clone(),
+        iceberg_settings,
+        pool.clone(),
+        unallocated_reward_key.clone(),
+    )
+    .await?;
+    let (service_provider_server, service_provider_indexer) =
+        iceberg::create::<IcebergServiceProviderReward>(
+            catalog.clone(),
+            iceberg_settings,
+            pool.clone(),
+            unallocated_reward_key.clone(),
         )
         .await?;
+    let (unallocated_server, unallocated_indexer) = iceberg::create::<IcebergUnallocatedReward>(
+        catalog,
+        iceberg_settings,
+        pool,
+        unallocated_reward_key.clone(),
+    )
+    .await?;
 
-        TaskManager::builder()
-            .add_task(server)
-            .add_task(indexer)
-            .build()
-            .start()
-            .await?;
-        Ok(())
-    }
+    TaskManager::builder()
+        .add_task(data_transfer_server)
+        .add_task(data_transfer_indexer)
+        .add_task(service_provider_server)
+        .add_task(service_provider_indexer)
+        .add_task(unallocated_server)
+        .add_task(unallocated_indexer)
+        .build()
+        .start()
+        .await?;
+    Ok(())
 }
 
 #[tokio::main]

@@ -1,20 +1,19 @@
 # Reward Index
 
-## IOT
+Maintains a running total of rewards per entity for the Helium Mobile Network.
 
-### S3 Inputs
+## Iceberg Inputs
 
-| File Type | Pattern | |
+Each table below is streamed snapshot-by-snapshot; mobile-verifier's rewarder
+appends one snapshot per table per epoch. Each table's epoch is recorded in the
+`processed_writes` table in the same transaction as its rewards, so a snapshot
+re-streamed after a crash is not counted twice.
+
+| Table | Reward Type | Key |
 | :--- | :-- | :-- |
-| RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
-| GatewayRewardShare | gateway_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L171) |
+| `rewards.data_transfer` | `mobile_gateway` | `hotspot_key` |
+| `rewards.service_provider` | `mobile_service_provider` | `rewardable_entity_key` |
+| `rewards.unallocated` | `mobile_unallocated` | `unallocated_reward_entity_key` setting |
 
-## Mobile
-
-### S3 Inputs
-
-| File Type | Pattern | |
-| :--- | :-- | :-- |
-| RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
-| RadioRewardShare | radio_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L118) |
-
+Epochs starting before `iceberg.start_epoch_period` are skipped; they were
+indexed from reward manifest files before reward-index read Iceberg.
