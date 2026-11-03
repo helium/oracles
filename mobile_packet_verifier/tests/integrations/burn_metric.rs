@@ -314,7 +314,7 @@ async fn run_accumulate_sessions(
         &routing_keys,
         &verified_sessions,
         ts,
-        futures::stream::iter(reports),
+        futures::stream::iter(reports.into_iter().map(Into::into)),
     )
     .await?;
 
