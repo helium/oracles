@@ -1,15 +1,12 @@
 use std::str::FromStr;
 
 use chrono::{Duration, Utc};
-use file_store::file_sink::{FileSinkClient, MessageReceiver};
 use file_store_oracles::mobile_session::{
     DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
-use helium_proto::services::poc_mobile::{
-    CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
-};
+use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
 use mobile_packet_verifier::{
     banning, daemon::handle_data_transfer_session_file, dc_to_bytes, iceberg, routing::RoutingKeys,
 };
@@ -286,7 +283,7 @@ async fn run_accumulate_sessions(
     routing_keys: Vec<PublicKeyBinary>,
     iceberg_writer: &iceberg::DataTransferWriter,
     invalid_session_writer: &iceberg::InvalidDataTransferWriter,
-) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
+) -> anyhow::Result<()> {
     let seed_ts = Utc::now() - Duration::hours(1);
     let rows = known_gateways
         .iter()
@@ -300,9 +297,6 @@ async fn run_accumulate_sessions(
 
     let ts = Utc::now();
 
-    let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(999_999);
-    let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
-
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
     handle_data_transfer_session_file(
         &mut txn,
@@ -312,7 +306,6 @@ async fn run_accumulate_sessions(
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sessions,
         ts,
         futures::stream::iter(reports),
     )
@@ -320,7 +313,7 @@ async fn run_accumulate_sessions(
 
     txn.commit().await?;
 
-    Ok(verified_sessions_rx)
+    Ok(())
 }
 
 /// `funded` gets enough to burn anything; `underfunded` gets the balance given,
@@ -331,8 +324,6 @@ async fn run_burner(
     underfunded: &[(&PublicKeyBinary, u64)],
     iceberg_writer: iceberg::BurnedDataTransferWriter,
 ) -> anyhow::Result<()> {
-    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
     // `burn` visits every payer with pending rows, and asks each for a balance.
     for payer_key in funded {
@@ -342,7 +333,6 @@ async fn run_burner(
         solana_network.insert(payer_key, *balance).await;
     }
     mobile_packet_verifier::burner::Burner::new(
-        valid_sessions,
         solana_network.clone(),
         0,
         std::time::Duration::default(),

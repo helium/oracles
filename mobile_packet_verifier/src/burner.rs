@@ -1,15 +1,10 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
-use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
 use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::PgPool;
 use tracing::Instrument;
-
-mod proto {
-    pub use helium_proto::services::packet_verifier::ValidDataTransferSession;
-}
 
 use crate::{
     iceberg::{burned_session::IcebergBurnedDataTransferSession, BurnedDataTransferWriter},
@@ -17,7 +12,6 @@ use crate::{
 };
 
 pub struct Burner<S> {
-    valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
@@ -26,14 +20,12 @@ pub struct Burner<S> {
 
 impl<S> Burner<S> {
     pub fn new(
-        valid_sessions: FileSinkClient<proto::ValidDataTransferSession>,
         solana: S,
         failed_retry_attempts: usize,
         failed_check_interval: std::time::Duration,
         iceberg_writer: BurnedDataTransferWriter,
     ) -> Self {
         Self {
-            valid_sessions,
             solana,
             failed_retry_attempts,
             failed_check_interval,
@@ -76,12 +68,7 @@ where
                 let sessions =
                     pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
 
-                write_burned_data_transfer_sessions(
-                    sessions,
-                    &self.valid_sessions,
-                    &self.iceberg_writer,
-                )
-                .await?;
+                write_burned_data_transfer_sessions(sessions, &self.iceberg_writer).await?;
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
@@ -131,7 +118,6 @@ where
                         payer,
                         total_dcs,
                         sessions,
-                        &self.valid_sessions,
                         &self.iceberg_writer,
                     )
                     .await?;
@@ -186,7 +172,6 @@ where
                         payer,
                         total_dcs,
                         sessions,
-                        &self.valid_sessions,
                         &self.iceberg_writer,
                     )
                     .await;
@@ -227,7 +212,6 @@ async fn handle_transaction_success(
     payer: PublicKeyBinary,
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
-    valid_sessions: &FileSinkClient<proto::ValidDataTransferSession>,
     iceberg_writer: &BurnedDataTransferWriter,
 ) -> Result<(), anyhow::Error> {
     // We successfully managed to burn data credits:
@@ -238,7 +222,7 @@ async fn handle_transaction_success(
     )
     .increment(total_dcs);
 
-    // Delete from the data transfer session and write out to S3
+    // Delete from the data transfer session and write out to Iceberg
     pending_burns::delete_for_payer(pool, &payer).await?;
     // The payer has no rows left, so 0 is exact. Setting rather than
     // subtracting the burned amount because that only lands on 0 while the two
@@ -246,14 +230,13 @@ async fn handle_transaction_success(
     pending_burns::set_metric(&payer, 0);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
-    write_burned_data_transfer_sessions(sessions, valid_sessions, iceberg_writer).await?;
+    write_burned_data_transfer_sessions(sessions, iceberg_writer).await?;
 
     Ok(())
 }
 
 async fn write_burned_data_transfer_sessions(
     sessions: Vec<pending_burns::DataTransferSession>,
-    file_sink: &FileSinkClient<proto::ValidDataTransferSession>,
     iceberg_sink: &BurnedDataTransferWriter,
 ) -> anyhow::Result<()> {
     // Fallible now: a session whose multiplier cannot be applied has no price,
@@ -285,16 +268,13 @@ async fn write_burned_data_transfer_sessions(
         .increment(session.num_dcs);
     }
 
-    file_sink.write_all(sessions.clone()).await?;
-
     let sessions = sessions
         .into_iter()
         .map(IcebergBurnedDataTransferSession::from)
         .collect::<Vec<_>>();
 
     // NOTE: Burned Sessions are not tied to a file like regular data
-    // transfer sessions. Do we want to use transaction semantics here? The
-    // associated file-store sink above is in Automatic Commit mode.
+    // transfer sessions. Do we want to use transaction semantics here?
     iceberg_sink.write(sessions).await?;
 
     Ok(())

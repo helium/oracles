@@ -1,9 +1,8 @@
 //! Reads ticket files from s3, decides whether each ticket is valid, and
 //! records the result.
 //!
-//! Every ticket produces a verified report, accepted or rejected, so refusals
-//! are on the record too. Every ticket also gets a row in the Iceberg history
-//! table, tagged with the verdict.
+//! Every ticket, accepted or rejected, gets a row in the Iceberg history table
+//! tagged with the verdict, so refusals are on the record too.
 //!
 //! Accepted tickets also go to Postgres, via [`super::db`], which is what the
 //! burn joins against. Rejected ones do not, because a refusal grants nothing.
@@ -15,8 +14,7 @@ use std::{ops::ControlFlow, time::Duration};
 use chrono::Utc;
 use file_store::file_info_poller::FileInfoStream;
 use file_store_oracles::mobile::data_transfer_multiplier::{
-    proto::VerifiedDataTransferMultiplierTicketReportV1, ticket_status_string,
-    DataTransferMultiplier, DataTransferMultiplierTicketReport,
+    ticket_status_string, DataTransferMultiplier, DataTransferMultiplierTicketReport,
     VerifiedDataTransferMultiplierTicketReport,
     VerifiedDataTransferMultiplierTicketStatus as Status, MAX_CLOCK_DRIFT,
 };
@@ -32,7 +30,7 @@ use crate::{
 
 use super::{
     db::{self, GrantedMultiplier},
-    TicketSigners, VerifiedTicketSink,
+    TicketSigners,
 };
 
 pub struct TicketIngestor {
@@ -41,7 +39,6 @@ pub struct TicketIngestor {
     /// without its grants.
     pool: PgPool,
     report_rx: Receiver<FileInfoStream<DataTransferMultiplierTicketReport>>,
-    verified_sink: VerifiedTicketSink,
     signers: TicketSigners,
     resolver: GatewayResolver,
     ticket_max_age: Duration,
@@ -71,7 +68,6 @@ impl TicketIngestor {
     pub fn new(
         pool: PgPool,
         report_rx: Receiver<FileInfoStream<DataTransferMultiplierTicketReport>>,
-        verified_sink: VerifiedTicketSink,
         signers: TicketSigners,
         resolver: GatewayResolver,
         ticket_max_age: Duration,
@@ -80,7 +76,6 @@ impl TicketIngestor {
         Self {
             pool,
             report_rx,
-            verified_sink,
             signers,
             resolver,
             ticket_max_age,
@@ -113,12 +108,6 @@ impl TicketIngestor {
             if let Some(grant) = granted_multiplier(&verified) {
                 granted.push(grant);
             }
-
-            let status = ticket_status_string(verified.status);
-            let proto = VerifiedDataTransferMultiplierTicketReportV1::from(verified);
-            self.verified_sink
-                .write(proto, &[("status", status)])
-                .await?;
         }
 
         db::save(&mut txn, &granted).await?;
@@ -127,7 +116,6 @@ impl TicketIngestor {
         self.history_writer.write_idempotent(&file, history).await?;
 
         txn.commit().await?;
-        self.verified_sink.commit().await?;
 
         Ok(())
     }

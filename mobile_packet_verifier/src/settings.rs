@@ -26,9 +26,6 @@ pub struct Settings {
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     pub ingest_bucket: file_store::BucketSettings,
-    /// Buckets every verified report is written to, and the directory they
-    /// stage under.
-    pub file_upload: file_store::file_upload::Settings,
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::burn::Settings>,

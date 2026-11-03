@@ -17,7 +17,6 @@
 //! converted once.
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_sink::FileSinkClient;
 use file_store_oracles::mobile::data_transfer_multiplier::DataTransferMultiplier;
 use file_store_oracles::mobile_session::{
     DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
@@ -127,8 +126,6 @@ async fn accumulate(
     let routing_keys: RoutingKeys = gateways.iter().cloned().collect();
 
     let mut txn = pool.begin().await?;
-    let (verified_tx, _verified_rx) = tokio::sync::mpsc::channel(10);
-    let verified_sink = FileSinkClient::new(verified_tx, "test");
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
 
     handle_data_transfer_session_file(
@@ -139,7 +136,6 @@ async fn accumulate(
         banned_radios,
         &resolver,
         &routing_keys,
-        &verified_sink,
         file_ts,
         futures::stream::iter(reports),
     )
@@ -573,16 +569,9 @@ async fn each_side_of_the_boundary_carries_its_own_bytes(pool: PgPool) -> anyhow
 
     let solana = solana::burn::TestSolanaClientMap::default();
     solana.insert(&payer(), 1_000_000).await;
-    let (tx, _rx) = tokio::sync::mpsc::channel(10);
-    Burner::new(
-        FileSinkClient::new(tx, "test"),
-        solana,
-        0,
-        std::time::Duration::default(),
-        burn_writer,
-    )
-    .burn(&pool)
-    .await?;
+    Burner::new(solana, 0, std::time::Duration::default(), burn_writer)
+        .burn(&pool)
+        .await?;
 
     let mut burned = burned_session::get_all(harness.trino()).await?;
     burned.sort_by_key(|b| b.rewardable_bytes);
@@ -629,14 +618,7 @@ async fn the_burned_record_carries_the_multiplier(pool: PgPool) -> anyhow::Resul
     let solana = solana::burn::TestSolanaClientMap::default();
     solana.insert(&payer(), 1_000_000).await;
 
-    let (tx, _rx) = tokio::sync::mpsc::channel(10);
-    let burner = Burner::new(
-        FileSinkClient::new(tx, "test"),
-        solana,
-        0,
-        std::time::Duration::default(),
-        burn_writer,
-    );
+    let burner = Burner::new(solana, 0, std::time::Duration::default(), burn_writer);
     burner.burn(&pool).await?;
 
     let burned = burned_session::get_all(harness.trino()).await?;
@@ -705,16 +687,9 @@ async fn a_frozen_multiplier_survives_the_pending_round_trip(pool: PgPool) -> an
     solana.insert(&payer(), 1_000_000).await;
     solana.add_confirmed(signature).await;
 
-    let (tx, _rx) = tokio::sync::mpsc::channel(10);
-    Burner::new(
-        FileSinkClient::new(tx, "test"),
-        solana,
-        0,
-        std::time::Duration::default(),
-        burn_writer,
-    )
-    .confirm_pending_txns(&pool)
-    .await?;
+    Burner::new(solana, 0, std::time::Duration::default(), burn_writer)
+        .confirm_pending_txns(&pool)
+        .await?;
 
     let burned = burned_session::get_all(harness.trino()).await?;
     assert_eq!(burned.len(), 1);

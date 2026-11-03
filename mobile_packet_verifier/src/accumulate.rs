@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use file_store_oracles::mobile_session::{
-    DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
-};
+use file_store_oracles::mobile_session::DataTransferSessionIngestReport;
 use futures::{Stream, StreamExt};
 use helium_proto::services::poc_mobile::{
     verified_data_transfer_ingest_report_v1::ReportStatus, DataTransferRadioAccessTechnology,
-    VerifiedDataTransferIngestReportV1,
 };
 use sqlx::{Postgres, Transaction};
 
@@ -26,7 +23,6 @@ use crate::{
 pub struct AccumulatedSessions {
     pub iceberg_sessions: Vec<IcebergDataTransferSession>,
     pub invalid_iceberg_sessions: Vec<IcebergInvalidDataTransferSession>,
-    pub proto_sessions: Vec<VerifiedDataTransferIngestReportV1>,
     pub db_sessions: Vec<DataTransferSession>,
 }
 
@@ -64,10 +60,6 @@ pub async fn accumulate_sessions(
             report.report.rewardable_bytes = 0;
         }
 
-        result
-            .proto_sessions
-            .push(report.to_verified_proto(report_validity));
-
         // go to iceberg only if it's valid, even if it's zero rewardable bytes;
         // rejected reports go to the sibling invalid table tagged with the status
         if report_validity == ReportStatus::Valid {
@@ -98,8 +90,6 @@ pub async fn accumulate_sessions(
 }
 
 trait DataTransferIngestReportExt {
-    fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1;
-
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession;
 
     fn to_iceberg_session(&self) -> IcebergDataTransferSession;
@@ -122,15 +112,6 @@ trait DataTransferIngestReportExt {
 }
 
 impl DataTransferIngestReportExt for DataTransferSessionIngestReport {
-    fn to_verified_proto(&self, status: ReportStatus) -> VerifiedDataTransferIngestReportV1 {
-        VerifiedDataTransferIngestReport {
-            report: self.clone(),
-            status,
-            timestamp: Utc::now(),
-        }
-        .into()
-    }
-
     fn to_data_transfer_session(&self, file_ts: DateTime<Utc>) -> DataTransferSession {
         DataTransferSession::from_req(&self.report, file_ts)
     }
