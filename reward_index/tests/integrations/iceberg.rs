@@ -4,6 +4,7 @@ use helium_iceberg_oracles::rewards::{
     self, IcebergGatewayReward, IcebergServiceProviderReward, IcebergUnallocatedReward,
 };
 use reward_index::{
+    db,
     iceberg::{self, handle_rewards},
     reward::RewardType,
     settings::IcebergSettings,
@@ -57,6 +58,7 @@ async fn handle<T: iceberg::IcebergReward>(
     rows: Vec<T>,
     start_epoch_period: DateTime<Utc>,
 ) -> anyhow::Result<Option<DateTime<Utc>>> {
+    db::create_processed_writes_table(pool).await?;
     let mut txn = pool.begin().await?;
     let indexed_through =
         handle_rewards(&mut txn, rows, UNALLOCATED_KEY, start_epoch_period).await?;
@@ -162,6 +164,7 @@ async fn zero_rewards_are_not_indexed(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn streams_snapshots_into_the_index(pool: PgPool) -> anyhow::Result<()> {
+    db::create_processed_writes_table(&pool).await?;
     let harness =
         IcebergTestHarness::new_with_tables([rewards::data_transfer::table_definition()?]).await?;
     let writer = harness

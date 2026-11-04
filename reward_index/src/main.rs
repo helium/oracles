@@ -3,7 +3,7 @@ use clap::Parser;
 use helium_iceberg_oracles::rewards::{
     IcebergGatewayReward, IcebergServiceProviderReward, IcebergUnallocatedReward,
 };
-use reward_index::{iceberg, settings::Settings, telemetry};
+use reward_index::{db, iceberg, settings::Settings, telemetry};
 use sqlx::PgPool;
 use std::path::PathBuf;
 use task_manager::TaskManager;
@@ -55,7 +55,7 @@ impl Server {
         // Create database pool
         let app_name = format!("mobile_{}", env!("CARGO_PKG_NAME"));
         let pool = settings.database.connect(&app_name).await?;
-        sqlx::migrate!().run(&pool).await?;
+        db::migrate(&pool).await?;
 
         telemetry::initialize(&pool).await?;
 
