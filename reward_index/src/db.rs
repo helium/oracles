@@ -1,5 +1,34 @@
 use crate::reward::RewardType;
 use chrono::{DateTime, Utc};
+use sqlx::PgPool;
+
+/// Bring the database schema up to date.
+///
+/// The database, `_sqlx_migrations` included, is shared with the iot reward
+/// index, which runs an older build. sqlx refuses to start when
+/// `_sqlx_migrations` lists a migration the binary doesn't have, so a new
+/// migration here would stop the iot reward index, and a rolled-back
+/// reward-index, from starting. Tables added since are created here instead.
+pub async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::migrate!().run(pool).await?;
+    create_processed_writes_table(pool).await?;
+    Ok(())
+}
+
+pub async fn create_processed_writes_table(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        create table if not exists processed_writes (
+            write_id varchar primary key,
+            processed_at timestamptz not null default now()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
 
 pub async fn insert<'c, E>(
     executor: E,
