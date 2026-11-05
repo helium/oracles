@@ -5,20 +5,15 @@ use crate::{
 };
 use crate::{GatewayResolution, GatewayResolver};
 use chrono::Utc;
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload, BucketClient,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
 use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    SpeedtestAvg as SpeedtestAvgProto, SpeedtestAvgValidity, SpeedtestIngestReportV1,
-    SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
+    SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult,
 };
 use retainer::Cache;
 use sqlx::PgPool;
@@ -50,8 +45,6 @@ pub struct SpeedtestDaemon<GIR> {
     gateway_info_resolver: GIR,
     recent_speedtests: RecentSpeedtests,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-    speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
-    verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
     iceberg_writer: iceberg::SpeedtestWriter,
     speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
 }
@@ -60,35 +53,15 @@ impl<GIR> SpeedtestDaemon<GIR>
 where
     GIR: GatewayResolver,
 {
-    #[expect(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
-        file_upload: FileUpload,
         bucket_client: BucketClient,
         trino: trino_client::Client,
         gateway_resolver: GIR,
         iceberg_writer: iceberg::SpeedtestWriter,
         speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvgProto::file_sink(
-            &settings.file_upload.root,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
-        let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
-            settings.store_base_path(),
-            file_upload,
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
             .bucket_client(bucket_client)
@@ -102,28 +75,21 @@ where
             RecentSpeedtests::from_trino(&trino).await,
             gateway_resolver,
             speedtests,
-            speedtests_avg,
-            speedtests_validity,
             iceberg_writer,
             speedtest_avg_iceberg_writer,
         );
 
         Ok(TaskManager::builder()
-            .add_task(speedtests_validity_server)
-            .add_task(speedtests_avg_server)
             .add_task(speedtests_server)
             .add_task(speedtest_daemon)
             .build())
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         recent_speedtests: RecentSpeedtests,
         gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-        speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
-        verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
         iceberg_writer: iceberg::SpeedtestWriter,
         speedtest_avg_iceberg_writer: iceberg::SpeedtestAvgWriter,
     ) -> Self {
@@ -132,8 +98,6 @@ where
             gateway_info_resolver,
             recent_speedtests,
             speedtests,
-            speedtest_avg_file_sink,
-            verified_speedtest_file_sink,
             iceberg_writer,
             speedtest_avg_iceberg_writer,
         }
@@ -186,7 +150,6 @@ where
                     })
                     .await;
                 let average = SpeedtestAverage::from(latest_speedtests);
-                average.write(&self.speedtest_avg_file_sink).await?;
 
                 iceberg_records.push(iceberg::IcebergSpeedtest::from(&speedtest_report));
 
@@ -205,9 +168,6 @@ where
                     result,
                 ));
             }
-            // write out paper trail of speedtest validity
-            self.write_verified_speedtest(speedtest_report, result)
-                .await?;
         }
 
         self.iceberg_writer
@@ -217,8 +177,6 @@ where
             .write(&write_id, iceberg_avg_records, invalid_iceberg_avg_records)
             .await?;
 
-        self.speedtest_avg_file_sink.commit().await?;
-        self.verified_speedtest_file_sink.commit().await?;
         transaction.commit().await?;
         Ok(())
     }
@@ -245,25 +203,6 @@ where
                 Ok(SpeedtestResult::SpeedtestValid)
             }
         }
-    }
-
-    pub async fn write_verified_speedtest(
-        &self,
-        speedtest_report: CellSpeedtestIngestReport,
-        result: SpeedtestResult,
-    ) -> anyhow::Result<()> {
-        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.into();
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
-        let proto = VerifiedSpeedtestProto {
-            report: Some(ingest_report),
-            result: result as i32,
-            timestamp,
-        };
-        self.verified_speedtest_file_sink
-            .write(proto, &[("result", result.as_str_name())])
-            .await?
-            .await??;
-        Ok(())
     }
 }
 
