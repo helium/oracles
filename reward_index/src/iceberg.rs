@@ -228,8 +228,11 @@ impl<T: IcebergReward> IcebergIndexer<T> {
         // Only advance the watermark once the rewards are committed.
         event.commit().await?;
 
-        if let Some(end_period) = indexed_through {
-            telemetry::last_reward_processed_time(&self.pool, end_period).await?;
+        // Record when rewards were processed, not the epoch they cover: the
+        // staleness alert on this gauge assumes it advances to processing
+        // time (~1h after the epoch ends), as it did for reward files.
+        if indexed_through.is_some() {
+            telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
         }
         Ok(())
     }
