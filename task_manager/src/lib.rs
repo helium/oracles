@@ -30,6 +30,7 @@ use std::pin::pin;
 use crate::select_all::select_all;
 use futures::{future::BoxFuture, Future, FutureExt, StreamExt, TryFutureExt};
 use tokio::signal;
+use tracing::Instrument;
 
 pub use crate::channel_consumer::{channel_consumer, ChannelConsumer};
 pub use crate::periodic::{periodic, Periodic};
@@ -79,6 +80,10 @@ pub type TaskFuture = futures::future::BoxFuture<'static, TaskResult>;
 
 /// Spawns a future into its own Tokio task.
 ///
+/// The task runs in the span that is current when `spawn` is called, so its
+/// logs keep the caller's context (a span entered around `start_task`, for
+/// instance).
+///
 /// Use this in [`ManagedTask::start_task`] implementations when your future
 /// is `Send + 'static`. This is the preferred approach as it allows the task
 /// to run independently on the Tokio runtime.
@@ -98,11 +103,13 @@ where
     E: Into<BoxError> + Send + 'static,
 {
     // tokio::spawn returns Result<Result<(), E>, JoinError>
-    Box::pin(tokio::spawn(fut).map(|result| match result {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => Err(TaskError::from_err(e)),
-        Err(e) => Err(TaskError::from_err(e)),
-    }))
+    Box::pin(
+        tokio::spawn(fut.in_current_span()).map(|result| match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(TaskError::from_err(e)),
+            Err(e) => Err(TaskError::from_err(e)),
+        }),
+    )
 }
 
 /// Boxes a future without spawning a separate task.
