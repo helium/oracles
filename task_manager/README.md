@@ -20,7 +20,7 @@ A lightweight async task lifecycle management crate built on Tokio. It provides 
 
 ## Helper Functions
 
-- **`spawn(fut)`** - Spawns a `Send + 'static` future into its own Tokio task
+- **`spawn(fut)`** - Spawns a `Send + 'static` future into its own Tokio task, in the current span (see [Tracing Spans](#tracing-spans))
 - **`run(fut)`** - Boxes a non-`Send` future for local execution
 
 ## Usage
@@ -111,6 +111,69 @@ TaskManager::builder()
     .start()
     .await?;
 ```
+
+## Tracing Spans
+
+`spawn(fut)` runs the spawned task in the span that is current when `spawn`
+is called (`fut.in_current_span()`). Tokio doesn't do this on its own: a task
+it polls runs outside any span, even one the caller instrumented its own
+future with.
+
+So a caller can give a task's logs context by entering a span around its
+`start_task`, without changing the task:
+
+```rust
+use task_manager::{ManagedTask, TaskFuture};
+
+struct WithSpan {
+    span: tracing::Span,
+    task: Box<dyn ManagedTask>,
+}
+
+impl ManagedTask for WithSpan {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
+        // A task that calls `task_manager::spawn` in `start_task` (a
+        // FileInfoPoller, a BatchedWriter) runs in `span`.
+        let WithSpan { span, task } = *self;
+        let started = span.in_scope(|| task.start_task(shutdown));
+        // A task that doesn't spawn is polled here: instrument it too.
+        Box::pin(tracing::Instrument::instrument(started, span))
+    }
+}
+
+let poller = WithSpan {
+    span: tracing::info_span!("poller", prefix = "speedtest_report"),
+    task: Box::new(file_info_poller),
+};
+```
+
+Its logs then carry the span:
+
+```text
+INFO poller{prefix="speedtest_report"}: file_store::file_info_poller: starting FileInfoPoller …
+```
+
+### Targeting a span in `RUST_LOG`
+
+With `tracing_subscriber`'s `EnvFilter`, a `[span{field=value}]=level`
+directive sets the level of every log in a matching span, whichever crate
+logs it:
+
+```bash
+# Everything logged in the speedtest_report poller's span, at debug
+RUST_LOG='info,[poller{prefix=speedtest_report}]=debug'
+# Every span with that field, whatever its name
+RUST_LOG='info,[{prefix=speedtest_report}]=debug'
+```
+
+- A directive only matches the span a log is directly in, not its parents:
+  for a task in a span nested in yours, the directive must match the inner
+  span.
+- One field per directive: a comma inside `{…}` breaks `RUST_LOG`, which is
+  split on commas.
+- A target before `[…]` is matched against the span's target, not the log's:
+  `file_store[poller]=debug` matches only if the span was created in
+  `file_store`, so a directive can't keep only one crate's logs in a span.
 
 ## Shutdown Behavior
 
