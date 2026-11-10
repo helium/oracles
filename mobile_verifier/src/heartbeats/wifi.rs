@@ -3,12 +3,9 @@ use crate::{
     geofence::GeofenceValidator, heartbeats::LocationCache, iceberg, GatewayResolver, Settings,
 };
 use chrono::Duration;
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, BucketClient,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
 use futures::stream::StreamExt;
-use helium_proto::services::poc_mobile as proto;
 use sqlx::PgPool;
 use std::time::Instant;
 use task_manager::{ManagedTask, TaskManager};
@@ -21,7 +18,6 @@ pub struct WifiHeartbeatDaemon<GIR, GFV> {
     location_cache: LocationCache,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-    heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     geofence: GFV,
     iceberg_writer: iceberg::HeartbeatWriter,
 }
@@ -31,14 +27,12 @@ where
     GIR: GatewayResolver,
     GFV: GeofenceValidator,
 {
-    #[expect(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
         bucket_client: BucketClient,
         location_cache: LocationCache,
         gateway_resolver: GIR,
-        valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
         iceberg_writer: iceberg::HeartbeatWriter,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -56,7 +50,6 @@ where
             location_cache,
             gateway_resolver,
             wifi_heartbeats,
-            valid_heartbeats,
             geofence,
             iceberg_writer,
         );
@@ -72,7 +65,6 @@ where
         location_cache: LocationCache,
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-        heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
         iceberg_writer: iceberg::HeartbeatWriter,
     ) -> Self {
@@ -81,7 +73,6 @@ where
             location_cache,
             gateway_info_resolver,
             heartbeats,
-            heartbeat_sink,
             geofence,
             iceberg_writer,
         }
@@ -136,12 +127,10 @@ where
                 &epoch,
                 &self.geofence,
             ),
-            &self.heartbeat_sink,
             &self.iceberg_writer,
             &write_id,
         )
         .await?;
-        self.heartbeat_sink.commit().await?;
         transaction.commit().await?;
         Ok(())
     }
