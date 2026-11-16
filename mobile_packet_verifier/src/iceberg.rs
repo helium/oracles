@@ -26,6 +26,10 @@ pub struct Writers {
     pub multiplier_ticket: MultiplierTicketWriter,
 }
 
+/// Columns added to `sessions` and `invalid_sessions` after the tables were
+/// first created.
+const SESSION_KEY_COLUMNS: [&str; 2] = ["file_ts", "record_index"];
+
 pub async fn get_writers(settings: &helium_iceberg::Settings) -> anyhow::Result<Writers> {
     let catalog = settings.connect().await.context("connecting to catalog")?;
 
@@ -37,6 +41,15 @@ pub async fn get_writers(settings: &helium_iceberg::Settings) -> anyhow::Result<
     let invalid_session_writer = catalog
         .create_table_if_not_exists(invalid_session::table_definition()?)
         .await?;
+
+    // `create_table_if_not_exists` never changes a table that already exists,
+    // so these columns reach the live tables only by ALTER TABLE. The writer
+    // serializes against the live schema and drops fields it lacks, so a
+    // missing column would lose its values without an error.
+    for table in [session::TABLE_NAME, invalid_session::TABLE_NAME] {
+        require_columns(&catalog, table, &SESSION_KEY_COLUMNS).await?;
+    }
+
     let burned_session_writer = catalog
         .create_table_if_not_exists(burned_session::table_definition()?)
         .await?;
@@ -50,4 +63,24 @@ pub async fn get_writers(settings: &helium_iceberg::Settings) -> anyhow::Result<
         burned_session: burned_session_writer.boxed(),
         multiplier_ticket: multiplier_ticket_writer.boxed(),
     })
+}
+
+async fn require_columns(
+    catalog: &helium_iceberg::Catalog,
+    table: &str,
+    columns: &[&str],
+) -> anyhow::Result<()> {
+    let live = catalog.load_table(NAMESPACE, table).await?;
+    let schema = live.metadata().current_schema();
+    let missing: Vec<&str> = columns
+        .iter()
+        .copied()
+        .filter(|column| schema.field_by_name(column).is_none())
+        .collect();
+
+    anyhow::ensure!(
+        missing.is_empty(),
+        "{NAMESPACE}.{table} is missing columns {missing:?}; add them with ALTER TABLE before starting"
+    );
+    Ok(())
 }

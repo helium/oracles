@@ -8,7 +8,9 @@ use file_store_oracles::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
-use helium_proto::services::poc_mobile::{CarrierIdV2, DataTransferRadioAccessTechnology};
+use helium_proto::services::poc_mobile::{
+    CarrierIdV2, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+};
 use mobile_packet_verifier::{
     bytes_to_dc, daemon::handle_data_transfer_session_file, iceberg, pending_burns,
     routing::RoutingKeys,
@@ -711,7 +713,7 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
         &resolver,
         &routing_keys,
         Utc::now(),
-        futures::stream::iter(reports),
+        futures::stream::iter(reports.into_iter().map(Into::into)),
     )
     .await?;
     txn.commit().await?;
@@ -730,6 +732,97 @@ async fn rejected_sessions_go_to_the_invalid_table_with_a_reason(
         invalids[0].data_transfer_event_pub_key,
         invalid_gateway.to_string()
     );
+
+    Ok(())
+}
+
+/// `record_index` is the record's position in the file, counting records that
+/// fail to decode, so it matches what glacon would number the same file.
+#[sqlx::test]
+async fn record_index_counts_records_that_fail_to_decode(pool: PgPool) -> anyhow::Result<()> {
+    let harness = common::setup_iceberg().await?;
+    let session_writer = harness
+        .get_table_writer(iceberg::session::TABLE_NAME)
+        .await?;
+    let invalid_session_writer = harness
+        .get_table_writer(iceberg::invalid_session::TABLE_NAME)
+        .await?;
+
+    let gateway_one = PublicKeyBinary::from(vec![1]);
+    let gateway_two = PublicKeyBinary::from(vec![2]);
+
+    // An unknown carrier fails the conversion from the proto.
+    let mut undecodable: DataTransferSessionIngestReportV1 = make_report(&gateway_one).into();
+    undecodable
+        .report
+        .as_mut()
+        .expect("report is set")
+        .carrier_id_v2 = 9_999;
+
+    let reports: Vec<DataTransferSessionIngestReportV1> = vec![
+        make_report(&gateway_one).into(),
+        undecodable,
+        make_report(&gateway_two).into(),
+    ];
+
+    common::hotspot_inventory::seed(
+        &harness,
+        vec![
+            MobileHotspotInventory::known(&gateway_one, Utc::now() - Duration::hours(1)),
+            MobileHotspotInventory::known(&gateway_two, Utc::now() - Duration::hours(1)),
+        ],
+    )
+    .await?;
+    let resolver = common::gateway_resolver(&harness).await?;
+    let routing_keys: RoutingKeys = [gateway_one.clone(), gateway_two.clone()]
+        .into_iter()
+        .collect();
+
+    let mut txn = pool.begin().await?;
+    let banned_radios = common::bans::resolver(&harness)
+        .await?
+        .banned_radios(Utc::now())
+        .await?;
+    let file_ts = Utc::now();
+
+    handle_data_transfer_session_file(
+        &mut txn,
+        &session_writer,
+        &invalid_session_writer,
+        "test_write_id",
+        banned_radios,
+        &resolver,
+        &routing_keys,
+        file_ts,
+        futures::stream::iter(reports),
+    )
+    .await?;
+    txn.commit().await?;
+
+    let trino = harness.trino();
+
+    let mut valids = iceberg::session::get_all(trino).await?;
+    valids.sort_by_key(|session| session.record_index);
+    let positions: Vec<_> = valids
+        .iter()
+        .map(|session| {
+            (
+                session.record_index,
+                session.data_transfer_event_pub_key.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        positions,
+        vec![(0, gateway_one.to_string()), (2, gateway_two.to_string())],
+        "the undecodable record keeps index 1"
+    );
+    assert!(valids
+        .iter()
+        .all(|session| session.file_ts == file_ts.timestamp_millis() as u64));
+
+    let invalids = iceberg::invalid_session::get_all(trino).await?;
+    assert!(invalids.is_empty(), "an undecodable record is not written");
 
     Ok(())
 }
@@ -777,7 +870,7 @@ async fn fallback_resolves_gateway_added_after_snapshot(pool: PgPool) -> anyhow:
         &resolver,
         &routing_keys,
         Utc::now(),
-        futures::stream::iter(vec![make_report(&gateway)]),
+        futures::stream::iter([make_report(&gateway).into()]),
     )
     .await?;
     txn.commit().await?;
@@ -832,7 +925,7 @@ async fn fallback_filters_on_inserted_at_not_received_timestamp(
         &resolver,
         &routing_keys,
         report_time,
-        futures::stream::iter(vec![make_report_at(&gateway, report_time)]),
+        futures::stream::iter([make_report_at(&gateway, report_time).into()]),
     )
     .await?;
     txn.commit().await?;
@@ -918,7 +1011,7 @@ async fn run_accumulate_sessions(
         &resolver,
         &routing_keys,
         ts,
-        futures::stream::iter(reports),
+        futures::stream::iter(reports.into_iter().map(Into::into)),
     )
     .await?;
 
