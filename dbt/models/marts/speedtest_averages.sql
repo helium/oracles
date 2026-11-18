@@ -49,7 +49,7 @@
 --      `timestamp <= received_timestamp <= previous run`, so anything received
 --      after the previous run has `received_timestamp` above the watermark.
 --      The lookback (`incremental_lookback_minutes`) covers ingest commit
---      skew, as in the macro's header.
+--      skew, as in the `incremental_window` macro's header.
 --   2. AFFECTED REPORTS -- per hotspot, every report from its earliest new
 --      report to `window_hours` after its latest. A new sample can sit in the
 --      window of any report up to `window_hours` after it, so those are
@@ -63,9 +63,36 @@
 --
 -- `merge` on (hotspot_pubkey, timestamp) makes the overlap idempotent: a
 -- recomputed average replaces its previous row.
+--
+-- THE WATERMARK IS A LITERAL, looked up once at compile time, not the
+-- `incremental_window` macro's `(select max(...) from this)`. Trino inlines a
+-- CTE at every reference, so a subquery watermark here was evaluated five
+-- times per run, each a full scan of this table -- measured against
+-- production at 1.7 minutes for a run whose real work took seconds, and
+-- growing with the table. The lookup reads Iceberg's `$partitions` metadata
+-- (per-file column stats) rather than the data, and as a literal the
+-- `received_timestamp` predicate prunes partitions at planning time instead of
+-- waiting on a dynamic filter. File stats can only overstate the max if a row
+-- was deleted without its key being re-inserted, which `merge` never does.
+--
+-- Unit tests cannot reach `run_query` -- it would read the real table, not the
+-- `this` fixture -- so they set `speedtest_averages_watermark` instead.
 
 {%- set window_hours = var('speedtest_average_window_hours') -%}
-{%- set max_samples = var('speedtest_average_max_samples') %}
+{%- set max_samples = var('speedtest_average_max_samples') -%}
+{%- set lookback_minutes = var('incremental_lookback_minutes') -%}
+
+{%- set watermark = none -%}
+{%- if is_incremental() -%}
+  {%- set watermark = var('speedtest_averages_watermark', none) -%}
+  {%- if watermark is none and execute -%}
+    {%- set watermark_query -%}
+      select cast(max(data."timestamp".max) as varchar)
+      from {{ this.database }}.{{ this.schema }}."{{ this.identifier }}$partitions"
+    {%- endset -%}
+    {%- set watermark = run_query(watermark_query).columns[0].values()[0] -%}
+  {%- endif -%}
+{%- endif %}
 
 with speedtests as (
 
@@ -83,9 +110,14 @@ with speedtests as (
 
 new_reports as (
 
+    -- No watermark means a first run, a full refresh, or an empty table: take
+    -- everything.
     select hotspot_pubkey, "timestamp"
     from speedtests
-    where {{ incremental_window('received_timestamp', '"timestamp"') }}
+    {%- if watermark is not none %}
+    where received_timestamp
+        >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
+    {%- endif %}
 
 ),
 
@@ -124,7 +156,7 @@ samples as (
                 s.hotspot_pubkey = a.hotspot_pubkey
                 and s."timestamp" >= a.first_affected - interval '{{ window_hours }}' hour
                 and s."timestamp" <= a.last_affected
-        {%- if is_incremental() %}
+        {%- if watermark is not none %}
         where s.received_timestamp >= (
             select min("timestamp") - interval '{{ window_hours }}' hour from new_reports
         )

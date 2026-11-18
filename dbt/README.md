@@ -186,8 +186,11 @@ The one exception is `speedtest_averages`, whose table has no receipt clock to
 take a watermark from. It watermarks on the report's device `timestamp`, which
 is safe only because the model first drops every report whose `timestamp` is
 later than its `received_timestamp` — so no row in the table can sit ahead of
-ingest. Remove that filter and the failure above comes back. Its header spells
-this out.
+ingest. Remove that filter and the failure above comes back. It also reads its
+watermark once at compile time from Iceberg's `$partitions` metadata and inlines
+it as a literal, rather than using `incremental_window`'s subquery: Trino
+inlines CTEs, and that model references its windowed CTE often enough that the
+subquery cost five full scans of the table per run. Its header spells both out.
 
 **Grain is asserted, not assumed.** Every mart pins its grain with a test
 (`unique`, or `unique_combination_of_columns` for a compound one). A source

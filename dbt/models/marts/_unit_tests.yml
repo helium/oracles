@@ -156,10 +156,14 @@ unit_tests:
   - name: speedtest_late_report_recomputes_later_averages
     model: speedtest_averages
     description: >
-      The incremental branch. `this` already holds hs_c's 14:00 report, so the
-      watermark is 14:00 and a 30-minute lookback admits reports received from
-      13:30. Q (12:00, received 12:00) is well outside that, so only the
+      The incremental branch. The table's newest report is hs_c's at 14:00, so
+      the watermark is 14:00 and a 30-minute lookback admits reports received
+      from 13:30. Q (12:00, received 12:00) is well outside that, so only the
       recompute rule can bring it back.
+
+      The watermark is supplied as a var because the model reads it with
+      `run_query` at compile time, which a unit test cannot point at a `this`
+      fixture; a local `dbt run` twice over exercises the real lookup.
 
         * L is late: device time 09:00, received 14:10. It gets its own
           average over P and L.
@@ -173,7 +177,12 @@ unit_tests:
     overrides:
       macros:
         is_incremental: true
+      vars:
+        speedtest_averages_watermark: "2024-01-01 14:00:00.000000 UTC"
     given:
+      # dbt requires `this` for an incremental unit test. It holds what a
+      # previous run left -- consistent with the watermark above -- but the
+      # model does not read it; the var is what drives the window.
       - input: this
         rows:
           - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 06:00:00+00", upload_speed_avg_bps: 10, download_speed_avg_bps: 10, latency_avg_ms: 10, sample_count: 1}
