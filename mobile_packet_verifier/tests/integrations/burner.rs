@@ -3,6 +3,7 @@ use chrono::Utc;
 use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
+use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use mobile_packet_verifier::{
     burner::Burner,
     bytes_to_dc,
@@ -15,6 +16,7 @@ use solana::{
     Signature,
 };
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 use crate::common;
 
@@ -713,6 +715,218 @@ async fn save_data_transfer_sessions(
     pending_burns::save_data_transfer_sessions(&mut txn, &sessions).await?;
 
     txn.commit().await?;
+
+    Ok(())
+}
+
+/// What `burned` and `burned_dc_by_multiplier` counted for one payer.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Counted {
+    burned: u64,
+    failed: u64,
+    by_multiplier: u64,
+}
+
+/// What each payer had counted since the last call. Taking a snapshot resets
+/// every counter, so each call sees only the steps since the one before.
+fn take_counted(snapshotter: &Snapshotter) -> HashMap<String, Counted> {
+    let mut counted: HashMap<String, Counted> = HashMap::new();
+    for (key, _, _, value) in snapshotter.snapshot().into_vec() {
+        let DebugValue::Counter(value) = value else {
+            continue;
+        };
+        let key = key.key();
+        let label = |name: &str| {
+            key.labels()
+                .find(|label| label.key() == name)
+                .map(|label| label.value().to_string())
+        };
+        let Some(payer) = label("payer") else {
+            continue;
+        };
+        let entry = counted.entry(payer).or_default();
+        match (key.name(), label("success").as_deref()) {
+            ("burned", Some("true")) => entry.burned += value,
+            ("burned", Some("false")) => entry.failed += value,
+            ("burned_dc_by_multiplier", _) => entry.by_multiplier += value,
+            _ => {}
+        }
+    }
+    counted.retain(|_, counted| *counted != Counted::default());
+    counted
+}
+
+#[sqlx::test]
+fn burn_sent_successfully_is_counted_once(pool: PgPool) -> anyhow::Result<()> {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _recorder = metrics::set_default_local_recorder(&recorder);
+
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    let (payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+    let total_dcs = pending_burns::get_all_payer_burns(&pool).await?[0].total_dcs;
+
+    burner.burn(&pool).await?;
+    burner.confirm_pending_txns(&pool).await?;
+
+    let counted = take_counted(&snapshotter);
+    assert_eq!(
+        counted[&payer.to_string()],
+        Counted {
+            burned: total_dcs,
+            failed: 0,
+            by_multiplier: total_dcs,
+        }
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn confirm_pending_txns_counts_each_outcome(pool: PgPool) -> anyhow::Result<()> {
+    // Settling a pending txn counts it in `burned`, as burned or failed, and
+    // splits a burned one by multiplier.
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _recorder = metrics::set_default_local_recorder(&recorder);
+
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness.get_table_writer(burned_session::TABLE_NAME).await?;
+
+    let landed = PublicKeyBinary::from(vec![1]);
+    let expired = PublicKeyBinary::from(vec![2]);
+    let hotspot = PublicKeyBinary::from(vec![3]);
+    save_data_transfer_sessions(
+        &pool,
+        &[
+            (&landed, &hotspot, 1_000_000),
+            (&expired, &hotspot, 2_000_000),
+        ],
+    )
+    .await?;
+
+    let landed_signature = Signature::new_unique();
+    pending_txns::add_pending_txn(
+        &pool,
+        &landed,
+        bytes_to_dc(1_000_000),
+        &landed_signature,
+        1_000,
+        &[],
+    )
+    .await?;
+    pending_txns::add_pending_txn(
+        &pool,
+        &expired,
+        bytes_to_dc(2_000_000),
+        &Signature::new_unique(),
+        1_000,
+        &[],
+    )
+    .await?;
+
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.add_confirmed(landed_signature).await;
+    solana_network
+        .set_block_height(1_000 + BLOCKHASH_EXPIRY_MARGIN + 1)
+        .await;
+    let burner = Burner::new(
+        solana_network,
+        0,
+        std::time::Duration::default(),
+        burn_writer,
+    );
+
+    burner.confirm_pending_txns(&pool).await?;
+
+    let counted = take_counted(&snapshotter);
+    assert_eq!(
+        counted[&landed.to_string()],
+        Counted {
+            burned: bytes_to_dc(1_000_000),
+            failed: 0,
+            by_multiplier: bytes_to_dc(1_000_000),
+        }
+    );
+    assert_eq!(
+        counted[&expired.to_string()],
+        Counted {
+            burned: 0,
+            failed: bytes_to_dc(2_000_000),
+            by_multiplier: 0,
+        }
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn burn_left_pending_after_a_failed_send_is_counted_once(pool: PgPool) -> anyhow::Result<()> {
+    // The send fails and settling gives up, so the burn stays pending and
+    // nothing is counted yet. The next cycle settles it and counts it, once.
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _recorder = metrics::set_default_local_recorder(&recorder);
+
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.add_confirmed(Signature::new_unique()).await;
+    let (payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+    let burner = burner.with_settle_timeout(std::time::Duration::ZERO);
+    let total_dcs = pending_burns::get_all_payer_burns(&pool).await?[0].total_dcs;
+
+    burner.burn(&pool).await?;
+    assert!(
+        take_counted(&snapshotter).is_empty(),
+        "nothing is counted while the burn may still land"
+    );
+
+    let pending = pending_txns::fetch_all_pending_txns(&pool).await?;
+    solana_network.add_confirmed(pending[0].signature).await;
+    burner.confirm_pending_txns(&pool).await?;
+    burner.confirm_pending_txns(&pool).await?;
+
+    let counted = take_counted(&snapshotter);
+    assert_eq!(
+        counted[&payer.to_string()],
+        Counted {
+            burned: total_dcs,
+            failed: 0,
+            by_multiplier: total_dcs,
+        }
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn failed_send_that_never_lands_is_counted_once(pool: PgPool) -> anyhow::Result<()> {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _recorder = metrics::set_default_local_recorder(&recorder);
+
+    let harness = common::setup_iceberg().await?;
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.fail_submissions().await;
+    solana_network.add_confirmed(Signature::new_unique()).await;
+    solana_network.advance_block_height_by(100).await;
+    let (payer, burner) = burn_setup(&pool, &harness, &solana_network, 0).await?;
+    let total_dcs = pending_burns::get_all_payer_burns(&pool).await?[0].total_dcs;
+
+    burner.burn(&pool).await?;
+    burner.confirm_pending_txns(&pool).await?;
+
+    let counted = take_counted(&snapshotter);
+    assert_eq!(
+        counted[&payer.to_string()],
+        Counted {
+            burned: 0,
+            failed: total_dcs,
+            by_multiplier: 0,
+        }
+    );
 
     Ok(())
 }

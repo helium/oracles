@@ -79,11 +79,19 @@ where
                 let sessions =
                     pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
 
-                write_burned_data_transfer_sessions(sessions, &self.iceberg_writer).await?;
+                let written =
+                    write_burned_data_transfer_sessions(sessions, &self.iceberg_writer).await?;
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
+                count_settled_burn(&pending.payer, pending.amount, true);
+                count_burned_by_multiplier(&written);
+                // The gauge still includes this burn. `burn` runs next and
+                // sets it again for every payer with sessions left, so the 0
+                // stays only for a payer with none.
+                pending_burns::set_metric(&pending.payer, 0);
             } else {
                 pending_txns::remove_pending_txn_failure(pool, &signature).await?;
+                count_settled_burn(&pending.payer, pending.amount, false);
             }
         }
 
@@ -204,18 +212,12 @@ where
         }
 
         tracing::warn!("txn can no longer land, moving its sessions back");
-        if let Err(err) = pending_txns::remove_pending_txn_failure(pool, signature).await {
-            // Still pending, so `confirm_pending_txns()` releases it next burn.
-            tracing::error!(?err, "failed to move sessions back");
+        match pending_txns::remove_pending_txn_failure(pool, signature).await {
+            Ok(()) => count_settled_burn(&payer, total_dcs, false),
+            // Still pending, so `confirm_pending_txns()` releases and counts it
+            // next burn.
+            Err(err) => tracing::error!(?err, "failed to move sessions back"),
         }
-
-        // We have failed to burn data credits:
-        metrics::counter!(
-            "burned",
-            "payer" => payer.to_string(),
-            "success" => "false"
-        )
-        .increment(total_dcs);
     }
 
     /// The expiry to settle a pending txn against when it was written without
@@ -362,31 +364,67 @@ async fn handle_transaction_success(
     sessions: Vec<pending_burns::DataTransferSession>,
     iceberg_writer: &BurnedDataTransferWriter,
 ) -> Result<(), anyhow::Error> {
-    // We successfully managed to burn data credits:
-    metrics::counter!(
-        "burned",
-        "payer" => payer.to_string(),
-        "success" => "true"
-    )
-    .increment(total_dcs);
-
     // Delete from the data transfer session and write out to Iceberg
     pending_burns::delete_for_payer(pool, &payer).await?;
+    pending_txns::remove_pending_txn_success(pool, signature).await?;
+    count_settled_burn(&payer, total_dcs, true);
     // The payer has no rows left, so 0 is exact. Setting rather than
     // subtracting the burned amount because that only lands on 0 while the two
     // figures agree, and `accumulate` counts differently from the burn.
     pending_burns::set_metric(&payer, 0);
-    pending_txns::remove_pending_txn_success(pool, signature).await?;
 
-    write_burned_data_transfer_sessions(sessions, iceberg_writer).await?;
+    let written = write_burned_data_transfer_sessions(sessions, iceberg_writer).await?;
+    count_burned_by_multiplier(&written);
 
     Ok(())
 }
 
+/// Count a settled burn's DC in `burned`, as `success` true or false.
+///
+/// Called right after the burn's pending txn is removed, and only once that
+/// removal has committed. Burns are settled one at a time, and a removed
+/// pending txn is never read again, so each burn is counted exactly once: on
+/// whichever path settles it, however many times settling it was retried
+/// first. A burn whose settling gives up stays pending and is counted when
+/// `confirm_pending_txns` settles it.
+fn count_settled_burn(payer: &PublicKeyBinary, total_dcs: u64, burned: bool) {
+    metrics::counter!(
+        "burned",
+        "payer" => payer.to_string(),
+        "success" => if burned { "true" } else { "false" }
+    )
+    .increment(total_dcs);
+}
+
+/// Count a successful burn's DC again, split by the multiplier that produced
+/// it.
+///
+/// `burned` counts what the transaction charged, which is the right number
+/// but says nothing about where it came from. This splits the same total, so
+/// summing it back up gives `burned{success="true"}` again, and grouping by
+/// multiplier shows how much of the burn is coming from ticketed hotspots.
+///
+/// Called next to [`count_settled_burn`], once the burn's sessions are
+/// written, so a burn is counted here once, and only if its sessions were
+/// recorded. The two totals differ only by burns whose sessions failed to
+/// write. The multiplier is normalized, so `1.5` and `1.50` are one series
+/// rather than two.
+fn count_burned_by_multiplier(sessions: &[ValidDataTransferSession]) {
+    for session in sessions {
+        metrics::counter!(
+            "burned_dc_by_multiplier",
+            "payer" => session.payer.to_string(),
+            "multiplier" => session.multiplier.to_string(),
+        )
+        .increment(session.num_dcs);
+    }
+}
+
+/// Write a burn's sessions to Iceberg, and return them as written.
 async fn write_burned_data_transfer_sessions(
     sessions: Vec<pending_burns::DataTransferSession>,
     iceberg_sink: &BurnedDataTransferWriter,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<ValidDataTransferSession>> {
     // Fallible now: a session whose multiplier cannot be applied has no price,
     // and a burned record without one would be a lie about what was charged.
     // This runs after the burn has settled, so it cannot prevent the spend — it
@@ -397,33 +435,15 @@ async fn write_burned_data_transfer_sessions(
         .map(ValidDataTransferSession::try_from)
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // DC burned, split by the multiplier that produced it.
-    //
-    // `burned` counts what the transaction charged, which is the right number
-    // but says nothing about where it came from. This splits the same total, so
-    // summing it back up gives `burned` again, and grouping by multiplier shows
-    // how much of the burn is coming from ticketed hotspots.
-    //
-    // Both burn paths pass through here, so this counts a burn once, after it
-    // has settled. The multiplier is normalized, so `1.5` and `1.50` are one
-    // series rather than two.
-    for session in &sessions {
-        metrics::counter!(
-            "burned_dc_by_multiplier",
-            "payer" => session.payer.to_string(),
-            "multiplier" => session.multiplier.to_string(),
-        )
-        .increment(session.num_dcs);
-    }
-
-    let sessions = sessions
-        .into_iter()
+    let iceberg_sessions = sessions
+        .iter()
+        .cloned()
         .map(IcebergBurnedDataTransferSession::from)
         .collect::<Vec<_>>();
 
     // NOTE: Burned Sessions are not tied to a file like regular data
     // transfer sessions. Do we want to use transaction semantics here?
-    iceberg_sink.write(sessions).await?;
+    iceberg_sink.write(iceberg_sessions).await?;
 
-    Ok(())
+    Ok(sessions)
 }

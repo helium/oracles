@@ -66,6 +66,7 @@ humantime-serde = "1"
 itertools = "0.14"
 metrics = ">=0.22"
 metrics-exporter-prometheus = "0"
+metrics-util = "0.20"
 notify = { version = "8.2", default-features = false }
 rand = "0.8"
 reqwest = { version = "0", default-features = false, features = [

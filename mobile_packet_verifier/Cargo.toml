@@ -51,4 +51,5 @@ trino-client = { path = "../trino_client" }
 trino-rust-client = { workspace = true }
 
 [dev-dependencies]
+metrics-util = { workspace = true }
 reqwest = { workspace = true }
