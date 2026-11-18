@@ -9,6 +9,7 @@ members = [
   "file_store_oracles",
   "helium_iceberg",
   "helium_iceberg_oracles",
+  "icicle",
   "ingest",
   "metrics",
   "mobile_config",
@@ -160,6 +161,18 @@ tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }
 # time. We need to `extern` the crate to prevent the linker from optimizing the
 # codepath away because there are no direct calls into the workspace.
 
+
+# `icicle` is built on glacon (https://github.com/helium/glacon), which itself
+# depends on these oracles crates by git. Point glacon at this workspace so
+# there is exactly one copy of each: otherwise `task_manager`, `helium_iceberg`
+# and `file_store` would be compiled twice, as distinct, incompatible types.
+#
+# A consequence worth knowing: a change here that breaks glacon's use of these
+# crates now fails this workspace's build, before it reaches glacon.
+[patch.'https://github.com/helium/oracles']
+file-store = { path = "file_store" }
+helium-iceberg = { path = "helium_iceberg" }
+task-manager = { path = "task_manager" }
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }

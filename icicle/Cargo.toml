@@ -1,0 +1,44 @@
+[package]
+name = "icicle"
+version = "0.1.0"
+description = "Routes chain change reports from S3 into Iceberg, on glacon"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+bs58 = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true }
+config = { workspace = true }
+h3o = { workspace = true }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+angry-purple-tiger = { version = "1", features = ["helium_crypto"] }
+
+# The route runtime, the file-store input and the Iceberg output. It
+# re-exports glacon-core, `task_manager`, `helium_iceberg` and `file_store`:
+# use those re-exports rather than depending on the crates directly. The root
+# Cargo.toml patches glacon's own oracles dependencies to this workspace.
+glacon-helium = { git = "https://github.com/helium/glacon", branch = "main" }
+
+custom-tracing = { path = "../custom_tracing" }
+tls-init = { path = "../tls_init" }
+
+[dev-dependencies]
+humantime = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
+triggered = { workspace = true }
+trino-rust-client = { workspace = true }
+
+file-store = { path = "../file_store" }
+helium-iceberg = { path = "../helium_iceberg", features = ["test-harness"] }

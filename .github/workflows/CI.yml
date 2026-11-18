@@ -243,6 +243,7 @@ jobs:
       matrix:
         package:
           [
+            "icicle",
             "ingest",
             "mobile-config",
             "mobile-packet-verifier",

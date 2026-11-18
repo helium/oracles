@@ -1,0 +1,75 @@
+# icicle settings. Every key below can also be supplied as an environment
+# variable: uppercase, prefixed with ICICLE, nesting separated by a double
+# underscore. `mobile_hotspot_history.inputs.chain.bucket.bucket` is
+# ICICLE__MOBILE_HOTSPOT_HISTORY__INPUTS__CHAIN__BUCKET__BUCKET.
+#
+# Process-wide settings come first; everything else belongs to one route and
+# sits under that route's section. Omit a route's section entirely to leave it
+# out of this process.
+
+# RUST_LOG-compatible filter.
+log = "icicle=info"
+
+[metrics]
+endpoint = "0.0.0.0:19000"
+
+# ================================================== mobile_hotspot_history ==
+#
+# mobile_hotspot_change_report files from the ingest chain bucket ->
+# chain.mobile_hotspot_history, with asserted_lat and asserted_lon added.
+
+[mobile_hotspot_history]
+# What to do when the ledger is empty but the output table already holds rows.
+# "refuse" (the default) makes a lost volume a loud failure rather than a
+# silent re-ingest of the whole bucket.
+fresh_state = "refuse"
+
+[mobile_hotspot_history.route]
+# MUST be on the durable volume: the ledger is the only record of what has
+# been delivered.
+state_dir = "/var/lib/icicle/mobile_hotspot_history/state"
+# Must stay greater than the input's `offset` below: a done file that is
+# forgotten and then listed again is delivered again. Startup refuses the
+# inversion.
+processed_retention = "3 days"
+
+# The table written to. Both keys default to these values.
+[mobile_hotspot_history.table]
+namespace = "chain"
+name = "mobile_hotspot_history"
+
+[mobile_hotspot_history.output]
+# MUST also be on the durable volume: rows live here between a durable write
+# and the Iceberg commit.
+spool_dir = "/var/lib/icicle/mobile_hotspot_history/spool"
+max_batch_rows = 10000
+batch_timeout = "15 minutes"
+
+[mobile_hotspot_history.output.catalog]
+catalog_uri = "http://polaris:8181/api/catalog"
+# The Iceberg catalog behind Trino's `mobile` catalog.
+catalog_name = "mobile"
+# warehouse = "..."
+
+[mobile_hotspot_history.output.catalog.auth]
+# credential = "..."
+# scope = "PRINCIPAL_ROLE:ALL"
+
+[mobile_hotspot_history.output.catalog.s3]
+# region = "us-west-2"
+# endpoint = "..."
+
+# The ingest chain bucket. This input NAME is the ledger's primary key:
+# renaming it replays the whole bucket. It is pinned in
+# src/data/mobile_hotspot_history/mod.rs and tested.
+[mobile_hotspot_history.inputs.chain]
+# A permanent floor, not a seek: files at or before it are never read. The
+# epoch reads the whole bucket, so the table starts with every change ever
+# reported.
+start_after = "1970-01-01T00:00:00Z"
+poll_duration = "30s"
+offset = "30m"
+
+[mobile_hotspot_history.inputs.chain.bucket]
+bucket = "CHANGE-ME"
+# region, endpoint, access_key_id, secret_access_key
