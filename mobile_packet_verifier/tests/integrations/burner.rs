@@ -11,7 +11,7 @@ use mobile_packet_verifier::{
     pending_txns,
 };
 use solana::{
-    burn::{TestSolanaClientMap, BLOCKHASH_EXPIRY_MARGIN},
+    burn::{TestSolanaClientMap, BLOCKHASH_EXPIRY_MARGIN, BLOCKHASH_VALID_BLOCKS},
     Signature,
 };
 use sqlx::PgPool;
@@ -119,7 +119,8 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Second transaction is unconfirmed
     let unconfirmed_signature = Signature::new_unique();
-    pending_txns::add_pending_txn(&pool, &payer_two, 500, &unconfirmed_signature, 0, &[]).await?;
+    pending_txns::add_pending_txn(&pool, &payer_two, 500, &unconfirmed_signature, 1_000, &[])
+        .await?;
     assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 2);
 
     // Tell mock Solana which txn to confirm
@@ -127,7 +128,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // solana_network.add_confirmed(unconfirmed_signature).await; // uncomment for failure
     // Past the unconfirmed txn's expiry, so it can no longer land
     solana_network
-        .set_block_height(BLOCKHASH_EXPIRY_MARGIN + 1)
+        .set_block_height(1_000 + BLOCKHASH_EXPIRY_MARGIN + 1)
         .await;
 
     let burner = Burner::new(
@@ -240,7 +241,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     .await?;
 
     let signature = Signature::new_unique();
-    pending_txns::add_pending_txn(&pool, &payer, 1_000, &signature, 0, &[]).await?;
+    pending_txns::add_pending_txn(&pool, &payer, 1_000, &signature, 1_000, &[]).await?;
 
     // Insert more sessions
     save_data_transfer_sessions(
@@ -270,7 +271,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     solana_network.add_confirmed(Signature::new_unique()).await;
     // Past the txn's expiry, so it can no longer land
     solana_network
-        .set_block_height(BLOCKHASH_EXPIRY_MARGIN + 1)
+        .set_block_height(1_000 + BLOCKHASH_EXPIRY_MARGIN + 1)
         .await;
 
     let burner = Burner::new(
@@ -437,26 +438,18 @@ fn mk_data_transfer_session(
 }
 
 #[sqlx::test]
-fn pending_txn_from_previous_binary_is_released_once_expired(pool: PgPool) -> anyhow::Result<()> {
-    // After a rollback, the binary before this one inserts pending txns
-    // without last_valid_block_height. The column's default has to accept
-    // that, and read back as already expired.
-
-    let harness = common::setup_iceberg().await?;
-    let burn_writer = harness.get_table_writer(burned_session::TABLE_NAME).await?;
-
+fn pending_txn_from_previous_binary_reads_as_unrecorded(pool: PgPool) -> anyhow::Result<()> {
+    // The binary before this one inserts pending txns without
+    // last_valid_block_height, on deploy and after a rollback. The column's
+    // default has to accept that, and read back as 0, "not recorded".
     let payer = PublicKeyBinary::from(vec![0]);
-    let pubkey = PublicKeyBinary::from(vec![1]);
-    save_data_transfer_sessions(&pool, &[(&payer, &pubkey, 1_000)]).await?;
-
-    let signature = Signature::new_unique();
     sqlx::query(
         r#"
         INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
         VALUES ($1, $2, 1, now())
         "#,
     )
-    .bind(signature.to_string())
+    .bind(Signature::new_unique().to_string())
     .bind(&payer)
     .execute(&pool)
     .await?;
@@ -464,22 +457,112 @@ fn pending_txn_from_previous_binary_is_released_once_expired(pool: PgPool) -> an
     let pending = pending_txns::fetch_all_pending_txns(&pool).await?;
     assert_eq!(pending[0].last_valid_block_height, 0);
 
-    // Never finalized, and the chain is past expiry.
+    Ok(())
+}
+
+#[sqlx::test]
+fn pending_txn_from_previous_binary_is_held_until_the_chain_passes_its_bound(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    // A pending txn without a recorded expiry could still land while the
+    // chain is stalled, however long ago it was sent. It is held until the
+    // chain passes a bound taken from the chain, and the bound is stored so
+    // later cycles don't move it.
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness.get_table_writer(burned_session::TABLE_NAME).await?;
+
+    let payer = PublicKeyBinary::from(vec![0]);
+    let pubkey = PublicKeyBinary::from(vec![1]);
+    save_data_transfer_sessions(&pool, &[(&payer, &pubkey, 1_000)]).await?;
+    let signature = Signature::new_unique();
+    pending_txns::add_pending_txn(&pool, &payer, 1, &signature, 0, &[]).await?;
+
+    // Never finalized, and the chain is stalled at 1_000.
     let solana_network = TestSolanaClientMap::default();
     solana_network.add_confirmed(Signature::new_unique()).await;
-    solana_network
-        .set_block_height(BLOCKHASH_EXPIRY_MARGIN + 1)
-        .await;
-
+    solana_network.set_block_height(1_000).await;
     let burner = Burner::new(
-        solana_network,
+        solana_network.clone(),
         0,
         std::time::Duration::default(),
         burn_writer,
+    )
+    .with_settle_timeout(std::time::Duration::ZERO);
+
+    let bound = 1_000 + BLOCKHASH_VALID_BLOCKS;
+    let err = burner.confirm_pending_txns(&pool).await.unwrap_err();
+    assert!(format!("{err:#}").contains("still pending"), "{err:#}");
+    let pending = pending_txns::fetch_all_pending_txns(&pool).await?;
+    assert_eq!(pending[0].last_valid_block_height, bound);
+    assert!(
+        pending_burns::get_all_payer_burns(&pool).await?.is_empty(),
+        "nothing is released while the chain is stalled"
     );
+
+    // The chain reaches the bound plus the margin, but not past it. A bound
+    // taken again now would be later still; the stored one is kept.
+    solana_network
+        .set_block_height(bound + BLOCKHASH_EXPIRY_MARGIN)
+        .await;
+    burner.confirm_pending_txns(&pool).await.unwrap_err();
+    let pending = pending_txns::fetch_all_pending_txns(&pool).await?;
+    assert_eq!(pending[0].last_valid_block_height, bound);
+
+    // Past it, the txn can no longer land, so its sessions go back.
+    solana_network
+        .set_block_height(bound + BLOCKHASH_EXPIRY_MARGIN + 1)
+        .await;
+    burner.confirm_pending_txns(&pool).await?;
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
+    assert_eq!(payer_burns.len(), 1, "sessions are back for burning");
+    assert_eq!(payer_burns[0].total_dcs, bytes_to_dc(1_000));
+    assert!(burned_session::get_all(harness.trino()).await?.is_empty());
+
+    Ok(())
+}
+
+#[sqlx::test]
+fn pending_txn_from_previous_binary_that_lands_late_is_burned(pool: PgPool) -> anyhow::Result<()> {
+    // The case a 0 read as "already expired" got wrong: the burn lands after
+    // the chain stalls. It has to be recorded as burned, not released and
+    // burned again.
+    let harness = common::setup_iceberg().await?;
+    let burn_writer = harness.get_table_writer(burned_session::TABLE_NAME).await?;
+
+    let payer = PublicKeyBinary::from(vec![0]);
+    let pubkey = PublicKeyBinary::from(vec![1]);
+    save_data_transfer_sessions(&pool, &[(&payer, &pubkey, 1_000)]).await?;
+    let signature = Signature::new_unique();
+    pending_txns::add_pending_txn(&pool, &payer, 1, &signature, 0, &[]).await?;
+
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.add_confirmed(Signature::new_unique()).await;
+    solana_network.set_block_height(1_000).await;
+    let burner = Burner::new(
+        solana_network.clone(),
+        0,
+        std::time::Duration::default(),
+        burn_writer,
+    )
+    .with_settle_timeout(std::time::Duration::ZERO);
+
+    burner.confirm_pending_txns(&pool).await.unwrap_err();
+    assert_eq!(pending_txns::pending_txn_count(&pool).await?, 1);
+
+    // It lands, and the chain moves on well past the bound.
+    solana_network.add_confirmed(signature).await;
+    solana_network
+        .set_block_height(1_000 + BLOCKHASH_VALID_BLOCKS + BLOCKHASH_EXPIRY_MARGIN + 1)
+        .await;
     burner.confirm_pending_txns(&pool).await?;
 
     assert_eq!(pending_txns::pending_txn_count(&pool).await?, 0);
+    assert!(
+        pending_burns::get_all_payer_burns(&pool).await?.is_empty(),
+        "nothing goes back for burning"
+    );
+    assert_eq!(burned_session::get_all(harness.trino()).await?.len(), 1);
 
     Ok(())
 }

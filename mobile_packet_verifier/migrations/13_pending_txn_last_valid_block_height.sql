@@ -5,11 +5,10 @@
 -- a burn was given up on one minute after it was submitted, whether or not it
 -- could still land.
 --
--- The default of 0 means "already expired". It covers rows written by a binary
+-- The default of 0 means "not recorded". It covers rows written by a binary
 -- that doesn't know this column: rows in flight when this runs, and rows
--- written after a rollback to the binary before this one. Those binaries give
--- up on a burn after one minute anyway, and the first burn waits five minutes
--- after startup, so by the time anything reads 0 the burn has finalized or
--- its blockhash has expired. This binary always writes the real value.
+-- written after a rollback to the binary before this one. The burner bounds a
+-- 0 from the chain the first time it reads one, and stores the bound in its
+-- place. This binary always writes the real value.
 ALTER TABLE pending_txns
     ADD COLUMN last_valid_block_height BIGINT NOT NULL DEFAULT 0;

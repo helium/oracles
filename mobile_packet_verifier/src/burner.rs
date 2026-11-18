@@ -2,7 +2,7 @@ use anyhow::Context;
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
 use solana::{
-    burn::{BurnOutcome, SolanaNetwork, BLOCKHASH_EXPIRY_MARGIN},
+    burn::{BurnOutcome, SolanaNetwork, BLOCKHASH_EXPIRY_MARGIN, BLOCKHASH_VALID_BLOCKS},
     GetLastValidBlockHeight, GetSignature, Signature, SolanaRpcError,
 };
 use sqlx::PgPool;
@@ -68,9 +68,11 @@ where
 
         for pending in pending_txns {
             let signature = pending.signature;
-            let burned = self
-                .settle(&signature, pending.last_valid_block_height)
-                .await?;
+            let last_valid_block_height = match pending.last_valid_block_height {
+                0 => self.bound_unrecorded_expiry(pool, &signature).await?,
+                recorded => recorded,
+            };
+            let burned = self.settle(&signature, last_valid_block_height).await?;
             tracing::info!(?pending, burned, "settled pending txn");
 
             if burned {
@@ -214,6 +216,47 @@ where
             "success" => "false"
         )
         .increment(total_dcs);
+    }
+
+    /// The expiry to settle a pending txn against when it was written without
+    /// one.
+    ///
+    /// The binaries before this one don't record `last_valid_block_height`,
+    /// so their pending txns read 0. They sign with the latest finalized
+    /// blockhash, which expires [`BLOCKHASH_VALID_BLOCKS`] blocks past the
+    /// finalized height at signing. The txn was signed before now, so the
+    /// finalized height now plus [`BLOCKHASH_VALID_BLOCKS`] is at or past its
+    /// real expiry. A node serving this read that is behind the one that
+    /// served the blockhash is covered by [`BLOCKHASH_EXPIRY_MARGIN`], the same
+    /// as for a recorded expiry.
+    ///
+    /// The bound is stored on the first read and reused after that. Otherwise
+    /// a settle that times out would take a new, later bound on the next cycle
+    /// and push the release out again.
+    ///
+    /// A wait measured in time would not do: time keeps passing while the
+    /// chain is stalled, which is when a burn that can still land would be
+    /// released. This bound only expires as the chain advances.
+    async fn bound_unrecorded_expiry(
+        &self,
+        pool: &PgPool,
+        signature: &Signature,
+    ) -> anyhow::Result<u64> {
+        let finalized_block_height = self
+            .solana
+            .finalized_block_height()
+            .await
+            .context("reading the finalized block height to bound an unrecorded expiry")?;
+        let bound = finalized_block_height.saturating_add(BLOCKHASH_VALID_BLOCKS);
+        let last_valid_block_height =
+            pending_txns::bound_unrecorded_expiry(pool, signature, bound).await?;
+        tracing::info!(
+            %signature,
+            finalized_block_height,
+            last_valid_block_height,
+            "pending txn was written without its expiry, settling against a bound"
+        );
+        Ok(last_valid_block_height)
     }
 
     /// Wait for the chain to settle a burn, and return whether it spent the DC.

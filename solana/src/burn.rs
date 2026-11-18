@@ -27,6 +27,14 @@ use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
+/// Blocks a blockhash stays valid after the block it was taken from: Solana's
+/// `MAX_PROCESSING_AGE`.
+///
+/// A transaction signed with the latest finalized blockhash gets a
+/// `last_valid_block_height` of the finalized block height at signing plus
+/// this.
+pub const BLOCKHASH_VALID_BLOCKS: u64 = helium_lib::solana_sdk::clock::MAX_PROCESSING_AGE as u64;
+
 /// Blocks past a burn's `last_valid_block_height` before a missing finalized
 /// status is taken to mean it never landed.
 ///
@@ -620,10 +628,6 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     }
 }
 
-/// How many blocks a mock burn's blockhash lives, matching Solana's
-/// `MAX_PROCESSING_AGE`.
-const MOCK_BLOCKHASH_LIFETIME: u64 = 150;
-
 pub struct MockTransaction {
     pub signature: Signature,
     pub payer: PublicKeyBinary,
@@ -709,7 +713,7 @@ impl TestSolanaClientMap {
     }
 
     /// Move the finalized block height. New burns expire
-    /// [`MOCK_BLOCKHASH_LIFETIME`] blocks after it.
+    /// [`BLOCKHASH_VALID_BLOCKS`] blocks after it.
     pub async fn set_block_height(&self, height: u64) {
         *self.block_height.lock().await = height;
     }
@@ -750,7 +754,7 @@ impl SolanaNetwork for TestSolanaClientMap {
             signature: Signature::new_unique(),
             payer: payer.clone(),
             amount,
-            last_valid_block_height: *self.block_height.lock().await + MOCK_BLOCKHASH_LIFETIME,
+            last_valid_block_height: *self.block_height.lock().await + BLOCKHASH_VALID_BLOCKS,
         })
     }
 

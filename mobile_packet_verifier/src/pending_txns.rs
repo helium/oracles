@@ -162,6 +162,35 @@ pub async fn add_pending_txn(
     Ok(())
 }
 
+/// Store a bound on the expiry of a pending txn that was written without one,
+/// and return the expiry to settle it against.
+///
+/// Only a 0 is replaced. Once a bound is stored, later calls return it
+/// unchanged, so the release height never moves.
+pub async fn bound_unrecorded_expiry(
+    conn: &PgPool,
+    signature: &Signature,
+    bound: u64,
+) -> Result<u64, sqlx::Error> {
+    let stored: i64 = sqlx::query_scalar(
+        r#"
+        UPDATE pending_txns
+        SET last_valid_block_height = CASE
+            WHEN last_valid_block_height = 0 THEN $2
+            ELSE last_valid_block_height
+        END
+        WHERE signature = $1
+        RETURNING last_valid_block_height
+        "#,
+    )
+    .bind(signature.to_string())
+    .bind(bound as i64)
+    .fetch_one(conn)
+    .await?;
+
+    Ok(stored as u64)
+}
+
 pub async fn remove_pending_txn_failure(
     conn: &PgPool,
     signature: &Signature,
