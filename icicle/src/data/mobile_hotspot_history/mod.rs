@@ -140,16 +140,13 @@ mod tests {
         route(&history).expect("the shipped settings must build a route");
     }
 
-    /// The ledger is keyed on this string. Renaming it replays the whole
+    /// The route name keys glacon's metrics and ledger directory, and the
+    /// input name keys the ledger's rows: renaming either replays the whole
     /// bucket, so changing this test should be a deliberate act.
-    #[test]
-    fn the_input_name_is_pinned() {
-        assert_eq!(INPUT, "chain");
-    }
-
     #[test]
     fn the_names_are_pinned() {
         assert_eq!(ROUTE, "mobile_hotspot_history");
+        assert_eq!(INPUT, "chain");
         assert_eq!(FILE_PREFIX, "mobile_hotspot_change_report");
         assert_eq!(DEFAULT_NAMESPACE, "chain");
         assert_eq!(DEFAULT_TABLE_NAME, "mobile_hotspot_history");

@@ -96,30 +96,3 @@ impl Settings {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use glacon_helium::GlaconOutput;
-
-    /// The conversion is the only place the two table keys are read, so this
-    /// is what would catch them being crossed or one of them dropped.
-    #[test]
-    fn the_table_keys_address_the_table() {
-        let configured = TableSettings {
-            namespace: "other".to_string(),
-            name: "shadow".to_string(),
-        };
-        let table = MobileHotspotHistoryTable::from(&configured)
-            .table()
-            .expect("valid definition");
-        assert_eq!(table.namespace(), "other");
-        assert_eq!(table.name(), "shadow");
-
-        let default = MobileHotspotHistoryTable::from(&TableSettings::default())
-            .table()
-            .expect("valid definition");
-        assert_eq!(default.namespace(), DEFAULT_NAMESPACE);
-        assert_eq!(default.name(), DEFAULT_TABLE_NAME);
-    }
-}

@@ -232,48 +232,50 @@ mod tests {
     const CELL: &str = "8c2681a3064d9ff";
     const FILE_TS_MS: u64 = 1_700_000_123_456;
 
-    fn change() -> MobileHotspotChangeV1 {
-        MobileHotspotChangeV1 {
-            block: 42,
-            timestamp_seconds: 1_700_000_000,
-            pub_key: Some(HeliumPubKey { value: vec![1; 33] }),
-            asset: Some(SolanaPubKey {
-                value: vec![4, 5, 6],
-            }),
-            metadata: Some(MobileHotspotMetadata {
-                serial_number: "SN123".to_string(),
-                device_type: MobileHotspotDeviceType::WifiIndoor as i32,
-                asserted_hex: CELL.to_string(),
-                azimuth: 180,
-            }),
-        }
-    }
+    // ------------------------------------------------------------- helpers
 
-    fn report(change: Option<MobileHotspotChangeV1>) -> MobileHotspotChangeReportV1 {
+    /// A complete, valid report: what every test starts from and breaks one
+    /// piece of.
+    fn valid() -> MobileHotspotChangeReportV1 {
         MobileHotspotChangeReportV1 {
             received_timestamp_ms: 1_700_000_001_000,
             report: Some(MobileHotspotChangeReqV1 {
-                change,
+                change: Some(MobileHotspotChangeV1 {
+                    block: 42,
+                    timestamp_seconds: 1_700_000_000,
+                    pub_key: Some(HeliumPubKey { value: vec![1; 33] }),
+                    asset: Some(SolanaPubKey {
+                        value: vec![4, 5, 6],
+                    }),
+                    metadata: Some(MobileHotspotMetadata {
+                        serial_number: "SN123".to_string(),
+                        device_type: MobileHotspotDeviceType::WifiIndoor as i32,
+                        asserted_hex: CELL.to_string(),
+                        azimuth: 180,
+                    }),
+                }),
                 signer: "signer1".to_string(),
                 signature: vec![],
             }),
         }
     }
 
+    fn change(report: &mut MobileHotspotChangeReportV1) -> &mut MobileHotspotChangeV1 {
+        report.report.as_mut().unwrap().change.as_mut().unwrap()
+    }
+
+    fn metadata(report: &mut MobileHotspotChangeReportV1) -> &mut MobileHotspotMetadata {
+        change(report).metadata.as_mut().unwrap()
+    }
+
     fn with_hex(asserted_hex: &str) -> MobileHotspotChangeReportV1 {
-        let mut change = change();
-        change.metadata.as_mut().unwrap().asserted_hex = asserted_hex.to_string();
-        report(Some(change))
+        let mut report = valid();
+        metadata(&mut report).asserted_hex = asserted_hex.to_string();
+        report
     }
 
-    fn record(report: MobileHotspotChangeReportV1, record_index: u64) -> MobileHotspotChangeReport {
-        MobileHotspotChangeReport {
-            file_ts: FILE_TS_MS,
-            record_index,
-            report,
-        }
-    }
-
+    /// Runs reports through the middleware as one batch, the way glacon does:
+    /// each report's `record_index` is its position.
     async fn run(
         reports: Vec<MobileHotspotChangeReportV1>,
     ) -> Vec<Result<MobileHotspotHistory, Rejected>> {
@@ -285,7 +287,11 @@ mod tests {
         let records = reports
             .into_iter()
             .enumerate()
-            .map(|(index, report)| record(report, index as u64))
+            .map(|(index, report)| MobileHotspotChangeReport {
+                file_ts: FILE_TS_MS,
+                record_index: index as u64,
+                report,
+            })
             .collect();
         MobileHotspotHistoryMiddleware
             .handle_data(&batch, records)
@@ -297,65 +303,80 @@ mod tests {
         run(vec![report]).await.remove(0)
     }
 
-    fn expected_center() -> LatLng {
-        LatLng::from(CELL.parse::<CellIndex>().unwrap())
+    async fn rejected(report: MobileHotspotChangeReportV1) -> Rejected {
+        one(report).await.expect_err("must be rejected")
     }
 
-    // ------------------------------------------------------------ validate
+    async fn accepted(report: MobileHotspotChangeReportV1) -> MobileHotspotHistory {
+        one(report).await.expect("must be accepted")
+    }
+
+    fn center_of(hex: &str) -> LatLng {
+        LatLng::from(hex.parse::<CellIndex>().unwrap())
+    }
+
+    // ------------------------------------------- rejected: one per reason
 
     #[tokio::test]
-    async fn a_missing_report_is_rejected() {
-        let proto = MobileHotspotChangeReportV1 {
-            received_timestamp_ms: 1000,
-            report: None,
-        };
-        let err = one(proto).await.unwrap_err();
+    async fn rejects_a_missing_report_as_missing_report() {
+        let mut report = valid();
+        report.report = None;
+
+        let err = rejected(report).await;
+        assert!(matches!(err, Rejected::MissingReport { record_index: 0 }));
         assert_eq!(err.reason(), "missing_report");
+        assert_eq!(err.to_string(), "record 0: missing report");
     }
 
     #[tokio::test]
-    async fn a_missing_change_is_rejected() {
-        let err = one(report(None)).await.unwrap_err();
+    async fn rejects_a_missing_change_as_missing_change() {
+        let mut report = valid();
+        report.report.as_mut().unwrap().change = None;
+
+        let err = rejected(report).await;
+        assert!(matches!(err, Rejected::MissingChange { record_index: 0 }));
         assert_eq!(err.reason(), "missing_change");
+        assert_eq!(err.to_string(), "record 0: missing change");
     }
 
     #[tokio::test]
-    async fn missing_metadata_is_rejected() {
-        let mut change = change();
-        change.metadata = None;
-        let err = one(report(Some(change))).await.unwrap_err();
+    async fn rejects_missing_metadata_as_missing_metadata() {
+        let mut report = valid();
+        change(&mut report).metadata = None;
+
+        let err = rejected(report).await;
+        assert!(matches!(err, Rejected::MissingMetadata { record_index: 0 }));
         assert_eq!(err.reason(), "missing_metadata");
+        assert_eq!(err.to_string(), "record 0: missing metadata");
     }
 
+    /// Both timestamps share the reason; the message says which one.
     #[tokio::test]
-    async fn an_out_of_range_timestamp_is_rejected() {
-        let mut change = change();
-        change.timestamp_seconds = u64::MAX;
-        let err = one(report(Some(change))).await.unwrap_err();
-        assert_eq!(err.reason(), "invalid_timestamp");
-        assert!(err.to_string().contains("timestamp_seconds"), "{err}");
+    async fn rejects_an_out_of_range_timestamp_as_invalid_timestamp() {
+        let mut bad_received = valid();
+        bad_received.received_timestamp_ms = u64::MAX;
+        let mut bad_change = valid();
+        change(&mut bad_change).timestamp_seconds = u64::MAX;
 
-        let mut proto = report(Some(self::change()));
-        proto.received_timestamp_ms = u64::MAX;
-        let err = one(proto).await.unwrap_err();
-        assert_eq!(err.reason(), "invalid_timestamp");
-        assert!(err.to_string().contains("received_timestamp_ms"), "{err}");
-    }
-
-    /// The message names the record, so the example glacon logs for a batch
-    /// can be found in its file.
-    #[tokio::test]
-    async fn a_rejection_names_its_record() {
-        let results = run(vec![report(Some(change())), report(None)]).await;
-        let err = results[1].as_ref().unwrap_err();
-        assert!(err.to_string().starts_with("record 1:"), "{err}");
+        for (report, field) in [
+            (bad_received, "received_timestamp_ms"),
+            (bad_change, "timestamp_seconds"),
+        ] {
+            let err = rejected(report).await;
+            assert!(
+                matches!(err, Rejected::InvalidTimestamp { record_index: 0, field: f, .. } if f == field),
+                "{err:?}"
+            );
+            assert_eq!(err.reason(), "invalid_timestamp");
+            assert_eq!(err.to_string(), format!("record 0: invalid {field}"));
+        }
     }
 
     // ------------------------------------------------------------- convert
 
     #[tokio::test]
-    async fn a_valid_report_converts_field_for_field() {
-        let row = one(report(Some(change()))).await.expect("valid");
+    async fn converts_a_valid_report_field_for_field() {
+        let row = accepted(valid()).await;
 
         let pub_key = PublicKeyBinary::from(vec![1u8; 33]).to_string();
         assert_eq!(row.file_ts, FILE_TS_MS);
@@ -376,118 +397,104 @@ mod tests {
         assert_eq!(row.signer, "signer1");
     }
 
+    /// The names the network table holds, and `UNKNOWN` for a value the proto
+    /// doesn't define.
     #[test]
-    fn every_device_type_is_named_as_in_the_network_table() {
+    fn names_device_types_as_the_network_table_does() {
         for (value, name) in [
-            (MobileHotspotDeviceType::Unknown, "UNKNOWN"),
-            (MobileHotspotDeviceType::Cbrs, "CBRS"),
-            (MobileHotspotDeviceType::WifiIndoor, "WIFI_INDOOR"),
-            (MobileHotspotDeviceType::WifiOutdoor, "WIFI_OUTDOOR"),
-            (MobileHotspotDeviceType::WifiDataOnly, "WIFI_DATA_ONLY"),
+            (MobileHotspotDeviceType::Unknown as i32, "UNKNOWN"),
+            (MobileHotspotDeviceType::Cbrs as i32, "CBRS"),
+            (MobileHotspotDeviceType::WifiIndoor as i32, "WIFI_INDOOR"),
+            (MobileHotspotDeviceType::WifiOutdoor as i32, "WIFI_OUTDOOR"),
+            (
+                MobileHotspotDeviceType::WifiDataOnly as i32,
+                "WIFI_DATA_ONLY",
+            ),
+            (9999, "UNKNOWN"),
         ] {
-            assert_eq!(device_type_name(value as i32), name);
+            assert_eq!(device_type_name(value), name);
         }
     }
 
     #[tokio::test]
-    async fn an_undefined_device_type_is_unknown() {
-        let mut change = change();
-        change.metadata.as_mut().unwrap().device_type = 9999;
-        let row = one(report(Some(change))).await.expect("valid");
-        assert_eq!(row.device_type, "UNKNOWN");
+    async fn turns_an_empty_serial_into_none() {
+        let mut report = valid();
+        metadata(&mut report).serial_number = String::new();
+        assert_eq!(accepted(report).await.serial_number, None);
     }
+
+    // ------------------------------------------------------------------ h3
 
     #[tokio::test]
-    async fn empty_serial_and_hex_are_none() {
-        let mut change = change();
-        let metadata = change.metadata.as_mut().unwrap();
-        metadata.serial_number = String::new();
-        metadata.asserted_hex = String::new();
-
-        let row = one(report(Some(change))).await.expect("valid");
-        assert_eq!(row.serial_number, None);
-        assert_eq!(row.asserted_hex, None);
+    async fn asserted_lat_and_lon_are_the_cells_center() {
+        let row = accepted(with_hex(CELL)).await;
+        assert_eq!(row.asserted_lat, Some(center_of(CELL).lat()));
+        assert_eq!(row.asserted_lon, Some(center_of(CELL).lng()));
     }
 
-    // -------------------------------------------------------------- locate
-
-    #[tokio::test]
-    async fn asserted_lat_is_the_cell_centers_latitude() {
-        let row = one(with_hex(CELL)).await.expect("valid");
-        assert_eq!(row.asserted_lat, Some(expected_center().lat()));
-    }
-
-    #[tokio::test]
-    async fn asserted_lon_is_the_cell_centers_longitude() {
-        let row = one(with_hex(CELL)).await.expect("valid");
-        assert_eq!(row.asserted_lon, Some(expected_center().lng()));
-    }
-
-    /// Independently of `expected_center`: start from a known place, take its
-    /// resolution-12 cell as hex, and the center must land back there. A
-    /// swapped lat/lon would put it on the other side of the planet.
+    /// Independent of h3o's own answer above: start from a known place, take
+    /// its resolution-12 cell, and the center must land back there. A swapped
+    /// lat/lon would put it on the other side of the planet.
     #[tokio::test]
     async fn the_center_is_where_the_cell_is() {
         let (lat, lon) = (37.7749, -122.4194);
         let cell = LatLng::new(lat, lon)
             .unwrap()
             .to_cell(h3o::Resolution::Twelve);
-        let hex = format!("{:x}", u64::from(cell));
 
-        let row = one(with_hex(&hex)).await.expect("valid");
-        let (got_lat, got_lon) = (row.asserted_lat.unwrap(), row.asserted_lon.unwrap());
+        let row = accepted(with_hex(&format!("{:x}", u64::from(cell)))).await;
         // A resolution-12 cell is about 10 m across; 1e-3 degrees is ~100 m.
-        assert!((got_lat - lat).abs() < 1e-3, "lat {got_lat}, want ~{lat}");
-        assert!((got_lon - lon).abs() < 1e-3, "lon {got_lon}, want ~{lon}");
-    }
-
-    #[test]
-    fn a_0x_prefix_is_accepted() {
-        assert_eq!(cell_center(&format!("0x{CELL}")), Ok(expected_center()));
+        assert!((row.asserted_lat.unwrap() - lat).abs() < 1e-3);
+        assert!((row.asserted_lon.unwrap() - lon).abs() < 1e-3);
     }
 
     #[tokio::test]
-    async fn no_asserted_hex_leaves_both_columns_empty() {
-        let row = one(with_hex("")).await.expect("valid");
+    async fn a_0x_prefixed_hex_gives_the_same_center() {
+        let row = accepted(with_hex(&format!("0x{CELL}"))).await;
+        assert_eq!(row.asserted_lat, Some(center_of(CELL).lat()));
+        assert_eq!(row.asserted_lon, Some(center_of(CELL).lng()));
+    }
+
+    /// An unasserted hotspot is a normal row with no location.
+    #[tokio::test]
+    async fn no_asserted_hex_is_kept_with_no_location() {
+        let row = accepted(with_hex("")).await;
         assert_eq!(row.asserted_hex, None);
         assert_eq!(row.asserted_lat, None);
         assert_eq!(row.asserted_lon, None);
     }
 
+    /// A hex that isn't a cell is not a rejection: the row is kept, as the
+    /// network table keeps it, with the hex as sent and no location.
     #[tokio::test]
-    async fn an_invalid_asserted_hex_keeps_the_row_with_both_columns_empty() {
+    async fn an_invalid_asserted_hex_is_kept_with_no_location() {
         for hex in ["not-hex", "ffffffffffffffff", "0"] {
-            let row = one(with_hex(hex)).await.expect("the row must be kept");
+            let row = accepted(with_hex(hex)).await;
             assert_eq!(row.asserted_hex.as_deref(), Some(hex));
             assert_eq!(row.asserted_lat, None, "{hex}");
             assert_eq!(row.asserted_lon, None, "{hex}");
         }
-    }
-
-    #[test]
-    fn invalid_hex_says_why() {
         assert_eq!(cell_center("zz"), Err(AssertedHexError::NotHex));
         assert_eq!(cell_center("0"), Err(AssertedHexError::NotACell));
     }
 
-    // --------------------------------------------------------------- shape
+    // --------------------------------------------------------------- batch
 
     /// glacon fails the route if the result count differs from the record
-    /// count, and pairs results to records by position.
+    /// count, and pairs results with records by position.
     #[tokio::test]
-    async fn one_result_per_report_in_order() {
-        let results = run(vec![
-            with_hex(CELL),
-            report(None),
-            with_hex(""),
-            with_hex("garbage"),
-        ])
-        .await;
+    async fn returns_one_result_per_report_in_order() {
+        let mut missing_change = valid();
+        missing_change.report.as_mut().unwrap().change = None;
 
-        assert_eq!(results.len(), 4);
+        let results = run(vec![with_hex(CELL), missing_change, with_hex("")]).await;
+
+        assert_eq!(results.len(), 3);
         assert_eq!(results[0].as_ref().unwrap().record_index, 0);
-        assert_eq!(results[1].as_ref().unwrap_err().reason(), "missing_change");
+        assert!(matches!(
+            results[1],
+            Err(Rejected::MissingChange { record_index: 1 })
+        ));
         assert_eq!(results[2].as_ref().unwrap().record_index, 2);
-        assert_eq!(results[3].as_ref().unwrap().record_index, 3);
     }
 }

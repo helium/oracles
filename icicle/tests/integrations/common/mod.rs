@@ -190,11 +190,6 @@ pub fn report(key_byte: u8, asserted_hex: &str, at: DateTime<Utc>) -> MobileHots
 
 // ---------------------------------------------------------------- reading
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Trino)]
-struct Count {
-    n: i64,
-}
-
 /// One row of the table, the columns the tests assert on.
 #[derive(Debug, serde::Deserialize, serde::Serialize, Trino)]
 pub struct HistoryRow {
@@ -221,15 +216,6 @@ pub fn table() -> String {
         mobile_hotspot_history::DEFAULT_NAMESPACE,
         mobile_hotspot_history::DEFAULT_TABLE_NAME
     )
-}
-
-pub async fn count(h: &Harness) -> anyhow::Result<i64> {
-    let rows = h
-        .iceberg
-        .trino()
-        .get_all::<Count>(format!("SELECT COUNT(*) AS n FROM {}", table()))
-        .await?;
-    Ok(rows.into_vec().first().map_or(0, |c| c.n))
 }
 
 /// Every row, in the order it was written.

@@ -182,6 +182,19 @@ icicle -c settings.toml server
 
 ## Tests
 
+Most of the logic is in each route's middleware, so most of the tests are
+too:
+
+- **Middleware unit tests.** These cover one test per `Rejected` reason, the
+  field conversions, the H3 center, and the one-result-per-record contract.
+  For `mobile_hotspot_history` they are in `middleware.rs`.
+- **Other unit tests.** The settings validation, the shipped template, and
+  the pinned route and input names.
+- **One end-to-end test per route.** A file goes in a bucket, the real route
+  runs, and the rows are read back from Trino. It checks that rejected
+  reports are not written and that the values survive the trip through
+  Arrow, Parquet and Iceberg.
+
 ```sh
 cargo test -p icicle --lib
 ```

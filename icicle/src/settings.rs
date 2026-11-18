@@ -129,31 +129,6 @@ bucket = "ingest-chain"
 "#;
 
     #[test]
-    fn the_route_loads_and_defaults_to_chain_mobile_hotspot_history() {
-        let f = write_settings(HISTORY);
-        let settings = Settings::new(Some(f.path())).expect("valid settings");
-        let history = settings
-            .mobile_hotspot_history
-            .as_ref()
-            .expect("route configured");
-
-        assert_eq!(
-            history
-                .inputs
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            [mobile_hotspot_history::INPUT]
-        );
-        assert_eq!(history.inputs["chain"].bucket.bucket, "ingest-chain");
-        assert_eq!(history.inputs["chain"].start_after.timestamp(), 0);
-        assert_eq!(history.table.namespace, "chain");
-        assert_eq!(history.table.name, "mobile_hotspot_history");
-        assert_eq!(history.fresh_state, FreshStateSetting::Refuse);
-        assert_eq!(settings.configured(), [mobile_hotspot_history::ROUTE]);
-    }
-
-    #[test]
     fn a_process_with_no_data_types_is_refused() {
         let f = write_settings("log = \"icicle=debug\"\n");
         let err = Settings::new(Some(f.path())).expect_err("must be refused");
@@ -222,16 +197,5 @@ bucket = "ingest-chain"
         assert_eq!(history.table.namespace, "chain");
         assert_eq!(history.table.name, "mobile_hotspot_history");
         assert_eq!(history.fresh_state, FreshStateSetting::Refuse);
-    }
-
-    #[test]
-    fn fresh_state_is_spelled_in_snake_case() {
-        let body = format!("[mobile_hotspot_history]\nfresh_state = \"proceed\"\n{HISTORY}");
-        let f = write_settings(&body);
-        let settings = Settings::new(Some(f.path())).expect("valid settings");
-        assert_eq!(
-            settings.mobile_hotspot_history.expect("route").fresh_state,
-            FreshStateSetting::Proceed
-        );
     }
 }

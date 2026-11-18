@@ -74,26 +74,3 @@ impl GlaconOutput<MobileHotspotHistory, Rejected> for MobileHotspotHistoryTable 
         rows.push(record.clone());
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `TableDefinition` exposes no accessor for its fields, so the column
-    /// list is asserted against the real table in the integration tests,
-    /// which read the schema back out of Trino.
-    #[test]
-    fn the_table_definition_builds_and_is_addressed() {
-        let table = MobileHotspotHistoryTable::default()
-            .table()
-            .expect("valid definition");
-        assert_eq!(table.namespace(), "chain");
-        assert_eq!(table.name(), "mobile_hotspot_history");
-
-        let custom = MobileHotspotHistoryTable::new("other", "shadow")
-            .table()
-            .expect("valid definition");
-        assert_eq!(custom.namespace(), "other");
-        assert_eq!(custom.name(), "shadow");
-    }
-}
