@@ -3,11 +3,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
 use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult,
-};
-use mobile_verifier::speedtests::{RecentSpeedtests, SpeedtestDaemon, BYTES_PER_MEGABIT};
-use mobile_verifier::{GatewayResolution, GatewayResolver};
+use helium_proto::services::poc_mobile::SpeedtestVerificationResult as SpeedtestResult;
+use mobile_verifier::speedtests::{SpeedtestDaemon, BYTES_PER_MEGABIT};
+use mobile_verifier::{iceberg, GatewayResolution, GatewayResolver};
 use sqlx::{Pool, Postgres};
 
 #[derive(Clone)]
@@ -27,59 +25,9 @@ impl GatewayResolver for MockGatewayInfoResolver {
 }
 
 #[sqlx::test]
-async fn speedtests_average_should_only_include_last_48_hours(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let (_tx, rx) = tokio::sync::mpsc::channel(2);
-    let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
-
-    let hotspot: PublicKeyBinary =
-        "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
-
-    let stream = file_info_stream(vec![
-        speedtest(&hotspot, "2024-01-01 01:00:00", 0, 101, 11),
-        speedtest(&hotspot, "2024-01-02 01:00:00", 0, 99, 9),
-        speedtest(&hotspot, "2024-01-03 01:00:00", 0, 101, 11),
-        speedtest(&hotspot, "2024-01-04 01:00:00", 10, 100, 10),
-        speedtest(&hotspot, "2024-01-05 01:00:00", 10, 100, 10),
-        speedtest(&hotspot, "2024-01-06 01:00:00", 10, 100, 10),
-    ]);
-
-    // Drop the daemon when it's done running to close the channel
-    {
-        let harness = common::setup_iceberg().await?;
-        let poc_writers = common::poc_writers(&harness).await?;
-
-        let daemon = SpeedtestDaemon::new(
-            pool.clone(),
-            RecentSpeedtests::new(),
-            gateway_info_resolver,
-            rx,
-            speedtest_avg_client,
-            verified_client,
-            poc_writers.speedtest,
-            poc_writers.speedtest_avg,
-        );
-
-        daemon.process_file(stream).await?;
-    }
-
-    let avgs = speedtest_avg_receiver.finish().await?;
-
-    assert_eq!(6, avgs.len());
-    assert_eq!(SpeedtestAvgValidity::TooFewSamples, avgs[0].validity());
-    assert_eq!(1.0, avgs[5].reward_multiplier);
-
-    Ok(())
-}
-
-#[sqlx::test]
 async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
@@ -90,13 +38,10 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
 
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
-        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
         verified_client,
         poc_writers.speedtest,
-        poc_writers.speedtest_avg,
     );
 
     let speedtest_report = CellSpeedtestIngestReport {
@@ -123,7 +68,6 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
@@ -134,13 +78,10 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
 
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
-        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
         verified_client,
         poc_writers.speedtest,
-        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with download speed > 300Mbits
@@ -168,7 +109,6 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
@@ -179,13 +119,10 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
 
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
-        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
         verified_client,
         poc_writers.speedtest,
-        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with both speeds > 300Mbits
@@ -213,7 +150,6 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
@@ -224,13 +160,10 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
 
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
-        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
         verified_client,
         poc_writers.speedtest,
-        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with both speeds within 300Mbits limit
@@ -258,7 +191,6 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
@@ -269,13 +201,10 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
 
     let daemon = SpeedtestDaemon::new(
         pool.clone(),
-        RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
         verified_client,
         poc_writers.speedtest,
-        poc_writers.speedtest_avg,
     );
 
     // Create speedtest with speeds exactly at 300Mbits limit
@@ -298,135 +227,47 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
 }
 
 #[sqlx::test]
-async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn only_valid_speedtests_reach_the_speedtests_table(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    // `hotspots.speedtests` is the only input to the dbt `speedtest_averages`
+    // model, so a rejected report has to stay out of it or it would be averaged.
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
-    let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
 
-    // Create a mix of valid and invalid speedtests
-    // Valid speedtests will average to "Poor" tier (0.25 multiplier)
-    // Invalid speedtests have very high speeds that would result in "Good" tier if included
-    let speedtests = vec![
-        // Valid speedtest - should be included in average
-        // Upload: 3 Mbps = Poor tier (≥2 but <5)
-        // Download: 35 Mbps = Poor tier (≥30 but <50)
-        // Latency: 80ms = Poor tier (≥75 but <100)
-        CellSpeedtestIngestReport {
-            received_timestamp: Utc::now(),
-            report: CellSpeedtest {
-                pubkey: hotspot.clone(),
-                serial: "test-serial-1".to_string(),
-                timestamp: parse_dt("2024-01-01 01:00:00"),
-                upload_speed: mbps(3),    // Poor tier
-                download_speed: mbps(35), // Poor tier
-                latency: 80,              // Poor tier
-            },
-        },
-        // Invalid speedtest - upload exceeds 300Mbits, should NOT be included
-        // If included, this would push toward Good tier due to very high speeds
-        CellSpeedtestIngestReport {
-            received_timestamp: Utc::now(),
-            report: CellSpeedtest {
-                pubkey: hotspot.clone(),
-                serial: "test-serial-2".to_string(),
-                timestamp: parse_dt("2024-01-01 02:00:00"),
-                upload_speed: mbps(900),   // Invalid (way above limit)
-                download_speed: mbps(150), // Good tier
-                latency: 20,               // Good tier
-            },
-        },
-        // Another valid speedtest - should be included in average
-        // Upload: 4 Mbps = Poor tier (≥2 but <5)
-        // Download: 40 Mbps = Poor tier (≥30 but <50)
-        // Latency: 90ms = Poor tier (≥75 but <100)
-        CellSpeedtestIngestReport {
-            received_timestamp: Utc::now(),
-            report: CellSpeedtest {
-                pubkey: hotspot.clone(),
-                serial: "test-serial-3".to_string(),
-                timestamp: parse_dt("2024-01-01 03:00:00"),
-                upload_speed: mbps(4),    // Poor tier
-                download_speed: mbps(40), // Poor tier
-                latency: 90,              // Poor tier
-            },
-        },
-        // Invalid speedtest - download exceeds 300Mbits, should NOT be included
-        // If included, this would push toward Good tier due to very high speeds
-        CellSpeedtestIngestReport {
-            received_timestamp: Utc::now(),
-            report: CellSpeedtest {
-                pubkey: hotspot.clone(),
-                serial: "test-serial-4".to_string(),
-                timestamp: parse_dt("2024-01-01 04:00:00"),
-                upload_speed: mbps(15),    // 15 Mbps - would be Good tier
-                download_speed: mbps(900), // invalid (way above limit)
-                latency: 30,               // Would be Good tier
-            },
-        },
-    ];
+    let stream = file_info_stream(vec![
+        speedtest(&hotspot, "2024-01-01 01:00:00", 3, 35, 80),
+        // Upload exceeds the 300 Mbps bound: rejected.
+        speedtest(&hotspot, "2024-01-01 02:00:00", 900, 150, 20),
+        speedtest(&hotspot, "2024-01-01 03:00:00", 4, 40, 90),
+        // Download exceeds the 300 Mbps bound: rejected.
+        speedtest(&hotspot, "2024-01-01 04:00:00", 15, 900, 30),
+    ]);
 
-    let stream = file_info_stream(speedtests);
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
 
-    // Drop the daemon when it's done running to close the channel
-    {
-        let harness = common::setup_iceberg().await?;
-        let poc_writers = common::poc_writers(&harness).await?;
-
-        let daemon = SpeedtestDaemon::new(
-            pool.clone(),
-            RecentSpeedtests::new(),
-            gateway_info_resolver,
-            rx,
-            speedtest_avg_client,
-            verified_client,
-            poc_writers.speedtest,
-            poc_writers.speedtest_avg,
-        );
-
-        daemon.process_file(stream).await?;
-    }
-
-    let avgs = speedtest_avg_receiver.finish().await?;
-
-    // Should have 2 average entries (one for each valid speedtest)
-    // Invalid speedtests with speeds > 300Mbits should NOT generate averages
-    assert_eq!(
-        2,
-        avgs.len(),
-        "Only valid speedtests should generate averages"
+    let daemon = SpeedtestDaemon::new(
+        pool.clone(),
+        MockGatewayInfoResolver {},
+        rx,
+        verified_client,
+        poc_writers.speedtest,
     );
+    daemon.process_file(stream).await?;
 
-    // Verify the averages only include valid speedtests
-    // Expected averages based on the two valid speedtests:
-    // Upload: (3 Mbps + 4 Mbps) / 2 = 3.5 Mbps = Poor tier
-    // Download: (35 Mbps + 40 Mbps) / 2 = 37.5 Mbps = Poor tier
-    // Latency: (80ms + 90ms) / 2 = 85ms = Poor tier
-    // Result: Poor tier = 0.25 multiplier
-    let expected_upload_avg = mbps(3) + mbps(4); // Sum before division in the code
-    let expected_upload_avg = expected_upload_avg / 2; // (3.5 Mbps)
-    let expected_download_avg = mbps(35) + mbps(40); // Sum before division in the code
-    let expected_download_avg = expected_download_avg / 2; // (37.5 Mbps)
-
-    // Check the last average (which includes both valid speedtests)
-    let last_avg = &avgs[1];
+    let mut stored = iceberg::speedtest::get_all(harness.trino()).await?;
+    stored.sort_by_key(|s| s.timestamp);
+    let timestamps: Vec<_> = stored.iter().map(|s| s.timestamp.to_utc()).collect();
     assert_eq!(
-        expected_upload_avg, last_avg.upload_speed_avg_bps,
-        "Upload average should only include valid speedtests"
-    );
-    assert_eq!(
-        expected_download_avg, last_avg.download_speed_avg_bps,
-        "Download average should only include valid speedtests"
-    );
-
-    // Most importantly: verify that the reward multiplier is 0.25 (Poor tier)
-    // If invalid speedtests were included, the multiplier would be much higher
-    assert_eq!(
-        0.25, last_avg.reward_multiplier,
-        "Reward multiplier should be 0.25 (Poor tier) based only on valid speedtests"
+        vec![
+            parse_dt("2024-01-01 01:00:00"),
+            parse_dt("2024-01-01 03:00:00")
+        ],
+        timestamps
     );
 
     Ok(())

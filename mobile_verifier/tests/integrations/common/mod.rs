@@ -4,8 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, PromotionReward,
-    RadioReward, RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
-    UnallocatedReward,
+    RadioReward, RadioRewardV2, ServiceProviderReward, SubscriberReward, UnallocatedReward,
 };
 use mobile_verifier::rewarder::EpochRewardInfo;
 use mobile_verifier::{DeviceType, GatewayResolution, GatewayResolver, PriceInfo};
@@ -156,20 +155,6 @@ impl FileSinkReceiver<MobileRewardShare> {
     }
 }
 
-impl FileSinkReceiver<SpeedtestAvg> {
-    pub async fn finish(self) -> anyhow::Result<Vec<SpeedtestAvg>> {
-        // make sure the channel is closed and done being written to
-        if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
-            panic!("file sink receiver channel was never closed: {err:?}");
-        }
-
-        let lock = Arc::try_unwrap(self.msgs).expect("no locks on messages");
-        let msgs = lock.into_inner();
-
-        Ok(msgs)
-    }
-}
-
 impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
     fn new(mut receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>) -> Self {
         let channel_closed = Arc::new(tokio::sync::Notify::new());
@@ -209,7 +194,6 @@ pub async fn setup_iceberg() -> anyhow::Result<IcebergTestHarness> {
         helium_iceberg_oracles::data_transfer::burned_session::table_definition()?,
         mobile_verifier::iceberg::heartbeat::table_definition()?,
         mobile_verifier::iceberg::speedtest::table_definition()?,
-        mobile_verifier::iceberg::speedtest_avg::table_definition()?,
     ])
     .await?;
     Ok(harness)
@@ -225,7 +209,7 @@ pub async fn reward_writers(
     mobile_verifier::iceberg::get_reward_writers(&harness.as_settings()).await
 }
 
-/// PoC-table writers (heartbeat, speedtest, speedtest average, ban) backed by
+/// PoC-table writers (heartbeat, speedtest, ban) backed by
 /// the test harness's catalog.
 pub async fn poc_writers(
     harness: &IcebergTestHarness,

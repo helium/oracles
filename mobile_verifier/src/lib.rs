@@ -13,7 +13,6 @@ pub mod reward_shares;
 pub mod rewarder;
 mod settings;
 pub mod speedtests;
-pub mod speedtests_average;
 pub mod telemetry;
 
 pub use authorization::{AuthorizationVerifier, AuthorizedKeys};

@@ -13,10 +13,11 @@ same function, which CI can do here and could not do from another repository.
 A column added in `session.rs` and the model that consumes it land in one pull
 request, reviewed together.
 
-Today the project does not exercise that. It has one model, over the one source
-in this catalog that the repo does *not* produce, so nothing here reads an
-oracle table and no Rust runs in CI. The argument above is why this is the right
-home for the models that will, not a description of what it is currently doing.
+`speedtest_averages` is the first model over an oracle table: it reads
+mobile-verifier's `hotspots.speedtests`, and CI creates that table from
+`mobile_verifier/src/iceberg/speedtest.rs` before building, via
+`cargo run -p mobile-verifier --example create_dbt_sources`. Renaming a column
+there fails the dbt build in the same PR.
 
 ## Scope
 
@@ -46,19 +47,18 @@ missing column rather than as a silently wrong mart — weaker than deriving the
 schema from its own definition, and the best available for a table this repo
 does not own. Refresh that file with `SHOW CREATE TABLE` when upstream moves.
 
-The oracle-written tables (`data_transfer`, `rewards`, `tokens`, and
-mobile-verifier's tables in `hotspots`) are deliberately not declared. Nothing
-models them, so declaring them verified only their own accuracy — and paid for
-it with a full `mobile-verifier` compile in CI, to create the tables to check
-them against. Declare one when a model needs it, and bring that check back with
-it.
+An oracle-written table is declared only when a model reads it, and added to
+the example's `SOURCES` at the same time so CI creates it. Today that is
+`hotspots.speedtests` alone.
 
 Where the rest of the catalog's schemas live, for when a model needs one:
 
 | namespace | tables | defined in |
 | --- | --- | --- |
 | `hotspots` | 1 — **declared** | *external* — mirrored in `scripts/external_sources.sql` |
-| `hotspots` | 8 | `mobile_verifier/src/iceberg/` |
+| `hotspots` | 1 — **declared** (`speedtests`) | `mobile_verifier/src/iceberg/` — created in CI by `examples/create_dbt_sources.rs` |
+| `hotspots` | 5 | `mobile_verifier/src/iceberg/` (`bans`: `helium_iceberg_oracles/src/hotspots/`) |
+| `hotspots` | 2 — frozen | `speedtest_avgs`, `invalid_speedtest_avgs`: no longer written; superseded by the `speedtest_averages` model |
 | `data_transfer` | 4 | `helium_iceberg_oracles/src/data_transfer/` |
 | `rewards` | 3 | `mobile_verifier/src/iceberg/` |
 | `tokens` | 1 | `price/src/iceberg/` |
@@ -66,7 +66,7 @@ Where the rest of the catalog's schemas live, for when a model needs one:
 ## Layout
 
 ```
-models/sources.yml   the one source, mirrored from its production DDL
+models/sources.yml   the sources: oracle-written (created from Rust) and external (mirrored DDL)
 models/marts/        the published models
 macros/              incremental window, UTC day, schema naming
 tests/               singular tests asserting cross-column invariants (empty)
@@ -88,8 +88,10 @@ From the repo root, one command stands up everything:
 ./dbt/scripts/local_up.sh
 ```
 
-That waits for Trino, registers the catalog, applies the source DDL, and loads
-fixtures. Docker only — no Rust toolchain needed.
+That waits for Trino, registers the catalog, applies the external source DDL,
+creates the oracle source tables from their Rust definitions, and loads
+fixtures. Needs Docker and a Rust toolchain; the first run compiles
+mobile-verifier, which takes a few minutes.
 Every step is idempotent, so re-running it is the normal way to top up a stack
 that has been restarted. Two flags:
 
@@ -128,11 +130,10 @@ Two different jobs, and it is worth not confusing them.
 
 **`scripts/fixtures.sql`** is rows in the warehouse, for looking at the thing by
 hand and for giving the data tests something real to run against. It is
-idempotent — every table is emptied before it is filled. If an oracle-written
-table ever needs rows, write them through its Rust row structs rather than as
-INSERTs; SQL fixtures re-encode column order and types, which is the
-duplication the rest of this project avoids, and is acceptable for the one
-external table only because there is no definition here to reuse.
+idempotent — every table is emptied before it is filled. Rows for an
+oracle-written table are inserted by column name, so the fixture does not
+become a second copy of the Rust definition's column order; the table itself is
+always created from that definition.
 
 **`models/marts/_unit_tests.yml`** is what actually pins the logic. Rows are
 supplied inline, so the tests need no fixtures and no warehouse data and run
@@ -180,6 +181,13 @@ hotspot from ever being picked up again.
 Which row *wins* within a key is a different question, and a reported clock can
 legitimately be the answer there — it is the moment being described. Keep the
 two decisions separate and say which is which.
+
+The one exception is `speedtest_averages`, whose table has no receipt clock to
+take a watermark from. It watermarks on the report's device `timestamp`, which
+is safe only because the model first drops every report whose `timestamp` is
+later than its `received_timestamp` — so no row in the table can sit ahead of
+ingest. Remove that filter and the failure above comes back. Its header spells
+this out.
 
 **Grain is asserted, not assumed.** Every mart pins its grain with a test
 (`unique`, or `unique_combination_of_columns` for a compound one). A source

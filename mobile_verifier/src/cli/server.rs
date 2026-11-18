@@ -110,10 +110,8 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     ingest_bucket_client.clone(),
-                    trino_client.clone(),
                     gateway_resolver.clone(),
                     poc_writers.speedtest,
-                    poc_writers.speedtest_avg,
                 )
                 .await?,
             )
