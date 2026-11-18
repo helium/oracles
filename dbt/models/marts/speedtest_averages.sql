@@ -27,10 +27,11 @@
 -- The window itself (6 samples / 48 hours, project vars) is the one piece of
 -- policy that does live here.
 --
--- Replaces the per-report average mobile-verifier computed in memory and wrote
--- to `hotspots.speedtest_avgs` / `invalid_speedtest_avgs`. Those tables are no
--- longer written and keep their history; this table starts from the
--- `speedtests` history instead. Differences from the oracle, all deliberate:
+-- Runs alongside the per-report average mobile-verifier computes in memory and
+-- writes to `hotspots.speedtest_avgs` / `invalid_speedtest_avgs`. The oracle
+-- keeps writing those for a transition period so their readers can move over at
+-- their own pace; this table is their replacement, built from the `speedtests`
+-- history rather than from them. Differences from the oracle, all deliberate:
 --
 --   * `timestamp` is the report's time, not when the average was calculated.
 --   * Future-dated reports (device `timestamp` after `received_timestamp`) are

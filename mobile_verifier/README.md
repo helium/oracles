@@ -19,6 +19,7 @@
 | File Type | Pattern | |
 | :--- | :-- | :-- |
 | ValidatedHeartbeat | validated_heartbeat.\* | [Proto](https://github.com/helium/proto/blob/b13b21f12819e30ebcf249bad462bdd196d1fe76/src/service/poc_mobile.proto#L80) |
+| SpeedtestAvg | speedtest_avg.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L97) | 
 | CoverageObject | coverage_object.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L202) |
 | SeniorityUpdate | seniority_update.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L252) |
 | RadioRewardShare (deprecated) | radio_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L118) |

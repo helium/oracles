@@ -43,11 +43,12 @@ vars:
   incremental_lookback_minutes: 30
 
   # The speedtest average window: the newest `max_samples` speedtests a hotspot
-  # reported within `window_hours` before (and including) each report. Carried
-  # over unchanged from mobile-verifier, which computed it in memory before
-  # `speedtest_averages` existed. This is policy, so it lives here in one place;
-  # changing it changes the meaning of every row, so rebuild the model with
-  # `--full-refresh` when it moves.
+  # reported within `window_hours` before (and including) each report. The same
+  # window mobile-verifier uses for its own in-memory average, so the two agree
+  # while both run; change one without the other and they stop agreeing. This
+  # is policy, so in dbt it lives here in one place. Changing it changes the
+  # meaning of every row, so rebuild the model with `--full-refresh` when it
+  # moves.
   speedtest_average_window_hours: 48
   speedtest_average_max_samples: 6
 

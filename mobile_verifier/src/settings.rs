@@ -67,7 +67,8 @@ pub struct Settings {
     pub rewarder_state_file: Option<PathBuf>,
     /// Iceberg catalog. Required: heartbeats and speedtests are written here and
     /// nowhere else in a queryable form, and they are read back through Trino to
-    /// warm the last-location cache and to gate rewarding on data currency. Without it those reads return nothing and the rewarder
+    /// warm the last-location and speedtest windows and to gate rewarding on
+    /// data currency. Without it those reads return nothing and the rewarder
     /// never fires.
     pub iceberg_settings: helium_iceberg::Settings,
     /// Trino query client. Required: each epoch the reward pipeline recovers the

@@ -11,7 +11,9 @@ pub mod heartbeat;
 pub mod invalid_ban;
 pub mod invalid_heartbeat;
 pub mod invalid_speedtest;
+pub mod invalid_speedtest_avg;
 pub mod speedtest;
+pub mod speedtest_avg;
 pub mod valid_invalid;
 
 pub use ban::IcebergBan;
@@ -19,7 +21,9 @@ pub use heartbeat::IcebergHeartbeat;
 pub use invalid_ban::IcebergInvalidBan;
 pub use invalid_heartbeat::IcebergInvalidHeartbeat;
 pub use invalid_speedtest::IcebergInvalidSpeedtest;
+pub use invalid_speedtest_avg::IcebergInvalidSpeedtestAvg;
 pub use speedtest::IcebergSpeedtest;
+pub use speedtest_avg::IcebergSpeedtestAvg;
 pub use valid_invalid::ValidInvalidWriter;
 
 pub use helium_iceberg_oracles::hotspots::NAMESPACE;
@@ -41,11 +45,13 @@ pub(crate) fn reason_without_prefix(name: &str, prefix: &str) -> String {
 pub type BanWriter = ValidInvalidWriter<IcebergBan, IcebergInvalidBan>;
 pub type HeartbeatWriter = ValidInvalidWriter<IcebergHeartbeat, IcebergInvalidHeartbeat>;
 pub type SpeedtestWriter = ValidInvalidWriter<IcebergSpeedtest, IcebergInvalidSpeedtest>;
+pub type SpeedtestAvgWriter = ValidInvalidWriter<IcebergSpeedtestAvg, IcebergInvalidSpeedtestAvg>;
 
 pub struct PocWriters {
     pub ban: BanWriter,
     pub heartbeat: HeartbeatWriter,
     pub speedtest: SpeedtestWriter,
+    pub speedtest_avg: SpeedtestAvgWriter,
 }
 
 impl PocWriters {
@@ -74,11 +80,18 @@ impl PocWriters {
             invalid_speedtest::table_definition()?,
         )
         .await?;
+        let speedtest_avg = ValidInvalidWriter::create(
+            &catalog,
+            speedtest_avg::table_definition()?,
+            invalid_speedtest_avg::table_definition()?,
+        )
+        .await?;
 
         Ok(Self {
             ban,
             heartbeat,
             speedtest,
+            speedtest_avg,
         })
     }
 }

@@ -57,8 +57,7 @@ Where the rest of the catalog's schemas live, for when a model needs one:
 | --- | --- | --- |
 | `hotspots` | 1 — **declared** | *external* — mirrored in `scripts/external_sources.sql` |
 | `hotspots` | 1 — **declared** (`speedtests`) | `mobile_verifier/src/iceberg/` — created in CI by `examples/create_dbt_sources.rs` |
-| `hotspots` | 5 | `mobile_verifier/src/iceberg/` (`bans`: `helium_iceberg_oracles/src/hotspots/`) |
-| `hotspots` | 2 — frozen | `speedtest_avgs`, `invalid_speedtest_avgs`: no longer written; superseded by the `speedtest_averages` model |
+| `hotspots` | 7 | `mobile_verifier/src/iceberg/` (`bans`: `helium_iceberg_oracles/src/hotspots/`); `speedtest_avgs` and `invalid_speedtest_avgs` are being replaced by the `speedtest_averages` model and are still written during the transition |
 | `data_transfer` | 4 | `helium_iceberg_oracles/src/data_transfer/` |
 | `rewards` | 3 | `mobile_verifier/src/iceberg/` |
 | `tokens` | 1 | `price/src/iceberg/` |
