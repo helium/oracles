@@ -3,7 +3,7 @@
 //!
 //! Only what is true of the whole process lives here. Everything about a data
 //! type -- its bucket, its ledger, its table -- lives with that data type, in
-//! `data::<type>::Settings`, and appears here as one optional section.
+//! `data::<type>::Settings`, and appears here as one section.
 
 use crate::data::mobile_hotspot_history;
 use config::{Config, Environment, File};
@@ -23,10 +23,8 @@ pub struct Settings {
     #[serde(default)]
     pub metrics: crate::metrics::Settings,
 
-    /// The mobile hotspot history route. Omit the section to leave it out of
-    /// this process.
-    #[serde(default)]
-    pub mobile_hotspot_history: Option<mobile_hotspot_history::Settings>,
+    /// The mobile hotspot history route.
+    pub mobile_hotspot_history: mobile_hotspot_history::Settings,
 }
 
 fn default_log() -> String {
@@ -51,25 +49,8 @@ impl Settings {
         Ok(settings)
     }
 
-    /// Names of the routes this process is configured to run.
-    pub fn configured(&self) -> Vec<&'static str> {
-        let mut names = Vec::new();
-        if self.mobile_hotspot_history.is_some() {
-            names.push(mobile_hotspot_history::ROUTE);
-        }
-        names
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
-        if let Some(history) = &self.mobile_hotspot_history {
-            history.validate()?;
-        }
-
-        if self.configured().is_empty() {
-            anyhow::bail!("no data types configured: nothing to run");
-        }
-
-        Ok(())
+        self.mobile_hotspot_history.validate()
     }
 }
 
@@ -129,11 +110,11 @@ bucket = "ingest-chain"
 "#;
 
     #[test]
-    fn a_process_with_no_data_types_is_refused() {
+    fn a_process_with_no_route_section_is_refused() {
         let f = write_settings("log = \"icicle=debug\"\n");
         let err = Settings::new(Some(f.path())).expect_err("must be refused");
         assert!(
-            err.to_string().contains("no data types configured"),
+            err.to_string().contains("mobile_hotspot_history"),
             "unexpected error: {err}"
         );
     }
@@ -197,7 +178,7 @@ bucket = "ingest-chain"
         let f = write_settings(&body);
         let settings = Settings::new(Some(f.path())).expect("settings must load");
 
-        let history = settings.mobile_hotspot_history.as_ref().expect("route");
+        let history = &settings.mobile_hotspot_history;
         assert_eq!(
             history.output.catalog.auth.credential.as_deref(),
             Some("id:CATALOG-SECRET"),
@@ -232,10 +213,7 @@ bucket = "ingest-chain"
     fn the_shipped_settings_template_loads() {
         let template = concat!(env!("CARGO_MANIFEST_DIR"), "/pkg/settings-template.toml");
         let settings = Settings::new(Some(template)).expect("template must load");
-        let history = settings
-            .mobile_hotspot_history
-            .as_ref()
-            .expect("route configured");
+        let history = &settings.mobile_hotspot_history;
 
         assert_eq!(
             history

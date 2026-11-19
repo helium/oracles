@@ -135,7 +135,7 @@ mod tests {
     fn the_shipped_settings_build_a_route() {
         let template = concat!(env!("CARGO_MANIFEST_DIR"), "/pkg/settings-template.toml");
         let settings = crate::Settings::new(Some(template)).expect("template must load");
-        let history = settings.mobile_hotspot_history.expect("route configured");
+        let history = settings.mobile_hotspot_history;
 
         route(&history).expect("the shipped settings must build a route");
     }

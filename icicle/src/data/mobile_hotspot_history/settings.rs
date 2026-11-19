@@ -1,6 +1,6 @@
 //! Settings of the mobile hotspot history route: its bucket, its ledger, its
 //! table. The process-wide settings live in [`crate::settings`], which holds
-//! this as one optional section.
+//! this as one section.
 
 use super::{MobileHotspotHistoryTable, DEFAULT_NAMESPACE, DEFAULT_TABLE_NAME};
 use crate::settings::FreshStateSetting;
