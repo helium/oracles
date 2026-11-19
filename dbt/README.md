@@ -191,6 +191,19 @@ it as a literal, rather than using `incremental_window`'s subquery: Trino
 inlines CTEs, and that model references its windowed CTE often enough that the
 subquery cost five full scans of the table per run. Its header spells both out.
 
+**History marts are append-only, so they can be streamed.** Community members
+follow tables with helium-iceberg's stream poller or Spark Structured Streaming.
+Both read the rows an Iceberg `append` snapshot added and skip `overwrite`
+snapshots, and a `merge` commits an `overwrite` whenever it touches an existing
+row; a `CREATE OR REPLACE` rebuild commits an `append` of the whole table every
+run. So a mart that records history (one row per report, heartbeat or period)
+uses `incremental_strategy='append'` and inserts only keys it does not already
+hold: the lookback still re-reads its overlap, and an anti-join against `this`
+drops what is already there. The price is that a row is never corrected after
+it is written, and each model's header says what that means for it. A
+current-state table such as `enabled_carriers_inventory` is the exception: it is
+an upsert by nature and not a stream.
+
 **Grain is asserted, not assumed.** Every mart pins its grain with a test
 (`unique`, or `unique_combination_of_columns` for a compound one). A source
 change that fans one row into many then fails loudly instead of quietly
