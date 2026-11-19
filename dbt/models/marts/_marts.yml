@@ -59,8 +59,12 @@ models:
       The replacement for the `hotspots.speedtest_avgs` /
       `invalid_speedtest_avgs` tables mobile-verifier writes. The oracle keeps
       writing those during a transition period, so the two can be compared on
-      live data. Unlike those, a row here is recomputed when a late report
-      lands in its window.
+      live data.
+
+      Append-only: each run inserts averages for new reports and never
+      rewrites a row, so every run commits an Iceberg `append` snapshot that
+      streaming readers (helium-iceberg's stream poller, Spark Structured
+      Streaming) can follow.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
