@@ -319,3 +319,94 @@ unit_tests:
       rows:
         - {pub_key: "hs_a", asserted_hex: "x", asserted_lat: 1.0, asserted_lon: 2.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-01 00:00:00+00", valid_to: "2026-01-02 00:00:00+00"}
         - {pub_key: "hs_a", asserted_hex: "z", asserted_lat: 5.0, asserted_lon: 6.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-02 00:00:00+00", valid_to: null}
+
+  # ----------------------------------------------------------- heartbeat_locations
+  #
+  # hs_a's assertion periods in every test: X centered at (40.0, -105.0) from
+  # 00:00 until 02:00, then Y at (40.01, -105.0). Its heartbeats report
+  # (40.0011, -105.0) and are centered at (40.001, -105.0): 111 m from X, 1001 m
+  # from Y. Measured from the raw point instead, the distance to X would be
+  # 122 m.
+
+  - name: heartbeat_locations_measure_against_assertion_in_effect
+    model: heartbeat_locations
+    description: >
+      First run. hs_a's heartbeats at 01:00 and 03:00 fall in X's and Y's
+      periods; one exactly at 02:00 is Y's, since a period includes its
+      `valid_from` and excludes its `valid_to`. Distance is from the centered
+      point, so 111 m, not 122 m. hs_b has no assertion period: it is kept
+      with null asserted fields and distance.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'heartbeat_reports')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 01:00:00+00", heartbeat_timestamp: "2026-01-01 00:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: "2026-01-01 00:30:00+00", location_source: "skyhook"}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 02:00:00+00", heartbeat_timestamp: "2026-01-01 01:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 03:00:00+00", heartbeat_timestamp: "2026-01-01 02:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+          - {hotspot_pubkey: "hs_b", received_timestamp: "2026-01-01 01:00:00+00", heartbeat_timestamp: "2026-01-01 00:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "gps"}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_a", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-01 00:00:00+00", valid_to: "2026-01-01 02:00:00+00"}
+          - {pub_key: "hs_a", asserted_hex: "y", asserted_lat: 40.01, asserted_lon: -105.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-01 02:00:00+00", valid_to: null}
+    expect:
+      rows:
+        - {received_timestamp: "2026-01-01 01:00:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 00:59:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: "2026-01-01 00:30:00+00", location_source: "skyhook", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, distance_to_asserted: 111}
+        - {received_timestamp: "2026-01-01 02:00:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 01:59:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook", asserted_hex: "y", asserted_lat: 40.01, asserted_lon: -105.0, distance_to_asserted: 1001}
+        - {received_timestamp: "2026-01-01 03:00:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 02:59:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook", asserted_hex: "y", asserted_lat: 40.01, asserted_lon: -105.0, distance_to_asserted: 1001}
+        - {received_timestamp: "2026-01-01 01:00:00+00", hotspot_pubkey: "hs_b", heartbeat_timestamp: "2026-01-01 00:59:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "gps", asserted_hex: null, asserted_lat: null, asserted_lon: null, distance_to_asserted: null}
+
+  - name: heartbeat_locations_remeasure_lookback_after_late_reassertion
+    model: heartbeat_locations
+    description: >
+      THE LATE-CHAIN GUARD. The previous run measured hs_a's 02:15 heartbeat
+      against X, because icicle had not yet written the move to Y at 02:00.
+      Now it has. The watermark is 03:00; with the model's own 180-minute
+      lookback the run re-reads from 00:00, re-measures 02:15 against Y, and
+      the merge writes over the stale row. Under the shared 30-minute
+      lookback the window would open at 02:30 and 02:15 would stay wrong --
+      verified by switching the model to `incremental_lookback_minutes`. The
+      2025-12-31 heartbeat is outside even the long lookback and is not
+      re-read.
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        heartbeat_locations_watermark: "2026-01-01 03:00:00.000000 UTC"
+    given:
+      - input: source('hotspots', 'heartbeat_reports')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2025-12-31 20:00:00+00", heartbeat_timestamp: "2025-12-31 19:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 02:15:00+00", heartbeat_timestamp: "2026-01-01 02:14:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_a", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, device_type: "WIFI_INDOOR", valid_from: "2025-12-01 00:00:00+00", valid_to: "2026-01-01 02:00:00+00"}
+          - {pub_key: "hs_a", asserted_hex: "y", asserted_lat: 40.01, asserted_lon: -105.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-01 02:00:00+00", valid_to: null}
+      - input: this
+        rows:
+          - {received_timestamp: "2026-01-01 02:15:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 02:14:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, distance_to_asserted: 111}
+    expect:
+      rows:
+        - {received_timestamp: "2026-01-01 02:15:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 02:14:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook", asserted_hex: "y", asserted_lat: 40.01, asserted_lon: -105.0, distance_to_asserted: 1001}
+
+  - name: heartbeat_locations_keep_one_copy_per_key
+    model: heartbeat_locations
+    description: >
+      A heartbeat stored twice under one (hotspot_pubkey, received_timestamp)
+      yields one row, so the merge source stays unique; a merge with two
+      source rows for one target row fails.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'heartbeat_reports')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 01:00:00+00", heartbeat_timestamp: "2026-01-01 00:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2026-01-01 01:00:00+00", heartbeat_timestamp: "2026-01-01 00:59:55+00", lat: 40.0011, lon: -105.0, centered_lat: 40.001, centered_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook"}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_a", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, device_type: "WIFI_INDOOR", valid_from: "2026-01-01 00:00:00+00", valid_to: null}
+    expect:
+      rows:
+        - {received_timestamp: "2026-01-01 01:00:00+00", hotspot_pubkey: "hs_a", heartbeat_timestamp: "2026-01-01 00:59:55+00", heartbeat_lat: 40.0011, heartbeat_lon: -105.0, location_validation_timestamp: null, location_source: "skyhook", asserted_hex: "x", asserted_lat: 40.0, asserted_lon: -105.0, distance_to_asserted: 111}

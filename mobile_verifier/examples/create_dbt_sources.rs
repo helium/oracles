@@ -20,10 +20,13 @@
 //! `S3_REGION`.
 
 use helium_iceberg::{AuthConfig, S3Config, Settings, TableDefinition};
-use mobile_verifier::iceberg::{speedtest, NAMESPACE};
+use mobile_verifier::iceberg::{heartbeat_report, speedtest, NAMESPACE};
 
 /// The tables dbt reads, by definition function.
-const SOURCES: &[fn() -> helium_iceberg::Result<TableDefinition>] = &[speedtest::table_definition];
+const SOURCES: &[fn() -> helium_iceberg::Result<TableDefinition>] = &[
+    speedtest::table_definition,
+    heartbeat_report::table_definition,
+];
 
 fn env_or(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_string())
