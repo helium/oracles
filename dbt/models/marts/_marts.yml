@@ -47,3 +47,45 @@ models:
       - name: record_index
         description: Offset of the winning record within that file.
         tests: [not_null]
+
+  - name: mobile_hotspot_assertions
+    description: >
+      One row per assertion period of each mobile hotspot: the asserted cell,
+      its center and the device type, from `valid_from` until `valid_to` in
+      chain time. A new period starts only when `asserted_hex` or
+      `device_type` changes. Periods for one hotspot tile its history with no
+      gaps or overlaps, so where a hotspot was asserted at time T is a range
+      join: `valid_from <= T and (valid_to is null or T < valid_to)`.
+
+      Rebuilt in full each run from `chain.mobile_hotspot_history`; see the
+      model's header.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pub_key, valid_from]
+      # At most one current period per hotspot.
+      - unique:
+          arguments:
+            column_name: pub_key
+          config:
+            where: valid_to is null
+    columns:
+      - name: pub_key
+        description: Hotspot key.
+        tests: [not_null]
+      - name: asserted_hex
+        description: Asserted resolution-12 H3 cell. Null while unasserted.
+      - name: asserted_lat
+        description: Center of `asserted_hex`, degrees, computed by icicle.
+      - name: asserted_lon
+        description: Center of `asserted_hex`, degrees, computed by icicle.
+      - name: device_type
+        description: "`WIFI_INDOOR`, `WIFI_OUTDOOR`, `WIFI_DATA_ONLY`."
+        tests: [not_null]
+      - name: valid_from
+        description: Chain time the period began.
+        tests: [not_null]
+      - name: valid_to
+        description: >
+          Chain time the next period began; null for the period in effect now,
+          and at most one such row per hotspot.
