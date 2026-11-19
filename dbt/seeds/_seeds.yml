@@ -1,0 +1,71 @@
+version: 2
+
+# Offload eligibility rules as rows. The eligibility models join to these
+# instead of hard-coding thresholds, so a rule change is a new row in a pull
+# request: reviewed, attributed in git, and checked by CI before it ships.
+#
+# RULES FOR THESE FILES:
+#
+#   * Never edit a past row; add a future-dated one. offload_eligibility_history
+#     is append-only, so a changed past threshold would not recompute old
+#     decisions, only make the history disagree with the rules it cites.
+#   * Add a row only once it has been announced. These tables are public, so a
+#     future-dated row reveals a plan.
+#   * `effective_from` is a date and means 00:00 UTC on that day. A row holds
+#     until the next row of its kind; nothing stores an end date.
+#
+# `dbt seed` replaces a seed's table on every load. That suits a few rows of
+# configuration nobody streams; the eligibility history built from them is the
+# append-only, streamable record.
+
+seeds:
+  - name: offload_speedtest_floors
+    description: >
+      Speedtest requirements for carrier offload. `applies_to = 'active'` rows
+      are the floors an active hotspot must meet to keep offload, stepping up
+      on each `effective_from`; `'new'` rows are the bar a new hotspot must meet
+      to be submitted for approval. Speeds in Mbps (1 Mbps = 125,000 bytes per
+      second), latency in ms, floors inclusive. An average counts only with at
+      least `min_sample_count` speedtests behind it.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [applies_to, effective_from]
+    columns:
+      - name: applies_to
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['new', 'active']
+      - name: effective_from
+        tests: [not_null]
+      - name: min_download_mbps
+        tests: [not_null]
+      - name: min_upload_mbps
+        tests: [not_null]
+      - name: max_latency_ms
+        tests: [not_null]
+      - name: min_sample_count
+        tests: [not_null]
+
+  - name: offload_heartbeat_rules
+    description: >
+      The location and heartbeat rules for carrier offload, both judged from
+      heartbeats. A heartbeat passes location when its newest fix (its own, or
+      the hotspot's last one under the same assertion) is at most
+      `max_fix_age_hours` old and within `max_distance_m` of the asserted
+      location. A hotspot fails location once no heartbeat has passed for
+      `max_hours_below` hours since one first failed, and fails heartbeats
+      after `max_hours_silent` hours without a valid one.
+    columns:
+      - name: effective_from
+        tests: [not_null, unique]
+      - name: max_fix_age_hours
+        tests: [not_null]
+      - name: max_distance_m
+        tests: [not_null]
+      - name: max_hours_below
+        tests: [not_null]
+      - name: max_hours_silent
+        tests: [not_null]

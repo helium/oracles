@@ -9,7 +9,7 @@
 # the scheduler's command means it cannot be left out by whatever invokes the
 # image.
 #
-#   docker run IMAGE                     # wait, then `dbt run` and `dbt test`
+#   docker run IMAGE                     # wait, then `dbt seed`, `dbt run` and `dbt test`
 #   docker run IMAGE run --select foo    # wait, then that command
 #   DBT_SKIP_TRINO_WAIT=1 docker run …   # straight to dbt (parse, deps, --version)
 #
@@ -24,6 +24,7 @@ if [ -z "${DBT_SKIP_TRINO_WAIT}" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
+  dbt seed
   dbt run
   exec dbt test
 fi

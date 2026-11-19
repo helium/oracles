@@ -107,7 +107,7 @@ test failing and reads like a code defect. `--reset` passes `-v`.
 Then, from `dbt/`:
 
 ```bash
-dbt deps && dbt run && dbt test
+dbt deps && dbt seed && dbt run && dbt test
 ```
 
 **`dbt run && dbt test`, not `dbt build`.** `dbt build` runs a model's unit
@@ -278,7 +278,7 @@ failure arrives as an authentication error that reads like a wrong password
 rather than an absent one. The probe runs first and says which.
 
 ```bash
-docker run IMAGE                     # wait for Trino, then `dbt run` + `dbt test`
+docker run IMAGE                     # wait for Trino, then `dbt seed` + `dbt run` + `dbt test`
 docker run IMAGE run --select foo    # wait, then that command
 DBT_SKIP_TRINO_WAIT=1 docker run …   # straight to dbt (parse, deps, --version)
 ```

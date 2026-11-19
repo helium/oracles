@@ -11,6 +11,7 @@ flags:
   require_certificate_validation: true
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 target-path: "target"
@@ -74,3 +75,23 @@ models:
       # adapter-specific dict config rather than merging into it, so a
       # project-level default would be silently dropped by any model that sets
       # its own partitioning.
+
+seeds:
+  mobile_dbt:
+    # Rules tables sit beside the eligibility models they drive.
+    +schema: hotspots
+    offload_speedtest_floors:
+      +column_types:
+        applies_to: varchar
+        effective_from: date
+        min_download_mbps: bigint
+        min_upload_mbps: bigint
+        max_latency_ms: bigint
+        min_sample_count: bigint
+    offload_heartbeat_rules:
+      +column_types:
+        effective_from: date
+        max_fix_age_hours: bigint
+        max_distance_m: bigint
+        max_hours_below: bigint
+        max_hours_silent: bigint
