@@ -26,7 +26,7 @@ use glacon_helium::{
     file_store::traits::{TimestampDecode, TimestampDecodeError},
     BatchId, BoxError, GlaconCoreMiddleware, GlaconRecordError, RecordResult,
 };
-use h3o::{CellIndex, LatLng};
+use h3o::{error::InvalidCellIndex, CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::chain_rewardable_entities::MobileHotspotDeviceType;
 
@@ -196,27 +196,10 @@ fn non_empty(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum AssertedHexError {
-    NotHex,
-    NotACell,
-}
-
-impl std::fmt::Display for AssertedHexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotHex => f.write_str("not a hexadecimal u64"),
-            Self::NotACell => f.write_str("not a valid H3 cell index"),
-        }
-    }
-}
-
 /// The center of the H3 cell written as `asserted_hex`, with or without a
-/// `0x` prefix. The same parse the mobile config's change stream uses.
-pub fn cell_center(asserted_hex: &str) -> Result<LatLng, AssertedHexError> {
-    let digits = asserted_hex.trim_start_matches("0x");
-    let index = u64::from_str_radix(digits, 16).map_err(|_| AssertedHexError::NotHex)?;
-    let cell = CellIndex::try_from(index).map_err(|_| AssertedHexError::NotACell)?;
+/// `0x` prefix. h3o's own parse, whose error names the value and the reason.
+pub fn cell_center(asserted_hex: &str) -> Result<LatLng, InvalidCellIndex> {
+    let cell = asserted_hex.trim_start_matches("0x").parse::<CellIndex>()?;
     Ok(LatLng::from(cell))
 }
 
@@ -474,8 +457,8 @@ mod tests {
             assert_eq!(row.asserted_lat, None, "{hex}");
             assert_eq!(row.asserted_lon, None, "{hex}");
         }
-        assert_eq!(cell_center("zz"), Err(AssertedHexError::NotHex));
-        assert_eq!(cell_center("0"), Err(AssertedHexError::NotACell));
+        assert_eq!(cell_center("zz").unwrap_err().value, None, "not hex");
+        assert_eq!(cell_center("0").unwrap_err().value, Some(0), "not a cell");
     }
 
     // --------------------------------------------------------------- batch
