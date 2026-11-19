@@ -3,11 +3,11 @@
 //! The input hands over each report untouched. This turns it into a row of
 //! `chain.mobile_hotspot_history`, or rejects it with a reason:
 //!
-//! 1. **Validate.** A report with no report, change or metadata, or with a
-//!    timestamp out of range, is rejected as a [`Rejected`]. glacon counts
-//!    rejections by [`reason`](GlaconRecordError::reason) in
-//!    `glacon_middleware_errors_total` and logs them; the output writes
-//!    nothing for them.
+//! 1. **Validate.** A report with no report, change, metadata, `pub_key` or
+//!    `asset`, or with a timestamp out of range, is rejected as a
+//!    [`Rejected`]. glacon counts rejections by
+//!    [`reason`](GlaconRecordError::reason) in `glacon_middleware_errors_total`
+//!    and logs them; the output writes nothing for them.
 //! 2. **Convert**, as `glacon-rs` did for `network.chain.mobile_hotspot_history`:
 //!    timestamps, `pub_key` and `asset` to their string forms, `animal_name`
 //!    from `pub_key`, `device_type` to its name, empty strings to `None`.
@@ -67,6 +67,12 @@ impl GlaconCoreMiddleware<MobileHotspotChangeReport, MobileHotspotHistory>
                 let metadata = change
                     .metadata
                     .ok_or(Rejected::MissingMetadata { record_index })?;
+                let pub_key = change
+                    .pub_key
+                    .ok_or(Rejected::MissingPubKey { record_index })?;
+                let asset = change
+                    .asset
+                    .ok_or(Rejected::MissingAsset { record_index })?;
 
                 let received_timestamp = proto
                     .received_timestamp_ms
@@ -89,20 +95,14 @@ impl GlaconCoreMiddleware<MobileHotspotChangeReport, MobileHotspotHistory>
                     .fixed_offset();
 
                 // 2. Convert.
-                let pub_key = change
-                    .pub_key
-                    .map(|key| PublicKeyBinary::from(key.value).to_string())
-                    .unwrap_or_default();
+                let pub_key = PublicKeyBinary::from(pub_key.value).to_string();
 
                 let animal_name = pub_key
                     .parse::<AnimalName>()
                     .ok()
                     .map(|name| name.to_string());
 
-                let asset = change
-                    .asset
-                    .map(|key| bs58::encode(key.value).into_string())
-                    .unwrap_or_default();
+                let asset = bs58::encode(asset.value).into_string();
 
                 let asserted_hex = non_empty(metadata.asserted_hex);
 
@@ -159,6 +159,12 @@ pub enum Rejected {
     #[error("record {record_index}: missing metadata")]
     MissingMetadata { record_index: u64 },
 
+    #[error("record {record_index}: missing pub_key")]
+    MissingPubKey { record_index: u64 },
+
+    #[error("record {record_index}: missing asset")]
+    MissingAsset { record_index: u64 },
+
     #[error("record {record_index}: invalid {field}")]
     InvalidTimestamp {
         record_index: u64,
@@ -174,6 +180,8 @@ impl GlaconRecordError for Rejected {
             Self::MissingReport { .. } => "missing_report",
             Self::MissingChange { .. } => "missing_change",
             Self::MissingMetadata { .. } => "missing_metadata",
+            Self::MissingPubKey { .. } => "missing_pub_key",
+            Self::MissingAsset { .. } => "missing_asset",
             Self::InvalidTimestamp { .. } => "invalid_timestamp",
         }
     }
@@ -331,6 +339,28 @@ mod tests {
         assert!(matches!(err, Rejected::MissingMetadata { record_index: 0 }));
         assert_eq!(err.reason(), "missing_metadata");
         assert_eq!(err.to_string(), "record 0: missing metadata");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_missing_pub_key_as_missing_pub_key() {
+        let mut report = valid();
+        change(&mut report).pub_key = None;
+
+        let err = rejected(report).await;
+        assert!(matches!(err, Rejected::MissingPubKey { record_index: 0 }));
+        assert_eq!(err.reason(), "missing_pub_key");
+        assert_eq!(err.to_string(), "record 0: missing pub_key");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_missing_asset_as_missing_asset() {
+        let mut report = valid();
+        change(&mut report).asset = None;
+
+        let err = rejected(report).await;
+        assert!(matches!(err, Rejected::MissingAsset { record_index: 0 }));
+        assert_eq!(err.reason(), "missing_asset");
+        assert_eq!(err.to_string(), "record 0: missing asset");
     }
 
     /// Both timestamps share the reason; the message says which one.

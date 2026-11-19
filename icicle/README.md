@@ -84,11 +84,11 @@ The code is in `src/data/mobile_hotspot_history/`:
 holds no state, so a batch replayed after a crash gives the same results. Each
 report goes through three steps:
 
-1. **Validate.** A report is rejected if it has no report, no change or no
-   metadata, or if a timestamp is out of range. glacon counts each rejection
-   in `glacon_middleware_errors_total` and logs it. The reasons are
-   `missing_report`, `missing_change`, `missing_metadata` and
-   `invalid_timestamp`.
+1. **Validate.** A report is rejected if it has no report, change, metadata,
+   `pub_key` or `asset`, or if a timestamp is out of range. glacon counts each
+   rejection in `glacon_middleware_errors_total` and logs it. The reasons are
+   `missing_report`, `missing_change`, `missing_metadata`, `missing_pub_key`,
+   `missing_asset` and `invalid_timestamp`.
 2. **Convert.** Each field becomes what the network table holds, the same way
    `glacon-rs` did it:
    - Timestamps become `timestamptz`.
