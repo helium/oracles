@@ -24,6 +24,7 @@ pub struct WifiHeartbeatDaemon<GIR, GFV> {
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     geofence: GFV,
     iceberg_writer: iceberg::HeartbeatWriter,
+    report_writer: iceberg::HeartbeatReportWriter,
 }
 
 impl<GIR, GFV> WifiHeartbeatDaemon<GIR, GFV>
@@ -41,6 +42,7 @@ where
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
         iceberg_writer: iceberg::HeartbeatWriter,
+        report_writer: iceberg::HeartbeatReportWriter,
     ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
@@ -59,6 +61,7 @@ where
             valid_heartbeats,
             geofence,
             iceberg_writer,
+            report_writer,
         );
 
         Ok(TaskManager::builder()
@@ -67,6 +70,7 @@ where
             .build())
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         location_cache: LocationCache,
@@ -75,6 +79,7 @@ where
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         geofence: GFV,
         iceberg_writer: iceberg::HeartbeatWriter,
+        report_writer: iceberg::HeartbeatReportWriter,
     ) -> Self {
         Self {
             pool,
@@ -84,6 +89,7 @@ where
             heartbeat_sink,
             geofence,
             iceberg_writer,
+            report_writer,
         }
     }
 
@@ -138,6 +144,7 @@ where
             ),
             &self.heartbeat_sink,
             &self.iceberg_writer,
+            &self.report_writer,
             &write_id,
         )
         .await?;

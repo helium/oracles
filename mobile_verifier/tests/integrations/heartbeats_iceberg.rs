@@ -4,7 +4,7 @@ use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
 use mobile_verifier::DeviceType;
 use mobile_verifier::{
     cell_type::CellType,
-    heartbeats::{Heartbeat, ValidatedHeartbeat},
+    heartbeats::{Heartbeat, ReportedLocation, ValidatedHeartbeat},
     iceberg::{self, heartbeat::IcebergHeartbeat},
 };
 use rust_decimal_macros::dec;
@@ -35,6 +35,11 @@ fn make_validated_heartbeat(index: u8) -> ValidatedHeartbeat {
             location_source: LocationSource::Skyhook,
             timestamp: now,
             heartbeat_timestamp: now - chrono::Duration::seconds(30),
+            reported: ReportedLocation {
+                lat: 37.0 + f64::from(index),
+                lon: -122.0 + f64::from(index),
+                location_validation_timestamp: Some(now - chrono::Duration::hours(1)),
+            },
         },
         cell_type: CellType::NovaGenericWifiIndoor,
         location_trust_score_multiplier: dec!(0.75),
@@ -86,6 +91,11 @@ async fn write_heartbeat_with_no_optional_fields() -> anyhow::Result<()> {
             location_source: LocationSource::Gps,
             timestamp: now,
             heartbeat_timestamp: now - chrono::Duration::seconds(10),
+            reported: ReportedLocation {
+                lat: 40.0,
+                lon: -74.0,
+                location_validation_timestamp: None,
+            },
         },
         cell_type: CellType::NovaGenericWifiIndoor,
         location_trust_score_multiplier: dec!(1.0),
@@ -161,6 +171,11 @@ async fn write_heartbeats_all_device_types() -> anyhow::Result<()> {
                     location_source: LocationSource::Skyhook,
                     timestamp: now,
                     heartbeat_timestamp: now - chrono::Duration::seconds(5),
+                    reported: ReportedLocation {
+                        lat: 37.0,
+                        lon: -122.0,
+                        location_validation_timestamp: None,
+                    },
                 },
                 cell_type: CellType::NovaGenericWifiIndoor,
                 location_trust_score_multiplier: dec!(1.0),

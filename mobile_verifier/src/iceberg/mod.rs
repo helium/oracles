@@ -8,8 +8,10 @@ use serde::Serialize;
 pub use helium_iceberg_oracles::hotspots::ban;
 pub mod burned_session;
 pub mod heartbeat;
+pub mod heartbeat_report;
 pub mod invalid_ban;
 pub mod invalid_heartbeat;
+pub mod invalid_heartbeat_report;
 pub mod invalid_speedtest;
 pub mod invalid_speedtest_avg;
 pub mod speedtest;
@@ -18,8 +20,10 @@ pub mod valid_invalid;
 
 pub use ban::IcebergBan;
 pub use heartbeat::IcebergHeartbeat;
+pub use heartbeat_report::IcebergHeartbeatReport;
 pub use invalid_ban::IcebergInvalidBan;
 pub use invalid_heartbeat::IcebergInvalidHeartbeat;
+pub use invalid_heartbeat_report::IcebergInvalidHeartbeatReport;
 pub use invalid_speedtest::IcebergInvalidSpeedtest;
 pub use invalid_speedtest_avg::IcebergInvalidSpeedtestAvg;
 pub use speedtest::IcebergSpeedtest;
@@ -44,12 +48,17 @@ pub(crate) fn reason_without_prefix(name: &str, prefix: &str) -> String {
 // `helium_iceberg::ValidInvalidWriter`.
 pub type BanWriter = ValidInvalidWriter<IcebergBan, IcebergInvalidBan>;
 pub type HeartbeatWriter = ValidInvalidWriter<IcebergHeartbeat, IcebergInvalidHeartbeat>;
+/// Heartbeats as reported, beside [`HeartbeatWriter`]'s decorated ones. See
+/// [`heartbeat_report`].
+pub type HeartbeatReportWriter =
+    ValidInvalidWriter<IcebergHeartbeatReport, IcebergInvalidHeartbeatReport>;
 pub type SpeedtestWriter = ValidInvalidWriter<IcebergSpeedtest, IcebergInvalidSpeedtest>;
 pub type SpeedtestAvgWriter = ValidInvalidWriter<IcebergSpeedtestAvg, IcebergInvalidSpeedtestAvg>;
 
 pub struct PocWriters {
     pub ban: BanWriter,
     pub heartbeat: HeartbeatWriter,
+    pub heartbeat_report: HeartbeatReportWriter,
     pub speedtest: SpeedtestWriter,
     pub speedtest_avg: SpeedtestAvgWriter,
 }
@@ -74,6 +83,12 @@ impl PocWriters {
             invalid_heartbeat::table_definition()?,
         )
         .await?;
+        let heartbeat_report = ValidInvalidWriter::create(
+            &catalog,
+            heartbeat_report::table_definition()?,
+            invalid_heartbeat_report::table_definition()?,
+        )
+        .await?;
         let speedtest = ValidInvalidWriter::create(
             &catalog,
             speedtest::table_definition()?,
@@ -90,6 +105,7 @@ impl PocWriters {
         Ok(Self {
             ban,
             heartbeat,
+            heartbeat_report,
             speedtest,
             speedtest_avg,
         })

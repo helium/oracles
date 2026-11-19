@@ -75,6 +75,173 @@ unit_tests:
           - {file_ts: 200, record_index: 1, received_timestamp: "2026-09-07 10:25:00+00", hotspot_pubkey: "hs_skew", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2099-01-01 00:00:00+00", signer: "s1"}
           - {file_ts: 200, record_index: 2, received_timestamp: "2026-09-07 10:30:00+00", hotspot_pubkey: "hs_honest", enabled_carriers: null, sampling_enabled_carriers: null, firmware_version: "2.18.0", timestamp: "2026-09-07 10:29:00+00", signer: "s1"}
 
+  # ── speedtest_averages ───────────────────────────────────────────────────────
+  # Inputs list only the columns the model reads (`serial` is left out), and
+  # most expectations only the columns under test. The fixture timestamps are
+  # arbitrary; only their spacing matters.
+
+  - name: speedtest_window_lapse_is_inclusive
+    model: speedtest_averages
+    description: >
+      The window reaches back exactly `window_hours` (48), inclusive. B sits
+      48h after A, so B averages A and B; C sits 49h after A, so A drops out.
+      Latency (10 + 21) / 2 also pins integer truncation: 15, not 15.5.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 00:00:00+00", timestamp: "2024-01-01 00:00:00+00", upload_speed: 10, download_speed: 100, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-03 00:00:00+00", timestamp: "2024-01-03 00:00:00+00", upload_speed: 20, download_speed: 200, latency: 21}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-03 01:00:00+00", timestamp: "2024-01-03 01:00:00+00", upload_speed: 30, download_speed: 300, latency: 30}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 00:00:00+00", upload_speed_avg_bps: 10, download_speed_avg_bps: 100, latency_avg_ms: 10, sample_count: 1}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-03 00:00:00+00", upload_speed_avg_bps: 15, download_speed_avg_bps: 150, latency_avg_ms: 15, sample_count: 2}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-03 01:00:00+00", upload_speed_avg_bps: 25, download_speed_avg_bps: 250, latency_avg_ms: 25, sample_count: 2}
+
+  - name: speedtest_window_is_capped_at_max_samples
+    model: speedtest_averages
+    description: >
+      Seven hourly reports, values 1..7. Each averages itself and what preceded
+      it, until the seventh, which keeps only the newest six (2..7) -- 27 / 6
+      truncated to 4, with a sample_count of 6.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 01:00:00+00", timestamp: "2024-01-01 01:00:00+00", upload_speed: 1, download_speed: 1, latency: 1}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 02:00:00+00", timestamp: "2024-01-01 02:00:00+00", upload_speed: 2, download_speed: 2, latency: 2}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 03:00:00+00", timestamp: "2024-01-01 03:00:00+00", upload_speed: 3, download_speed: 3, latency: 3}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 04:00:00+00", timestamp: "2024-01-01 04:00:00+00", upload_speed: 4, download_speed: 4, latency: 4}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 05:00:00+00", timestamp: "2024-01-01 05:00:00+00", upload_speed: 5, download_speed: 5, latency: 5}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 06:00:00+00", timestamp: "2024-01-01 06:00:00+00", upload_speed: 6, download_speed: 6, latency: 6}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 07:00:00+00", timestamp: "2024-01-01 07:00:00+00", upload_speed: 7, download_speed: 7, latency: 7}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 01:00:00+00", upload_speed_avg_bps: 1, sample_count: 1}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 02:00:00+00", upload_speed_avg_bps: 1, sample_count: 2}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 03:00:00+00", upload_speed_avg_bps: 2, sample_count: 3}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 04:00:00+00", upload_speed_avg_bps: 2, sample_count: 4}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 05:00:00+00", upload_speed_avg_bps: 3, sample_count: 5}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 06:00:00+00", upload_speed_avg_bps: 3, sample_count: 6}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 07:00:00+00", upload_speed_avg_bps: 4, sample_count: 6}
+
+  - name: speedtest_duplicates_future_dates_and_hotspots
+    model: speedtest_averages
+    description: >
+      Three rules at once. hs_a's 10:00 report was stored twice; the earliest
+      received copy (10) wins and is counted once -- the replay's 99s never
+      show up. hs_a's 11:00 report was received at 10:30, so its device clock is
+      ahead: it is dropped, neither a report nor a sample. hs_b's report is
+      averaged on its own, untouched by hs_a's.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 10:00:00+00", timestamp: "2024-01-01 10:00:00+00", upload_speed: 10, download_speed: 10, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 10:05:00+00", timestamp: "2024-01-01 10:00:00+00", upload_speed: 99, download_speed: 99, latency: 99}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 10:30:00+00", timestamp: "2024-01-01 11:00:00+00", upload_speed: 50, download_speed: 50, latency: 50}
+          - {hotspot_pubkey: "hs_b", received_timestamp: "2024-01-01 10:30:00+00", timestamp: "2024-01-01 10:30:00+00", upload_speed: 40, download_speed: 40, latency: 40}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 10:00:00+00", upload_speed_avg_bps: 10, download_speed_avg_bps: 10, latency_avg_ms: 10, sample_count: 1}
+        - {hotspot_pubkey: "hs_b", timestamp: "2024-01-01 10:30:00+00", upload_speed_avg_bps: 40, download_speed_avg_bps: 40, latency_avg_ms: 40, sample_count: 1}
+
+  - name: speedtest_late_report_recomputes_later_averages
+    model: speedtest_averages
+    description: >
+      The incremental branch. The table's newest report is hs_c's at 14:00, so
+      the watermark is 14:00 and a 30-minute lookback admits reports received
+      from 13:30. Q (12:00, received 12:00) is well outside that, so only the
+      recompute rule can bring it back.
+
+      The watermark is supplied as a var because the model reads it with
+      `run_query` at compile time, which a unit test cannot point at a `this`
+      fixture; a local `dbt run` twice over exercises the real lookup.
+
+        * L is late: device time 09:00, received 14:10. It gets its own
+          average over P and L.
+        * Q was averaged before L arrived (P, Q). L belongs in Q's window, so Q
+          is recomputed over P, L, Q -- the case the oracle never revisited.
+          Drop the `window_hours` reach from `last_affected` and Q goes missing
+          here (verified).
+        * P precedes L, so L is not in its window and P is not re-emitted.
+        * hs_c's 14:00 report is inside the lookback, so it is re-emitted
+          unchanged -- the overlap `merge` absorbs.
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        speedtest_averages_watermark: "2024-01-01 14:00:00.000000 UTC"
+    given:
+      # dbt requires `this` for an incremental unit test. It holds what a
+      # previous run left -- consistent with the watermark above -- but the
+      # model does not read it; the var is what drives the window.
+      - input: this
+        rows:
+          - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 06:00:00+00", upload_speed_avg_bps: 10, download_speed_avg_bps: 10, latency_avg_ms: 10, sample_count: 1}
+          - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 12:00:00+00", upload_speed_avg_bps: 20, download_speed_avg_bps: 20, latency_avg_ms: 20, sample_count: 2}
+          - {hotspot_pubkey: "hs_c", timestamp: "2024-01-01 14:00:00+00", upload_speed_avg_bps: 70, download_speed_avg_bps: 70, latency_avg_ms: 70, sample_count: 1}
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 06:00:00+00", timestamp: "2024-01-01 06:00:00+00", upload_speed: 10, download_speed: 10, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 12:00:00+00", timestamp: "2024-01-01 12:00:00+00", upload_speed: 30, download_speed: 30, latency: 30}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 14:10:00+00", timestamp: "2024-01-01 09:00:00+00", upload_speed: 20, download_speed: 20, latency: 20}
+          - {hotspot_pubkey: "hs_c", received_timestamp: "2024-01-01 14:00:00+00", timestamp: "2024-01-01 14:00:00+00", upload_speed: 70, download_speed: 70, latency: 70}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 09:00:00+00", upload_speed_avg_bps: 15, sample_count: 2}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 12:00:00+00", upload_speed_avg_bps: 20, sample_count: 3}
+        - {hotspot_pubkey: "hs_c", timestamp: "2024-01-01 14:00:00+00", upload_speed_avg_bps: 70, sample_count: 1}
+
+  - name: speedtest_samples_are_listed_newest_first
+    model: speedtest_averages
+    description: >
+      The `speedtests` array carries each sample's own values and timestamp,
+      newest first, so its first element is the report the row is for.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 01:00:00+00", timestamp: "2024-01-01 01:00:00+00", upload_speed: 1, download_speed: 10, latency: 100}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 02:00:00+00", timestamp: "2024-01-01 02:00:00+00", upload_speed: 3, download_speed: 30, latency: 300}
+    expect:
+      format: sql
+      rows: |
+        select
+          'hs_a' as hotspot_pubkey,
+          timestamp '2024-01-01 01:00:00 UTC' as "timestamp",
+          cast(1 as bigint) as upload_speed_avg_bps,
+          cast(10 as bigint) as download_speed_avg_bps,
+          cast(100 as bigint) as latency_avg_ms,
+          cast(1 as bigint) as sample_count,
+          array[
+            cast(row(1, 10, 100, timestamp '2024-01-01 01:00:00 UTC')
+              as row(upload_speed_bps bigint, download_speed_bps bigint, latency_ms bigint, "timestamp" timestamp(6) with time zone))
+          ] as speedtests
+        union all
+        select
+          'hs_a',
+          timestamp '2024-01-01 02:00:00 UTC',
+          cast(2 as bigint),
+          cast(20 as bigint),
+          cast(200 as bigint),
+          cast(2 as bigint),
+          array[
+            cast(row(3, 30, 300, timestamp '2024-01-01 02:00:00 UTC')
+              as row(upload_speed_bps bigint, download_speed_bps bigint, latency_ms bigint, "timestamp" timestamp(6) with time zone)),
+            cast(row(1, 10, 100, timestamp '2024-01-01 01:00:00 UTC')
+              as row(upload_speed_bps bigint, download_speed_bps bigint, latency_ms bigint, "timestamp" timestamp(6) with time zone))
+          ]
+
   # ---------------------------------------------------- mobile_hotspot_assertions
   #
   # A `table` model, so there is no incremental branch and no `this`. Only the
