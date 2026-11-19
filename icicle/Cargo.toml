@@ -27,7 +27,7 @@ angry-purple-tiger = { version = "1", features = ["helium_crypto"] }
 # re-exports glacon-core, `task_manager`, `helium_iceberg` and `file_store`:
 # use those re-exports rather than depending on the crates directly. The root
 # Cargo.toml patches glacon's own oracles dependencies to this workspace.
-glacon-helium = { git = "https://github.com/helium/glacon", branch = "main" }
+glacon-helium = { git = "https://github.com/helium/glacon", rev = "72ee689132fcfc95eec61cae1774c98da81123f0" }
 
 custom-tracing = { path = "../custom_tracing" }
 tls-init = { path = "../tls_init" }
