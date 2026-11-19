@@ -117,7 +117,7 @@ pub fn route(settings: &Settings) -> Result<MobileHotspotHistoryRoute> {
     let table = MobileHotspotHistoryTable::from(&settings.table);
 
     builder
-        .fresh_state(settings.fresh_state.into())
+        .fresh_state(settings.fresh_state)
         .middleware(MobileHotspotHistoryMiddleware)
         .output(OUTPUT, IcebergOutput::new(table, settings.output.clone()))
         .build()

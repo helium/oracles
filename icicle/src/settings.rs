@@ -7,7 +7,6 @@
 
 use crate::data::mobile_hotspot_history;
 use config::{Config, Environment, File};
-use glacon_helium::FreshState;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -51,29 +50,6 @@ impl Settings {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.mobile_hotspot_history.validate()
-    }
-}
-
-/// `glacon`'s [`FreshState`] is not `Deserialize`, so configuration goes
-/// through this mirror of it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FreshStateSetting {
-    /// Refuse to start when the ledger is empty but the table already holds
-    /// rows. The default: a lost state volume becomes a loud failure instead
-    /// of a silent re-ingest.
-    #[default]
-    Refuse,
-    /// Start anyway, each input from its `start_after`.
-    Proceed,
-}
-
-impl From<FreshStateSetting> for FreshState {
-    fn from(value: FreshStateSetting) -> Self {
-        match value {
-            FreshStateSetting::Refuse => FreshState::Refuse,
-            FreshStateSetting::Proceed => FreshState::Proceed,
-        }
     }
 }
 
@@ -226,6 +202,6 @@ bucket = "ingest-chain"
         assert_eq!(history.inputs["chain"].start_after.timestamp(), 0);
         assert_eq!(history.table.namespace, "chain");
         assert_eq!(history.table.name, "mobile_hotspot_history");
-        assert_eq!(history.fresh_state, FreshStateSetting::Refuse);
+        assert_eq!(history.fresh_state, glacon_helium::FreshState::Refuse);
     }
 }

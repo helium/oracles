@@ -3842,7 +3842,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 [[package]]
 name = "glacon-core"
 version = "0.1.0"
-source = "git+https://github.com/helium/glacon?rev=974d8f495f12de441feb0e9e72c91819e7e750d9#974d8f495f12de441feb0e9e72c91819e7e750d9"
+source = "git+https://github.com/helium/glacon?rev=8038719276c3a64c3977ab7a0f555ec93f3bbfcc#8038719276c3a64c3977ab7a0f555ec93f3bbfcc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3862,7 +3862,7 @@ dependencies = [
 [[package]]
 name = "glacon-helium"
 version = "0.1.0"
-source = "git+https://github.com/helium/glacon?rev=974d8f495f12de441feb0e9e72c91819e7e750d9#974d8f495f12de441feb0e9e72c91819e7e750d9"
+source = "git+https://github.com/helium/glacon?rev=8038719276c3a64c3977ab7a0f555ec93f3bbfcc#8038719276c3a64c3977ab7a0f555ec93f3bbfcc"
 dependencies = [
  "async-trait",
  "chrono",

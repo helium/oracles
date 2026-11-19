@@ -14,14 +14,15 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{aws_local::AwsLocal, BucketSettings};
 use glacon_helium::{
-    task_manager::ManagedTask, FileStoreInputSettings, IcebergOutputSettings, RouteSettings,
+    task_manager::ManagedTask, FileStoreInputSettings, FreshState, IcebergOutputSettings,
+    RouteSettings,
 };
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::chain_rewardable_entities::{
     HeliumPubKey, MobileHotspotChangeReportV1, MobileHotspotChangeReqV1, MobileHotspotChangeV1,
     MobileHotspotDeviceType, MobileHotspotMetadata, SolanaPubKey,
 };
-use icicle::{data::mobile_hotspot_history, settings::FreshStateSetting};
+use icicle::data::mobile_hotspot_history;
 use std::{collections::BTreeMap, future::Future, sync::LazyLock};
 use trino_rust_client::Trino;
 
@@ -126,7 +127,7 @@ impl Harness {
                 max_batch_rows: 10_000,
                 batch_timeout: humantime::parse_duration("1s")?,
             },
-            fresh_state: FreshStateSetting::Refuse,
+            fresh_state: FreshState::Refuse,
         })
     }
 

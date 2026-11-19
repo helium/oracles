@@ -3,8 +3,7 @@
 //! this as one section.
 
 use super::{MobileHotspotHistoryTable, DEFAULT_NAMESPACE, DEFAULT_TABLE_NAME};
-use crate::settings::FreshStateSetting;
-use glacon_helium::{FileStoreInputSettings, IcebergOutputSettings, RouteSettings};
+use glacon_helium::{FileStoreInputSettings, FreshState, IcebergOutputSettings, RouteSettings};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -33,7 +32,7 @@ pub struct Settings {
 
     /// What to do when the ledger is empty but the table already holds rows.
     #[serde(default)]
-    pub fresh_state: FreshStateSetting,
+    pub fresh_state: FreshState,
 }
 
 /// Which table the route writes to; the configured half of
