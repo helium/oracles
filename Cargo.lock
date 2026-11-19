@@ -4798,7 +4798,6 @@ dependencies = [
  "helium-proto",
  "humantime",
  "metrics-exporter-prometheus",
- "prost",
  "serde",
  "serde_json",
  "tempfile",

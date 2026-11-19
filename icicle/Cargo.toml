@@ -35,8 +35,6 @@ tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
 humantime = { workspace = true }
-prost = { workspace = true }
-serde = { workspace = true }
 tempfile = { workspace = true }
 triggered = { workspace = true }
 trino-rust-client = { workspace = true }
