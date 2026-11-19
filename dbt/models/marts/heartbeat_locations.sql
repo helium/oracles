@@ -1,8 +1,7 @@
 {{
   config(
     materialized='incremental',
-    incremental_strategy='merge',
-    unique_key=['hotspot_pubkey', 'received_timestamp'],
+    incremental_strategy='append',
     on_schema_change='fail',
     schema='hotspots',
     tags=['1h'],
@@ -24,12 +23,14 @@
 -- their distance is about 0 by construction, and a reader decides what that
 -- is worth.
 --
--- THE ASSERTION IS THE ONE IN EFFECT AT `received_timestamp`, by a range join
--- to `chain.mobile_hotspot_assertions`, whose periods tile each hotspot's
--- history with no gaps or overlaps, so a heartbeat matches at most one. It is a
--- LEFT join: a heartbeat with no period -- the hotspot's chain update is not in
--- the history yet -- is kept with null asserted fields and a null distance,
--- not dropped, so the gap is visible.
+-- THE ASSERTION IS THE ONE IN EFFECT AT `received_timestamp`. Each row of
+-- `chain.mobile_hotspot_assertions` holds until the hotspot's next one, so its
+-- end is `lead(valid_from)` in the order that model writes them (valid_from,
+-- block, file_ts, record_index), and the periods tile each hotspot's history
+-- with no gaps or overlaps: a heartbeat matches at most one. It is a LEFT
+-- join: a heartbeat with no period -- the hotspot's chain update is not in the
+-- history yet -- is kept with null asserted fields and a null distance, not
+-- dropped, so the gap is visible.
 --
 -- DISTANCE MATCHES mobile-verifier EXACTLY. It is measured from the
 -- heartbeat's centered point (the center of its resolution-12 H3 cell, which
@@ -40,18 +41,26 @@
 -- `great_circle_distance` uses a slightly different radius (6371.01 km), which
 -- is enough to flip a rounding at the 300 m and 400 m edges.
 --
--- INCREMENTAL ON `received_timestamp`, the oracle's clock and this table's
--- partition key. The lookback is its own var,
--- `heartbeat_locations_lookback_minutes`, hours rather than the shared 30
--- minutes: icicle can land a reassertion after the heartbeats that follow it
--- were already measured, and each run re-measures the lookback against the
--- current periods so those rows are corrected once the chain catches up. A
--- chain update later than the lookback is fixed only by `--full-refresh`.
+-- APPEND-ONLY, SO THE TABLE CAN BE STREAMED. Every run only inserts, and only
+-- heartbeats not measured yet, so each run commits an Iceberg `append`
+-- snapshot holding exactly the new rows -- what helium-iceberg's stream poller
+-- and Spark Structured Streaming follow; they skip the `overwrite` snapshots a
+-- `merge` commits. A run with nothing new commits no snapshot.
 --
--- `merge` on (hotspot_pubkey, received_timestamp) makes the overlap
--- idempotent. The key is the verifier's own identity for a heartbeat; should
--- one ever be stored twice, one copy is kept so the merge source stays
--- unique.
+-- INCREMENTAL ON `received_timestamp`, the oracle's clock and this table's
+-- partition key. Each run reads from the watermark minus the shared
+-- `incremental_lookback_minutes` (commit skew) and drops heartbeats already
+-- here, keyed by (hotspot_pubkey, received_timestamp) -- the verifier's own
+-- identity for a heartbeat. Should one ever be stored twice, one copy is kept.
+--
+-- A HEARTBEAT IS MEASURED ONLY ONCE IT HAS SETTLED: received at least
+-- `heartbeat_locations_settle_minutes` (default 60) before the run. A row is
+-- never rewritten, so it has to be right when it is written, and icicle can
+-- land a reassertion a little after the heartbeats that follow it. Waiting
+-- gives the chain history time to catch up. The price is that the table trails
+-- ingest by that much. A chain update later than the settle time leaves the
+-- heartbeats before it measured against the previous assertion (or none);
+-- only `--full-refresh` re-measures them.
 --
 -- THE WATERMARK IS A LITERAL, read once at compile time from the table's
 -- `$partitions` metadata, as in `speedtest_averages` (see its header): a
@@ -64,7 +73,14 @@
 -- older heartbeats were stored with carried-forward locations in
 -- `hotspots.heartbeats` and cannot be recovered as reported.
 
-{%- set lookback_minutes = var('heartbeat_locations_lookback_minutes') -%}
+{%- set lookback_minutes = var('incremental_lookback_minutes') -%}
+{#- Unit tests pin "now" with `heartbeat_locations_settled_before`. -#}
+{%- set settled_before = var('heartbeat_locations_settled_before', none) -%}
+{%- if settled_before is none -%}
+  {%- set settled_before_sql = "current_timestamp - interval '" ~ var('heartbeat_locations_settle_minutes') ~ "' minute" -%}
+{%- else -%}
+  {%- set settled_before_sql = "timestamp '" ~ settled_before ~ "'" -%}
+{%- endif -%}
 {#- h3o::EARTH_RADIUS_KM -#}
 {%- set earth_radius_km = 6371.007180918475 -%}
 
@@ -97,12 +113,66 @@ with reports as (
             order by heartbeat_timestamp, lat, lon
         ) as copy_number
     from {{ source('hotspots', 'heartbeat_reports') }}
-    -- No watermark means a first run, a full refresh, or an empty table: take
-    -- everything.
+    where
+        received_timestamp < {{ settled_before_sql }}
+        -- No watermark means a first run, a full refresh, or an empty table:
+        -- take everything that has settled.
+        {%- if watermark is not none %}
+        and received_timestamp
+            >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
+        {%- endif %}
+
+),
+
+{%- if is_incremental() %}
+
+already_measured as (
+
+    -- The lookback's overlap: heartbeats a previous run already wrote. The
+    -- same literal bound as `reports`, so only the overlap's partitions are
+    -- read.
+    select hotspot_pubkey, received_timestamp
+    from {{ this }}
     {%- if watermark is not none %}
     where received_timestamp
         >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
     {%- endif %}
+
+),
+
+{%- endif %}
+
+new_reports as (
+
+    select r.*
+    from reports as r
+    {%- if is_incremental() %}
+    left join already_measured as m
+        on
+            r.hotspot_pubkey = m.hotspot_pubkey
+            and r.received_timestamp = m.received_timestamp
+    {%- endif %}
+    where
+        r.copy_number = 1
+        {%- if is_incremental() %}
+        and m.hotspot_pubkey is null
+        {%- endif %}
+
+),
+
+periods as (
+
+    select
+        pub_key,
+        asserted_hex,
+        asserted_lat,
+        asserted_lon,
+        valid_from,
+        lead(valid_from) over (
+            partition by pub_key
+            order by valid_from, block, file_ts, record_index
+        ) as valid_to
+    from {{ ref('mobile_hotspot_assertions') }}
 
 ),
 
@@ -116,18 +186,17 @@ located as (
         r.lon as heartbeat_lon,
         r.location_validation_timestamp,
         r.location_source,
-        a.asserted_hex,
-        a.asserted_lat,
-        a.asserted_lon,
+        p.asserted_hex,
+        p.asserted_lat,
+        p.asserted_lon,
         r.centered_lat,
         r.centered_lon
-    from reports as r
-    left join {{ ref('mobile_hotspot_assertions') }} as a
+    from new_reports as r
+    left join periods as p
         on
-            a.pub_key = r.hotspot_pubkey
-            and a.valid_from <= r.received_timestamp
-            and (a.valid_to is null or r.received_timestamp < a.valid_to)
-    where r.copy_number = 1
+            p.pub_key = r.hotspot_pubkey
+            and p.valid_from <= r.received_timestamp
+            and (p.valid_to is null or r.received_timestamp < p.valid_to)
 
 ),
 

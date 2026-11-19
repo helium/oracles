@@ -52,13 +52,12 @@ vars:
   speedtest_average_window_hours: 48
   speedtest_average_max_samples: 6
 
-  # How far behind its newest row `heartbeat_locations` re-measures on each
-  # run. Hours, not the shared minutes above, because what it absorbs is not
-  # just ingest commit skew but icicle landing a reassertion after the
-  # heartbeats that follow it: each run re-joins this window to the current
-  # assertion periods, so a late chain update corrects the rows behind it. At
-  # ~1.2M heartbeats a day, 3 hours is ~150k rows re-merged per run.
-  heartbeat_locations_lookback_minutes: 180
+  # How long after ingest received a heartbeat `heartbeat_locations` waits
+  # before measuring it. Its rows are written once and never corrected (the
+  # table is append-only so it can be streamed), so this is the time icicle has
+  # to land a reassertion before the heartbeats after it are measured against
+  # the old one. The table trails ingest by this much.
+  heartbeat_locations_settle_minutes: 60
 
 models:
   mobile_dbt:

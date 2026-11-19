@@ -156,9 +156,9 @@ models:
       `distance_to_asserted`. Facts only: no fix-age limit, distance bands or
       trust score; eligibility models apply those.
 
-      Incremental on `received_timestamp`, re-measuring the last
-      `heartbeat_locations_lookback_minutes` each run so a late chain update
-      corrects the rows behind it. See the model's header.
+      Append-only, so it can be streamed: each run appends heartbeats not
+      measured yet, once they are `heartbeat_locations_settle_minutes` old,
+      and never rewrites a row. See the model's header.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
