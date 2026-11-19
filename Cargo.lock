@@ -3842,7 +3842,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 [[package]]
 name = "glacon-core"
 version = "0.1.0"
-source = "git+https://github.com/helium/glacon?rev=72ee689132fcfc95eec61cae1774c98da81123f0#72ee689132fcfc95eec61cae1774c98da81123f0"
+source = "git+https://github.com/helium/glacon?rev=974d8f495f12de441feb0e9e72c91819e7e750d9#974d8f495f12de441feb0e9e72c91819e7e750d9"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3862,7 +3862,7 @@ dependencies = [
 [[package]]
 name = "glacon-helium"
 version = "0.1.0"
-source = "git+https://github.com/helium/glacon?rev=72ee689132fcfc95eec61cae1774c98da81123f0#72ee689132fcfc95eec61cae1774c98da81123f0"
+source = "git+https://github.com/helium/glacon?rev=974d8f495f12de441feb0e9e72c91819e7e750d9#974d8f495f12de441feb0e9e72c91819e7e750d9"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4800,6 +4800,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "prost",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "tls-init",

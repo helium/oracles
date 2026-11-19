@@ -5,13 +5,13 @@
 use super::{MobileHotspotHistoryTable, DEFAULT_NAMESPACE, DEFAULT_TABLE_NAME};
 use crate::settings::FreshStateSetting;
 use glacon_helium::{FileStoreInputSettings, IcebergOutputSettings, RouteSettings};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
 /// `file_store`'s own default when an input does not set `offset`.
 const DEFAULT_POLLER_OFFSET: Duration = Duration::from_secs(10 * 60);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// `state_dir` (the ledger) and `processed_retention`. `state_dir` MUST
     /// be on a durable volume: it is the only record of what was delivered.
@@ -38,7 +38,7 @@ pub struct Settings {
 
 /// Which table the route writes to; the configured half of
 /// [`MobileHotspotHistoryTable`].
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TableSettings {
     #[serde(default = "default_namespace")]
     pub namespace: String,

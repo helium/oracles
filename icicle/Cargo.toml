@@ -17,6 +17,7 @@ helium-crypto = { workspace = true }
 helium-proto = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -27,7 +28,7 @@ angry-purple-tiger = { version = "1", features = ["helium_crypto"] }
 # re-exports glacon-core, `task_manager`, `helium_iceberg` and `file_store`:
 # use those re-exports rather than depending on the crates directly. The root
 # Cargo.toml patches glacon's own oracles dependencies to this workspace.
-glacon-helium = { git = "https://github.com/helium/glacon", rev = "72ee689132fcfc95eec61cae1774c98da81123f0" }
+glacon-helium = { git = "https://github.com/helium/glacon", rev = "974d8f495f12de441feb0e9e72c91819e7e750d9" }
 
 custom-tracing = { path = "../custom_tracing" }
 tls-init = { path = "../tls_init" }

@@ -8,10 +8,10 @@
 use crate::data::mobile_hotspot_history;
 use config::{Config, Environment, File};
 use glacon_helium::FreshState;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// `RUST_LOG`-compatible log filter.
     #[serde(default = "default_log")]
@@ -75,7 +75,7 @@ impl Settings {
 
 /// `glacon`'s [`FreshState`] is not `Deserialize`, so configuration goes
 /// through this mirror of it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FreshStateSetting {
     /// Refuse to start when the ledger is empty but the table already holds
@@ -172,6 +172,58 @@ bucket = "ingest-chain"
             err.to_string().contains("no inputs"),
             "unexpected error: {err}"
         );
+    }
+
+    /// The settings are printed at startup: no secret may reach the log.
+    #[test]
+    fn printed_settings_leave_out_every_secret() {
+        let body = HISTORY
+            .replace(
+                "catalog_name = \"mobile\"\n",
+                "catalog_name = \"mobile\"\n\
+                 [mobile_hotspot_history.output.catalog.auth]\n\
+                 credential = \"id:CATALOG-SECRET\"\n\
+                 token = \"TOKEN-SECRET\"\n\
+                 [mobile_hotspot_history.output.catalog.s3]\n\
+                 access_key_id = \"S3-KEY-ID\"\n\
+                 secret_access_key = \"S3-SECRET\"\n",
+            )
+            .replace(
+                "bucket = \"ingest-chain\"\n",
+                "bucket = \"ingest-chain\"\n\
+                 access_key_id = \"BUCKET-KEY-ID\"\n\
+                 secret_access_key = \"BUCKET-SECRET\"\n",
+            );
+        let f = write_settings(&body);
+        let settings = Settings::new(Some(f.path())).expect("settings must load");
+
+        let history = settings.mobile_hotspot_history.as_ref().expect("route");
+        assert_eq!(
+            history.output.catalog.auth.credential.as_deref(),
+            Some("id:CATALOG-SECRET"),
+            "the secrets must be loaded for this test to mean anything"
+        );
+        assert_eq!(
+            history.inputs["chain"]
+                .bucket
+                .settings
+                .secret_access_key
+                .as_deref(),
+            Some("BUCKET-SECRET")
+        );
+
+        let printed = serde_json::to_string_pretty(&settings).expect("serialize");
+        for secret in [
+            "CATALOG-SECRET",
+            "TOKEN-SECRET",
+            "S3-KEY-ID",
+            "S3-SECRET",
+            "BUCKET-KEY-ID",
+            "BUCKET-SECRET",
+        ] {
+            assert!(!printed.contains(secret), "{secret} leaked:\n{printed}");
+        }
+        assert!(printed.contains("ingest-chain"), "{printed}");
     }
 
     /// The template ships as documentation and as the starting point for a
