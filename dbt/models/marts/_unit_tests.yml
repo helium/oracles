@@ -89,6 +89,8 @@ unit_tests:
     overrides:
       macros:
         is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-01"
     given:
       - input: source('hotspots', 'speedtests')
         rows:
@@ -110,6 +112,8 @@ unit_tests:
     overrides:
       macros:
         is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-01"
     given:
       - input: source('hotspots', 'speedtests')
         rows:
@@ -141,6 +145,8 @@ unit_tests:
     overrides:
       macros:
         is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-01"
     given:
       - input: source('hotspots', 'speedtests')
         rows:
@@ -177,6 +183,7 @@ unit_tests:
       macros:
         is_incremental: true
       vars:
+        speedtest_averages_start: "2024-01-01"
         speedtest_averages_watermark: "2024-01-01 14:00:00.000000 UTC"
     given:
       # What a previous run left, consistent with the watermark above. The
@@ -196,6 +203,27 @@ unit_tests:
       rows:
         - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 09:00:00+00", upload_speed_avg_bps: 15, sample_count: 2}
 
+  - name: speedtest_averages_start_at_the_start_date
+    model: speedtest_averages
+    description: >
+      With the start at 2024-01-02, A (01-01 12:00) gets no average of its
+      own, but it is still a sample: B (01-02 06:00) averages A and B, a full
+      window, not B alone. Cut the samples at the start date too and B
+      averages only itself (verified).
+    overrides:
+      macros:
+        is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-02"
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 12:00:00+00", timestamp: "2024-01-01 12:00:00+00", upload_speed: 10, download_speed: 100, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-02 06:00:00+00", timestamp: "2024-01-02 06:00:00+00", upload_speed: 30, download_speed: 300, latency: 30}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-02 06:00:00+00", upload_speed_avg_bps: 20, download_speed_avg_bps: 200, latency_avg_ms: 20, sample_count: 2}
+
   - name: speedtest_samples_are_listed_newest_first
     model: speedtest_averages
     description: >
@@ -204,6 +232,8 @@ unit_tests:
     overrides:
       macros:
         is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-01"
     given:
       - input: source('hotspots', 'speedtests')
         rows:

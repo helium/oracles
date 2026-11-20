@@ -50,6 +50,15 @@
 -- the samples before it, but the later averages it would have belonged in keep
 -- the values they were written with -- as in the oracle.
 --
+-- STARTS AT `speedtest_averages_start` (2026-11-01). Only reports from that
+-- date get an average; earlier averages live in mobile-verifier's
+-- `speedtest_avgs` / `invalid_speedtest_avgs`, which are kept (moved to a
+-- deprecated schema) rather than deleted. Samples are not cut off: a report
+-- just after the date averages its full window, including speedtests before
+-- it. The date also bounds the first build, and any `--full-refresh`, to one
+-- query over the reports since then; move it forward if that ever grows too
+-- large for one run.
+--
 -- INCREMENTAL SHAPE. Three ranges:
 --
 --   1. CANDIDATE REPORTS -- received since the last run. The watermark is
@@ -84,6 +93,7 @@
 {%- set window_hours = var('speedtest_average_window_hours') -%}
 {%- set max_samples = var('speedtest_average_max_samples') -%}
 {%- set lookback_minutes = var('incremental_lookback_minutes') -%}
+{%- set start = "timestamp '" ~ var('speedtest_averages_start') ~ " 00:00:00 UTC'" -%}
 
 {%- set watermark = none -%}
 {%- if is_incremental() -%}
@@ -113,14 +123,19 @@ with speedtests as (
 
 candidate_reports as (
 
-    -- No watermark means a first run, a full refresh, or an empty table: take
-    -- everything.
+    -- Reports from `speedtest_averages_start` on. No watermark means a first
+    -- run, a full refresh, or an empty table: take every one of those. The
+    -- `received_timestamp` bound prunes partitions and excludes nothing,
+    -- since a report is never received before its own time.
     select distinct hotspot_pubkey, "timestamp"
     from speedtests
-    {%- if watermark is not none %}
-    where received_timestamp
-        >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
-    {%- endif %}
+    where
+        "timestamp" >= {{ start }}
+        and received_timestamp >= {{ start }}
+        {%- if watermark is not none %}
+        and received_timestamp
+            >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
+        {%- endif %}
 
 ),
 
@@ -189,11 +204,15 @@ samples as (
                 s.hotspot_pubkey = r.hotspot_pubkey
                 and s."timestamp" >= r.first_sample
                 and s."timestamp" <= r.last_sample
-        {%- if watermark is not none %}
-        where s.received_timestamp >= (
-            select min(first_sample) from sample_ranges
-        )
-        {%- endif %}
+        -- Samples may predate the start date: a report just after it still
+        -- averages its whole window. Both bounds only prune partitions.
+        where
+            s.received_timestamp >= {{ start }} - interval '{{ window_hours }}' hour
+            {%- if watermark is not none %}
+            and s.received_timestamp >= (
+                select min(first_sample) from sample_ranges
+            )
+            {%- endif %}
     )
     where copy_rank = 1
 
