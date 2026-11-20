@@ -101,6 +101,7 @@ impl Cmd {
                     valid_heartbeats,
                     usa_and_mexico_geofence,
                     poc_writers.heartbeat,
+                    poc_writers.heartbeat_report,
                 )
                 .await?,
             )

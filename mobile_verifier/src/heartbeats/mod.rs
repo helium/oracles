@@ -18,6 +18,33 @@ use uuid::Uuid;
 
 use self::last_location::{LastLocation, LocationCache};
 
+/// A heartbeat's location exactly as the hotspot reported it.
+///
+/// [`Heartbeat`]'s own `lat`, `lon` and `location_validation_timestamp` can
+/// change before they are stored: a validation timestamp more than 24 hours
+/// older than the heartbeat is dropped on ingest, and a heartbeat without one
+/// takes the hotspot's last validated location from the
+/// [`LocationCache`](last_location::LocationCache). These fields never change,
+/// so `hotspots.heartbeat_reports` can record what the device actually sent.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReportedLocation {
+    pub lat: f64,
+    pub lon: f64,
+    pub location_validation_timestamp: Option<DateTime<Utc>>,
+}
+
+impl ReportedLocation {
+    /// Center of the resolution-12 H3 cell holding the reported location: the
+    /// point location trust measures distance from. `None` when the lat/lon is
+    /// not a valid coordinate (not finite); converting a valid one to a cell
+    /// cannot fail.
+    pub fn centered_latlng(&self) -> Option<LatLng> {
+        LatLng::new(self.lat, self.lon)
+            .ok()
+            .map(|latlng| latlng.to_cell(h3o::Resolution::Twelve).into())
+    }
+}
+
 #[derive(Clone)]
 pub struct Heartbeat {
     pub hotspot_key: PublicKeyBinary,
@@ -29,6 +56,8 @@ pub struct Heartbeat {
     pub location_source: LocationSource,
     pub timestamp: DateTime<Utc>,
     pub heartbeat_timestamp: DateTime<Utc>,
+    /// The location as reported, untouched by validation.
+    pub reported: ReportedLocation,
 }
 
 impl Heartbeat {
@@ -56,6 +85,11 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
     fn from(value: WifiHeartbeatIngestReport) -> Self {
         let received_timestamp = value.received_timestamp;
         let heartbeat_timestamp = value.report.timestamp;
+        let reported = ReportedLocation {
+            lat: value.report.lat,
+            lon: value.report.lon,
+            location_validation_timestamp: value.report.location_validation_timestamp,
+        };
         let location_validation_timestamp = value
             .report
             .location_validation_timestamp
@@ -70,6 +104,7 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             location_source: value.report.location_source,
             timestamp: received_timestamp,
             heartbeat_timestamp,
+            reported,
         }
     }
 }
@@ -319,24 +354,37 @@ impl ValidatedHeartbeat {
     }
 }
 
-pub(crate) async fn process_validated_heartbeats(
+/// Write each validated heartbeat to every place heartbeats are recorded: the
+/// `validated_heartbeat` proto sink, `hotspots.heartbeats` /
+/// `invalid_heartbeats` (with the verifier's location decoration), and
+/// `hotspots.heartbeat_reports` / `invalid_heartbeat_reports` (as reported).
+pub async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
     heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
     iceberg_writer: &crate::iceberg::HeartbeatWriter,
+    report_writer: &crate::iceberg::HeartbeatReportWriter,
     write_id: &str,
 ) -> anyhow::Result<()> {
     let mut iceberg_records = Vec::new();
     let mut invalid_iceberg_records = Vec::new();
+    let mut report_records = Vec::new();
+    let mut invalid_report_records = Vec::new();
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 
         let record = crate::iceberg::IcebergHeartbeat::from(&validated_heartbeat);
+        let report = crate::iceberg::IcebergHeartbeatReport::from(&validated_heartbeat);
         if validated_heartbeat.is_valid() {
             iceberg_records.push(record);
+            report_records.push(report);
         } else {
             invalid_iceberg_records.push(crate::iceberg::IcebergInvalidHeartbeat::new(
                 record,
+                validated_heartbeat.validity,
+            ));
+            invalid_report_records.push(crate::iceberg::IcebergInvalidHeartbeatReport::new(
+                report,
                 validated_heartbeat.validity,
             ));
         }
@@ -346,6 +394,13 @@ pub(crate) async fn process_validated_heartbeats(
         .write(write_id, iceberg_records, invalid_iceberg_records)
         .await
         .context("writing heartbeats idempotently")?;
+    // The same file id keys both table pairs. Each table tracks its own
+    // idempotency, so a retry after a partial failure completes whichever
+    // write did not commit without duplicating the ones that did.
+    report_writer
+        .write(write_id, report_records, invalid_report_records)
+        .await
+        .context("writing heartbeat reports idempotently")?;
 
     Ok(())
 }
