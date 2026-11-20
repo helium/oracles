@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     banning::ingestor::BanIngestor,
     gateway::TrinoGatewayResolver,
@@ -11,8 +9,6 @@ use crate::{
     telemetry, Settings,
 };
 use anyhow::Result;
-use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
-use helium_proto::services::poc_mobile::Heartbeat;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -31,17 +27,6 @@ impl Cmd {
         // than only after the first epoch is rewarded. Fails loudly here — an
         // unwritable path should surface at boot, not at cutover.
         rewarder_state.mirror_to_file().await?;
-
-        let (file_upload, file_upload_tasks) = settings.file_upload.connect().await?;
-
-        let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
-            &settings.file_upload.root,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
 
         let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
         tracing::info!(
@@ -87,8 +72,6 @@ impl Cmd {
         );
 
         TaskManager::builder()
-            .add_task(file_upload_tasks)
-            .add_task(valid_heartbeats_server)
             .add_task(task_manager::periodic(gateway_refresher))
             .add_task(task_manager::periodic(location_cache_refresher))
             .add_task(
@@ -98,7 +81,6 @@ impl Cmd {
                     ingest_bucket_client.clone(),
                     location_cache,
                     gateway_resolver.clone(),
-                    valid_heartbeats,
                     usa_and_mexico_geofence,
                     poc_writers.heartbeat,
                 )
@@ -108,7 +90,6 @@ impl Cmd {
                 SpeedtestDaemon::create_managed_task(
                     pool.clone(),
                     settings,
-                    file_upload.clone(),
                     ingest_bucket_client.clone(),
                     trino_client.clone(),
                     gateway_resolver.clone(),
@@ -120,7 +101,6 @@ impl Cmd {
             .add_task(
                 BanIngestor::create_managed_task(
                     pool.clone(),
-                    file_upload.clone(),
                     ingest_bucket_client.clone(),
                     authorized_keys,
                     settings,
@@ -132,7 +112,6 @@ impl Cmd {
                 Rewarder::create_managed_task(
                     pool,
                     settings,
-                    file_upload,
                     reward_writers,
                     trino_client,
                     rewarder_state,
