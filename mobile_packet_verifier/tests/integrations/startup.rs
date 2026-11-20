@@ -22,6 +22,62 @@ async fn migrations_ignore_ones_from_a_newer_binary(pool: PgPool) -> anyhow::Res
 }
 
 #[tokio::test]
+async fn burned_sessions_still_write_once_the_next_binary_adds_signature() -> anyhow::Result<()> {
+    // What the next binary leaves behind: a signature column on
+    // burned_sessions, added by the ALTER TABLE run before it deploys. This
+    // binary knows nothing of it, and has to keep writing burned sessions
+    // while that deploy waits and after a rollback to this one. The column
+    // takes a null.
+    use trino_rust_client::Trino;
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, Trino)]
+    struct Row {
+        signature: Option<String>,
+    }
+
+    let harness = common::setup_iceberg().await?;
+    let table = format!(
+        "{}.{}",
+        iceberg::NAMESPACE,
+        iceberg::burned_session::TABLE_NAME
+    );
+    harness
+        .trino()
+        .execute(format!("ALTER TABLE {table} ADD COLUMN signature VARCHAR"))
+        .await?;
+
+    let writers = iceberg::get_writers(&harness.as_settings()).await?;
+    let now = chrono::Utc::now().fixed_offset();
+    writers
+        .burned_session
+        .write(vec![
+            iceberg::burned_session::IcebergBurnedDataTransferSession {
+                pub_key: "hotspot".to_string(),
+                payer: "payer".to_string(),
+                upload_bytes: 1_000,
+                download_bytes: 1_000,
+                rewardable_bytes: 2_000,
+                num_dcs: 1,
+                multiplier: None,
+                first_timestamp: now,
+                last_timestamp: now,
+                burn_timestamp: now,
+            },
+        ])
+        .await?;
+
+    let rows = harness
+        .trino()
+        .get_all::<Row>(format!("SELECT signature FROM {table}"))
+        .await?
+        .into_vec();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].signature, None);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn writers_start_when_session_tables_have_session_keys() -> anyhow::Result<()> {
     let harness = common::setup_iceberg().await?;
 

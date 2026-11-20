@@ -1,4 +1,4 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use crate::{send_with_retry, GetLastValidBlockHeight, GetSignature, SolanaRpcError};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
@@ -17,7 +17,7 @@ use helium_lib::{
         pubkey::Pubkey,
         signature::{Keypair, Signature},
         signer::Signer,
-        transaction::Transaction,
+        transaction::{Transaction, TransactionError},
     },
 };
 use itertools::Itertools;
@@ -27,9 +27,53 @@ use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
+/// Blocks a blockhash stays valid after the block it was taken from: Solana's
+/// `MAX_PROCESSING_AGE`.
+///
+/// A transaction signed with the latest finalized blockhash gets a
+/// `last_valid_block_height` of the finalized block height at signing plus
+/// this.
+pub const BLOCKHASH_VALID_BLOCKS: u64 = helium_lib::solana_sdk::clock::MAX_PROCESSING_AGE as u64;
+
+/// Blocks past a burn's `last_valid_block_height` before a missing finalized
+/// status is taken to mean it never landed.
+///
+/// A transaction can be included up to one block past its last valid height,
+/// and the status read may be served by an RPC node that is behind the one
+/// that answered the block height. 150 blocks, about a minute, covers both.
+pub const BLOCKHASH_EXPIRY_MARGIN: u64 = 150;
+
+/// What a finalized read of the chain says about one signature.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransactionStatus {
+    /// Finalized without error: the DC were burned.
+    Succeeded,
+    /// Finalized with an error: nothing was burned, only the fee was paid.
+    Failed(TransactionError),
+    /// No finalized status. The transaction never landed, or it landed and
+    /// has not finalized yet; this read alone cannot tell which.
+    NotFinalized,
+}
+
+/// Whether a submitted burn spent the payer's DC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BurnOutcome {
+    /// The DC were burned.
+    Burned,
+    /// The DC were not burned, and this transaction can never burn them.
+    Failed,
+    /// The transaction may still land. Ask again later.
+    Pending {
+        /// The finalized block height this answer was based on. It is
+        /// released once this passes its expiry plus
+        /// [`BLOCKHASH_EXPIRY_MARGIN`].
+        finalized_block_height: u64,
+    },
+}
+
 #[async_trait]
 pub trait SolanaNetwork: Clone + Send + Sync + 'static {
-    type Transaction: GetSignature + Send + Sync + 'static;
+    type Transaction: GetSignature + GetLastValidBlockHeight + Send + Sync + 'static;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError>;
 
@@ -44,7 +88,66 @@ pub trait SolanaNetwork: Clone + Send + Sync + 'static {
         transaction: &Self::Transaction,
     ) -> Result<(), SolanaRpcError>;
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError>;
+    /// The signature's status at finalized commitment, searching history.
+    async fn transaction_status(
+        &self,
+        signature: &Signature,
+    ) -> Result<TransactionStatus, SolanaRpcError>;
+
+    /// The chain's block height at finalized commitment.
+    async fn finalized_block_height(&self) -> Result<u64, SolanaRpcError>;
+
+    /// Settle a burn that was signed with `last_valid_block_height`.
+    ///
+    /// [`BurnOutcome::Failed`] is only returned when the transaction can never
+    /// land: it finalized with an error, or the finalized block height is past
+    /// its expiry (plus [`BLOCKHASH_EXPIRY_MARGIN`]) and it has no finalized
+    /// status.
+    ///
+    /// The block height is read before the status. Any block at or below that
+    /// height is already final, so a burn that landed before its expiry shows
+    /// up in the status read that follows. Reading them the other way round,
+    /// a burn finalizing between the two reads would look like it never
+    /// landed.
+    ///
+    /// This trusts the RPC: a node that reports no status for a transaction
+    /// that did land makes a burned transaction look failed.
+    async fn burn_outcome(
+        &self,
+        signature: &Signature,
+        last_valid_block_height: u64,
+    ) -> Result<BurnOutcome, SolanaRpcError> {
+        let finalized_height = self.finalized_block_height().await?;
+        let expired =
+            finalized_height > last_valid_block_height.saturating_add(BLOCKHASH_EXPIRY_MARGIN);
+
+        Ok(match self.transaction_status(signature).await? {
+            TransactionStatus::Succeeded => BurnOutcome::Burned,
+            TransactionStatus::Failed(_) => BurnOutcome::Failed,
+            TransactionStatus::NotFinalized if expired => BurnOutcome::Failed,
+            TransactionStatus::NotFinalized => BurnOutcome::Pending {
+                finalized_block_height: finalized_height,
+            },
+        })
+    }
+}
+
+/// A signed burn, and the block height its blockhash expires at.
+pub struct BurnTransaction {
+    pub transaction: Transaction,
+    pub last_valid_block_height: u64,
+}
+
+impl GetSignature for BurnTransaction {
+    fn get_signature(&self) -> &Signature {
+        self.transaction.get_signature()
+    }
+}
+
+impl GetLastValidBlockHeight for BurnTransaction {
+    fn last_valid_block_height(&self) -> u64 {
+        self.last_valid_block_height
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -120,7 +223,7 @@ impl SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    type Transaction = Transaction;
+    type Transaction = BurnTransaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
@@ -247,15 +350,21 @@ impl SolanaNetwork for SolanaRpc {
                 .unwrap()
         };
 
-        let blockhash = self.provider.get_latest_blockhash().await?;
+        let (blockhash, last_valid_block_height) = self
+            .provider
+            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+            .await?;
         let signer = Keypair::try_from(&self.keypair[..]).unwrap();
 
-        Ok(Transaction::new_signed_with_payer(
-            &instructions,
-            Some(&signer.pubkey()),
-            &[&signer],
-            blockhash,
-        ))
+        Ok(BurnTransaction {
+            transaction: Transaction::new_signed_with_payer(
+                &instructions,
+                Some(&signer.pubkey()),
+                &[&signer],
+                blockhash,
+            ),
+            last_valid_block_height,
+        })
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), SolanaRpcError> {
@@ -266,7 +375,7 @@ impl SolanaNetwork for SolanaRpc {
         match send_with_retry!(self
             .provider
             .send_and_confirm_transaction_with_spinner_and_config(
-                tx,
+                &tx.transaction,
                 CommitmentConfig::finalized(),
                 config,
             )) {
@@ -288,17 +397,33 @@ impl SolanaNetwork for SolanaRpc {
         }
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(matches!(
-            self.provider
-                .get_signature_status_with_commitment_and_history(
-                    txn,
-                    CommitmentConfig::finalized(),
-                    true,
-                )
-                .await?,
-            Some(Ok(()))
-        ))
+    async fn transaction_status(
+        &self,
+        signature: &Signature,
+    ) -> Result<TransactionStatus, SolanaRpcError> {
+        // The client drops a status that hasn't reached the requested
+        // commitment, so `None` covers both "not found" and "not finalized".
+        let status = self
+            .provider
+            .get_signature_status_with_commitment_and_history(
+                signature,
+                CommitmentConfig::finalized(),
+                true,
+            )
+            .await?;
+
+        Ok(match status {
+            Some(Ok(())) => TransactionStatus::Succeeded,
+            Some(Err(err)) => TransactionStatus::Failed(err),
+            None => TransactionStatus::NotFinalized,
+        })
+    }
+
+    async fn finalized_block_height(&self) -> Result<u64, SolanaRpcError> {
+        Ok(self
+            .provider
+            .get_block_height_with_commitment(CommitmentConfig::finalized())
+            .await?)
     }
 }
 
@@ -420,7 +545,7 @@ impl BurnProgramCache {
 
 pub enum PossibleTransaction {
     NoTransaction(Signature),
-    Transaction(Transaction),
+    Transaction(BurnTransaction),
 }
 
 impl GetSignature for PossibleTransaction {
@@ -428,6 +553,17 @@ impl GetSignature for PossibleTransaction {
         match self {
             Self::NoTransaction(ref sig) => sig,
             Self::Transaction(ref txn) => txn.get_signature(),
+        }
+    }
+}
+
+impl GetLastValidBlockHeight for PossibleTransaction {
+    fn last_valid_block_height(&self) -> u64 {
+        match self {
+            // There is no blockhash to expire. Nothing reads this: resolving a
+            // burn panics when Solana is disabled.
+            Self::NoTransaction(_) => 0,
+            Self::Transaction(ref txn) => txn.last_valid_block_height(),
         }
     }
 }
@@ -472,9 +608,20 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         Ok(())
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
+    async fn transaction_status(
+        &self,
+        signature: &Signature,
+    ) -> Result<TransactionStatus, SolanaRpcError> {
         if let Some(ref rpc) = self {
-            rpc.confirm_transaction(txn).await
+            rpc.transaction_status(signature).await
+        } else {
+            panic!("We will not confirm transactions when Solana is disabled");
+        }
+    }
+
+    async fn finalized_block_height(&self) -> Result<u64, SolanaRpcError> {
+        if let Some(ref rpc) = self {
+            rpc.finalized_block_height().await
         } else {
             panic!("We will not confirm transactions when Solana is disabled");
         }
@@ -485,6 +632,7 @@ pub struct MockTransaction {
     pub signature: Signature,
     pub payer: PublicKeyBinary,
     pub amount: u64,
+    pub last_valid_block_height: u64,
 }
 
 impl GetSignature for MockTransaction {
@@ -493,11 +641,22 @@ impl GetSignature for MockTransaction {
     }
 }
 
+impl GetLastValidBlockHeight for MockTransaction {
+    fn last_valid_block_height(&self) -> u64 {
+        self.last_valid_block_height
+    }
+}
+
 #[derive(Clone)]
 pub struct TestSolanaClientMap {
     payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
     confirm_all_txns: Arc<Mutex<bool>>,
     confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
+    failed_txns: Arc<Mutex<HashSet<Signature>>>,
+    block_height: Arc<Mutex<u64>>,
+    block_height_step: Arc<Mutex<u64>>,
+    failing_submissions: Arc<Mutex<bool>>,
+    failing_height_reads: Arc<Mutex<usize>>,
 }
 
 impl Default for TestSolanaClientMap {
@@ -506,6 +665,11 @@ impl Default for TestSolanaClientMap {
             payer_balances: Default::default(),
             confirm_all_txns: Arc::new(Mutex::new(true)),
             confirmed_txns: Default::default(),
+            failed_txns: Default::default(),
+            block_height: Default::default(),
+            block_height_step: Default::default(),
+            failing_submissions: Default::default(),
+            failing_height_reads: Default::default(),
         }
     }
 }
@@ -541,6 +705,36 @@ impl TestSolanaClientMap {
         *self.confirm_all_txns.lock().await = false;
         self.confirmed_txns.lock().await.insert(signature);
     }
+
+    /// Mark a transaction as finalized with an error.
+    pub async fn add_failed(&self, signature: Signature) {
+        *self.confirm_all_txns.lock().await = false;
+        self.failed_txns.lock().await.insert(signature);
+    }
+
+    /// Move the finalized block height. New burns expire
+    /// [`BLOCKHASH_VALID_BLOCKS`] blocks after it.
+    pub async fn set_block_height(&self, height: u64) {
+        *self.block_height.lock().await = height;
+    }
+
+    /// Advance the finalized block height by `step` every time it is read, so
+    /// a burn that never finalizes eventually expires.
+    pub async fn advance_block_height_by(&self, step: u64) {
+        *self.block_height_step.lock().await = step;
+    }
+
+    /// Make every later submission return an error. Whether the burn landed
+    /// anyway is up to [`Self::add_confirmed`] and [`Self::add_failed`]; with
+    /// neither called, every burn reads as succeeded.
+    pub async fn fail_submissions(&self) {
+        *self.failing_submissions.lock().await = true;
+    }
+
+    /// Make the next `count` block height reads return an RPC error.
+    pub async fn fail_height_reads(&self, count: usize) {
+        *self.failing_height_reads.lock().await = count;
+    }
 }
 
 #[async_trait]
@@ -560,10 +754,15 @@ impl SolanaNetwork for TestSolanaClientMap {
             signature: Signature::new_unique(),
             payer: payer.clone(),
             amount,
+            last_valid_block_height: *self.block_height.lock().await + BLOCKHASH_VALID_BLOCKS,
         })
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
+        if *self.failing_submissions.lock().await {
+            return Err(SolanaRpcError::Test("submission failed".to_string()));
+        }
+
         *self
             .payer_balances
             .lock()
@@ -573,12 +772,36 @@ impl SolanaNetwork for TestSolanaClientMap {
         Ok(())
     }
 
-    async fn confirm_transaction(&self, signature: &Signature) -> Result<bool, SolanaRpcError> {
-        if *self.confirm_all_txns.lock().await {
-            return Ok(true);
+    async fn transaction_status(
+        &self,
+        signature: &Signature,
+    ) -> Result<TransactionStatus, SolanaRpcError> {
+        if *self.confirm_all_txns.lock().await
+            || self.confirmed_txns.lock().await.contains(signature)
+        {
+            return Ok(TransactionStatus::Succeeded);
         }
 
-        Ok(self.confirmed_txns.lock().await.contains(signature))
+        if self.failed_txns.lock().await.contains(signature) {
+            return Ok(TransactionStatus::Failed(
+                TransactionError::InsufficientFundsForFee,
+            ));
+        }
+
+        Ok(TransactionStatus::NotFinalized)
+    }
+
+    async fn finalized_block_height(&self) -> Result<u64, SolanaRpcError> {
+        let mut failing = self.failing_height_reads.lock().await;
+        if *failing > 0 {
+            *failing -= 1;
+            return Err(SolanaRpcError::Test("block height read failed".to_string()));
+        }
+
+        let mut height = self.block_height.lock().await;
+        let current = *height;
+        *height += *self.block_height_step.lock().await;
+        Ok(current)
     }
 }
 
@@ -596,4 +819,69 @@ pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubk
         &data_credits::ID,
     );
     ddc_key
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payer() -> PublicKeyBinary {
+        PublicKeyBinary::from(vec![1])
+    }
+
+    #[tokio::test]
+    async fn burn_outcome_pending_until_past_expiry_margin() {
+        let solana = TestSolanaClientMap::default();
+        solana.add_confirmed(Signature::new_unique()).await;
+        let txn = solana.make_burn_transaction(&payer(), 1).await.unwrap();
+        let expires_at = txn.last_valid_block_height + BLOCKHASH_EXPIRY_MARGIN;
+
+        solana.set_block_height(expires_at).await;
+        let outcome = solana
+            .burn_outcome(&txn.signature, txn.last_valid_block_height)
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome,
+            BurnOutcome::Pending {
+                finalized_block_height: expires_at
+            }
+        );
+
+        solana.set_block_height(expires_at + 1).await;
+        let outcome = solana
+            .burn_outcome(&txn.signature, txn.last_valid_block_height)
+            .await
+            .unwrap();
+        assert_eq!(outcome, BurnOutcome::Failed);
+    }
+
+    #[tokio::test]
+    async fn burn_outcome_finalized_error_is_failed_before_expiry() {
+        let solana = TestSolanaClientMap::default();
+        let txn = solana.make_burn_transaction(&payer(), 1).await.unwrap();
+        solana.add_failed(txn.signature).await;
+
+        let outcome = solana
+            .burn_outcome(&txn.signature, txn.last_valid_block_height)
+            .await
+            .unwrap();
+        assert_eq!(outcome, BurnOutcome::Failed);
+    }
+
+    #[tokio::test]
+    async fn burn_outcome_succeeded_is_burned_after_expiry() {
+        let solana = TestSolanaClientMap::default();
+        let txn = solana.make_burn_transaction(&payer(), 1).await.unwrap();
+        solana.add_confirmed(txn.signature).await;
+        solana
+            .set_block_height(txn.last_valid_block_height + BLOCKHASH_EXPIRY_MARGIN + 1)
+            .await;
+
+        let outcome = solana
+            .burn_outcome(&txn.signature, txn.last_valid_block_height)
+            .await
+            .unwrap();
+        assert_eq!(outcome, BurnOutcome::Burned);
+    }
 }

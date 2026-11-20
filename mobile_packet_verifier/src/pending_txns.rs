@@ -11,6 +11,9 @@ pub struct PendingTxn {
     pub payer: PublicKeyBinary,
     pub amount: u64,
     pub time_of_submission: DateTime<Utc>,
+    /// The block height the burn's blockhash expires at. Past it, the burn can
+    /// never land.
+    pub last_valid_block_height: u64,
 }
 
 impl FromRow<'_, PgRow> for PendingTxn {
@@ -19,6 +22,7 @@ impl FromRow<'_, PgRow> for PendingTxn {
             payer: row.try_get("payer")?,
             amount: row.try_get::<i64, _>("amount")? as u64,
             time_of_submission: row.try_get("time_of_submission")?,
+            last_valid_block_height: row.try_get::<i64, _>("last_valid_block_height")? as u64,
             signature: row
                 .try_get::<String, _>("signature")?
                 .parse()
@@ -72,30 +76,21 @@ pub async fn add_pending_txn(
     payer: &PublicKeyBinary,
     amount: u64,
     signature: &Signature,
+    last_valid_block_height: u64,
     priced: &[DataTransferSession],
-) -> Result<(), sqlx::Error> {
-    do_add_pending_txn(conn, payer, amount, signature, priced, Utc::now()).await
-}
-
-pub async fn do_add_pending_txn(
-    conn: &PgPool,
-    payer: &PublicKeyBinary,
-    amount: u64,
-    signature: &Signature,
-    priced: &[DataTransferSession],
-    time_of_submission: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let mut txn = conn.begin().await?;
     sqlx::query(
         r#"
-        INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO pending_txns (signature, payer, amount, time_of_submission, last_valid_block_height)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(signature.to_string())
     .bind(payer)
     .bind(amount as i64)
-    .bind(time_of_submission)
+    .bind(Utc::now())
+    .bind(last_valid_block_height as i64)
     .execute(&mut *txn)
     .await?;
 
@@ -165,6 +160,35 @@ pub async fn do_add_pending_txn(
 
     txn.commit().await?;
     Ok(())
+}
+
+/// Store a bound on the expiry of a pending txn that was written without one,
+/// and return the expiry to settle it against.
+///
+/// Only a 0 is replaced. Once a bound is stored, later calls return it
+/// unchanged, so the release height never moves.
+pub async fn bound_unrecorded_expiry(
+    conn: &PgPool,
+    signature: &Signature,
+    bound: u64,
+) -> Result<u64, sqlx::Error> {
+    let stored: i64 = sqlx::query_scalar(
+        r#"
+        UPDATE pending_txns
+        SET last_valid_block_height = CASE
+            WHEN last_valid_block_height = 0 THEN $2
+            ELSE last_valid_block_height
+        END
+        WHERE signature = $1
+        RETURNING last_valid_block_height
+        "#,
+    )
+    .bind(signature.to_string())
+    .bind(bound as i64)
+    .fetch_one(conn)
+    .await?;
+
+    Ok(stored as u64)
 }
 
 pub async fn remove_pending_txn_failure(
