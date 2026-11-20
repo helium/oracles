@@ -1,23 +1,20 @@
 version: 2
 
-# The one source this project reads. It is written by the S3 binary-file ingest
-# pipeline, which lives OUTSIDE this repo, so there is no definition here to
-# derive it from: `scripts/external_sources.sql` holds a hand-maintained copy of
-# its production DDL, and CI creates the table from that copy before building
-# the models against it. Drift therefore surfaces as a wrong or missing column
-# rather than as a silently wrong mart -- weaker than deriving a schema from its
-# own definition, and the best available for a table we do not own. Refresh the
-# copy with `SHOW CREATE TABLE` when upstream moves.
+# Two kinds of source, verified two different ways.
 #
-# The oracle-written tables in this catalog (`data_transfer`, `rewards`,
-# `tokens`, and mobile-verifier's tables in `hotspots`) are deliberately NOT
-# declared here. Nothing models them, so their declarations verified only their
-# own accuracy, at the cost of a full mobile-verifier compile in CI to create
-# the tables to check them against.
-# Declare one when a model needs it, and restore that check with it: the
-# schemas are `table_definition()` functions (helium_iceberg_oracles/src/,
-# mobile_verifier/src/iceberg/, price/src/iceberg/), and creating tables from
-# those same functions is what keeps a declaration honest.
+#   * ORACLE-WRITTEN tables (`hotspots.speedtests`): their schema is a
+#     `table_definition()` function in Rust. CI creates them from that function
+#     (`cargo run -p mobile-verifier --example create_dbt_sources`) before
+#     building, so a declaration here is checked against what the oracle really
+#     writes, and a Rust change that breaks a model fails in the same PR. A
+#     table is declared here only when a model reads it; add it to that
+#     example's `SOURCES` at the same time.
+#   * EXTERNAL tables (`hotspots.enabled_carriers_history`): written by the S3
+#     binary-file ingest pipeline OUTSIDE this repo, so there is no definition
+#     to derive them from. `scripts/external_sources.sql` holds a
+#     hand-maintained copy of the production DDL instead -- weaker, and the best
+#     available for a table we do not own. Refresh it with `SHOW CREATE TABLE`
+#     when upstream moves.
 #
 # `database` is the active target's catalog rather than a project var: a var
 # whose value is itself Jinja (`{{ env_var(...) }}`) is not re-rendered when a
@@ -35,18 +32,60 @@ sources:
     database: "{{ target.database }}"
     schema: hotspots
     description: >
-      Hotspot state derived from the S3 binary-file ingest pipeline, which
-      lives OUTSIDE this repo. Nothing in `oracles` creates or writes these
-      tables; `scripts/external_sources.sql` holds a copy of the production
-      DDL so CI has something to build against, and that copy is not
-      authoritative -- refresh it with `SHOW CREATE TABLE` when upstream moves.
-
-      Rows carry `file_ts` / `record_index`: the ingest file they came from and
-      their offset within it. Together they identify a row -- it is the
-      provenance convention this ingest pipeline uses throughout.
+      Hotspot state. Mixes tables mobile-verifier writes (created in CI from
+      their Rust definitions) with tables the S3 binary-file ingest pipeline
+      writes from outside this repo (mirrored in
+      `scripts/external_sources.sql`). Each table says which it is.
     tables:
+      - name: speedtests
+        description: >
+          ORACLE-WRITTEN by mobile-verifier
+          (`mobile_verifier/src/iceberg/speedtest.rs`). Every speedtest report
+          that passed validation -- in bounds, from a known non-data-only
+          gateway. Rejected reports go to `invalid_speedtests` and are not
+          declared here, so nothing models them.
+
+          A HISTORY table, one row per report as received. A replayed report is
+          stored again, so (hotspot_pubkey, timestamp) is NOT unique here;
+          dedupe in the model.
+
+          Two clocks: `received_timestamp` is assigned at ingest and is the
+          partition key; `timestamp` is the device's own. Filter and watermark
+          on the former, order a hotspot's reports by the latter.
+        loaded_at_field: received_timestamp
+        freshness:
+          warn_after: { count: 6, period: hour }
+          error_after: { count: 24, period: hour }
+        columns:
+          - name: hotspot_pubkey
+            tests: [not_null]
+          - name: serial
+          - name: received_timestamp
+            description: When ingest received the report. Partition key.
+            tests: [not_null]
+          - name: timestamp
+            description: >
+              Device-reported time of the speedtest. Can in principle be later
+              than `received_timestamp` (a clock set forward); models drop such
+              rows.
+            tests: [not_null]
+          - name: upload_speed
+            description: Bytes per second.
+            tests: [not_null]
+          - name: download_speed
+            description: Bytes per second.
+            tests: [not_null]
+          - name: latency
+            description: Milliseconds.
+            tests: [not_null]
+
       - name: enabled_carriers_history
         description: >
+          EXTERNAL -- written by the S3 binary-file ingest pipeline outside this
+          repo; the CI copy is `scripts/external_sources.sql`. Rows carry
+          `file_ts` / `record_index`, the ingest file and offset, which together
+          identify a row.
+
           History of carrier enablement per hotspot: which carriers are turned
           on, which are in demand-sampling, and the firmware that reported it.
           Partitioned on day(received_timestamp), sorted by (hotspot_pubkey,

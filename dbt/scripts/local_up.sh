@@ -13,7 +13,9 @@
 #                      store in memory and loses the registration on restart.
 #   3. external DDL    the mirrored DDL for the source this repo does not
 #                      produce.
-#   4. fixtures        rows, so the data tests run against something real.
+#   4. oracle tables   the sources this repo's oracles write, created from their
+#                      Rust definitions (compiles mobile-verifier; needs cargo).
+#   5. fixtures        rows, so the data tests run against something real.
 #
 # Every step is idempotent, so re-running is safe and is the normal way to top
 # up a stack that has been restarted.
@@ -55,6 +57,9 @@ step "registering the Trino catalog"
 
 step "creating external source mirrors"
 ./dbt/scripts/create_external_sources.sh
+
+step "creating oracle source tables"
+./dbt/scripts/create_oracle_sources.sh
 
 if [ "${FIXTURES}" = true ]; then
   step "loading fixtures"
