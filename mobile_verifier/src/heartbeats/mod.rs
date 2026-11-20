@@ -35,8 +35,9 @@ pub struct ReportedLocation {
 
 impl ReportedLocation {
     /// Center of the resolution-12 H3 cell holding the reported location: the
-    /// point location trust measures distance from. `None` when the lat/lon
-    /// cannot form a cell.
+    /// point location trust measures distance from. `None` when the lat/lon is
+    /// not a valid coordinate (not finite); converting a valid one to a cell
+    /// cannot fail.
     pub fn centered_latlng(&self) -> Option<LatLng> {
         LatLng::new(self.lat, self.lon)
             .ok()
