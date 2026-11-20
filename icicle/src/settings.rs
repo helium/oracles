@@ -1,0 +1,207 @@
+//! Process-wide configuration: an optional TOML file overlaid with `ICICLE__*`
+//! environment variables.
+//!
+//! Only what is true of the whole process lives here. Everything about a data
+//! type -- its bucket, its ledger, its table -- lives with that data type, in
+//! `data::<type>::Settings`, and appears here as one section.
+
+use crate::data::mobile_hotspot_history;
+use config::{Config, Environment, File};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Settings {
+    /// `RUST_LOG`-compatible log filter.
+    #[serde(default = "default_log")]
+    pub log: String,
+
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
+
+    #[serde(default)]
+    pub metrics: crate::metrics::Settings,
+
+    /// The mobile hotspot history route.
+    pub mobile_hotspot_history: mobile_hotspot_history::Settings,
+}
+
+fn default_log() -> String {
+    "icicle=info".to_string()
+}
+
+impl Settings {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> anyhow::Result<Self> {
+        let mut builder = Config::builder();
+
+        if let Some(file) = path {
+            builder = builder
+                .add_source(File::with_name(&file.as_ref().to_string_lossy()).required(false));
+        }
+
+        let settings: Self = builder
+            .add_source(Environment::with_prefix("ICICLE").separator("__"))
+            .build()?
+            .try_deserialize()?;
+
+        settings.validate()?;
+        Ok(settings)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        self.mobile_hotspot_history.validate()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_settings(body: &str) -> tempfile::NamedTempFile {
+        let mut f = tempfile::Builder::new()
+            .suffix(".toml")
+            .tempfile()
+            .expect("temp file");
+        f.write_all(body.as_bytes()).expect("write");
+        f.flush().expect("flush");
+        f
+    }
+
+    const HISTORY: &str = r#"
+[mobile_hotspot_history.route]
+state_dir = "/var/lib/icicle/mobile_hotspot_history/state"
+
+[mobile_hotspot_history.output]
+spool_dir = "/var/lib/icicle/mobile_hotspot_history/spool"
+
+[mobile_hotspot_history.output.catalog]
+catalog_uri = "http://polaris:8181/api/catalog"
+catalog_name = "mobile"
+
+[mobile_hotspot_history.inputs.chain]
+start_after = "1970-01-01T00:00:00Z"
+[mobile_hotspot_history.inputs.chain.bucket]
+bucket = "ingest-chain"
+"#;
+
+    #[test]
+    fn a_process_with_no_route_section_is_refused() {
+        let f = write_settings("log = \"icicle=debug\"\n");
+        let err = Settings::new(Some(f.path())).expect_err("must be refused");
+        assert!(
+            err.to_string().contains("mobile_hotspot_history"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A done batch forgotten and then listed again is delivered again, so
+    /// this inversion must not reach the route.
+    #[test]
+    fn a_retention_shorter_than_the_poller_offset_is_refused() {
+        let body = format!(
+            "[mobile_hotspot_history.route]\nstate_dir = \"/tmp/s\"\nprocessed_retention = \"5m\"\n{}",
+            HISTORY.replace(
+                "[mobile_hotspot_history.route]\nstate_dir = \"/var/lib/icicle/mobile_hotspot_history/state\"\n",
+                ""
+            )
+        );
+        let f = write_settings(&body);
+        let err = Settings::new(Some(f.path())).expect_err("must be refused");
+        assert!(
+            err.to_string().contains("processed_retention"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_route_with_no_inputs_is_refused() {
+        let body = format!(
+            "{}\n[mobile_hotspot_history.inputs]\n",
+            HISTORY
+                .split("[mobile_hotspot_history.inputs.chain]")
+                .next()
+                .expect("prefix")
+        );
+        let f = write_settings(&body);
+        let err = Settings::new(Some(f.path())).expect_err("must be refused");
+        assert!(
+            err.to_string().contains("no inputs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The settings are printed at startup: no secret may reach the log.
+    #[test]
+    fn printed_settings_leave_out_every_secret() {
+        let body = HISTORY
+            .replace(
+                "catalog_name = \"mobile\"\n",
+                "catalog_name = \"mobile\"\n\
+                 [mobile_hotspot_history.output.catalog.auth]\n\
+                 credential = \"id:CATALOG-SECRET\"\n\
+                 token = \"TOKEN-SECRET\"\n\
+                 [mobile_hotspot_history.output.catalog.s3]\n\
+                 access_key_id = \"S3-KEY-ID\"\n\
+                 secret_access_key = \"S3-SECRET\"\n",
+            )
+            .replace(
+                "bucket = \"ingest-chain\"\n",
+                "bucket = \"ingest-chain\"\n\
+                 access_key_id = \"BUCKET-KEY-ID\"\n\
+                 secret_access_key = \"BUCKET-SECRET\"\n",
+            );
+        let f = write_settings(&body);
+        let settings = Settings::new(Some(f.path())).expect("settings must load");
+
+        let history = &settings.mobile_hotspot_history;
+        assert_eq!(
+            history.output.catalog.auth.credential.as_deref(),
+            Some("id:CATALOG-SECRET"),
+            "the secrets must be loaded for this test to mean anything"
+        );
+        assert_eq!(
+            history.inputs["chain"]
+                .bucket
+                .settings
+                .secret_access_key
+                .as_deref(),
+            Some("BUCKET-SECRET")
+        );
+
+        let printed = serde_json::to_string_pretty(&settings).expect("serialize");
+        for secret in [
+            "CATALOG-SECRET",
+            "TOKEN-SECRET",
+            "S3-KEY-ID",
+            "S3-SECRET",
+            "BUCKET-KEY-ID",
+            "BUCKET-SECRET",
+        ] {
+            assert!(!printed.contains(secret), "{secret} leaked:\n{printed}");
+        }
+        assert!(printed.contains("ingest-chain"), "{printed}");
+    }
+
+    /// The template ships as documentation and as the starting point for a
+    /// deployment, so it has to stay loadable as the settings evolve.
+    #[test]
+    fn the_shipped_settings_template_loads() {
+        let template = concat!(env!("CARGO_MANIFEST_DIR"), "/pkg/settings-template.toml");
+        let settings = Settings::new(Some(template)).expect("template must load");
+        let history = &settings.mobile_hotspot_history;
+
+        assert_eq!(
+            history
+                .inputs
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            [mobile_hotspot_history::INPUT]
+        );
+        assert_eq!(history.inputs["chain"].start_after.timestamp(), 0);
+        assert_eq!(history.table.namespace, "chain");
+        assert_eq!(history.table.name, "mobile_hotspot_history");
+        assert_eq!(history.fresh_state, glacon_helium::FreshState::Refuse);
+    }
+}
