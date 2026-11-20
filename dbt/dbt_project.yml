@@ -42,6 +42,28 @@ vars:
   # this one: `incremental_window(..., lookback_minutes=3*24*60)`.
   incremental_lookback_minutes: 30
 
+  # The speedtest average window: the newest `max_samples` speedtests a hotspot
+  # reported within `window_hours` before (and including) each report. The same
+  # window mobile-verifier uses for its own in-memory average, so the two agree
+  # while both run; change one without the other and they stop agreeing. This
+  # is policy, so in dbt it lives here in one place. Changing it changes the
+  # meaning of every row, so rebuild the model with `--full-refresh` when it
+  # moves.
+  speedtest_average_window_hours: 48
+  speedtest_average_max_samples: 6
+
+  # The first report time `speedtest_averages` averages, a date at 00:00 UTC.
+  # Earlier averages stay in mobile-verifier's speedtest_avgs tables. Bounds the
+  # first build (and any --full-refresh) to the reports since then.
+  speedtest_averages_start: '2026-11-01'
+
+  # How long after ingest received a heartbeat `heartbeat_locations` waits
+  # before measuring it. Its rows are written once and never corrected (the
+  # table is append-only so it can be streamed), so this is the time icicle has
+  # to land a reassertion before the heartbeats after it are measured against
+  # the old one. The table trails ingest by this much.
+  heartbeat_locations_settle_minutes: 60
+
 models:
   mobile_dbt:
     marts:

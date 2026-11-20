@@ -8,13 +8,11 @@
 -- the first thing you see is the source's uniqueness test failing, which reads
 -- like a code defect rather than stale local state.
 --
--- Only `hotspots.enabled_carriers_history` is covered, because it is the only
--- source this project declares. It is also the one table in this catalog with
--- no Rust row type: if an oracle-written table ever needs fixtures, write them
--- through its own row structs rather than as INSERT statements here. SQL
--- fixtures re-encode column order and types, which is exactly the duplication
--- the rest of this project avoids; it is acceptable here only because there is
--- no definition to reuse.
+-- Oracle-written tables (`speedtests`) are inserted by column NAME, not
+-- position: their schema lives in a Rust `table_definition()`, and a positional
+-- insert would quietly become a second copy of its column order. The external
+-- `enabled_carriers_history` has no such definition and is inserted
+-- positionally, matching its mirrored DDL.
 
 DELETE FROM "${CATALOG}".hotspots.enabled_carriers_history;
 
@@ -47,3 +45,17 @@ INSERT INTO "${CATALOG}".hotspots.enabled_carriers_history VALUES
   (1757100000, 0, TIMESTAMP '2026-09-07 10:20:00 UTC', 'hs_d',
    ARRAY['tmo', 'att'], NULL, '2.18.0',
    TIMESTAMP '2026-09-07 10:19:00 UTC', 'signer_1');
+
+DELETE FROM "${CATALOG}".hotspots.speedtests;
+
+-- hs_a: four reports, one of them received late (device 09:00, received
+-- 12:45) and one replayed. hs_b: one report with its device clock ahead of
+-- ingest, which the model must drop.
+INSERT INTO "${CATALOG}".hotspots.speedtests
+  (hotspot_pubkey, serial, received_timestamp, "timestamp", upload_speed, download_speed, latency)
+VALUES
+  ('hs_a', 'serial_a', TIMESTAMP '2026-09-07 06:00:00 UTC', TIMESTAMP '2026-09-07 06:00:00 UTC', 1250000, 12500000, 30),
+  ('hs_a', 'serial_a', TIMESTAMP '2026-09-07 12:00:00 UTC', TIMESTAMP '2026-09-07 12:00:00 UTC', 1500000, 15000000, 40),
+  ('hs_a', 'serial_a', TIMESTAMP '2026-09-07 12:05:00 UTC', TIMESTAMP '2026-09-07 12:00:00 UTC', 1500000, 15000000, 40),
+  ('hs_a', 'serial_a', TIMESTAMP '2026-09-07 12:45:00 UTC', TIMESTAMP '2026-09-07 09:00:00 UTC', 1000000, 10000000, 50),
+  ('hs_b', 'serial_b', TIMESTAMP '2026-09-07 10:00:00 UTC', TIMESTAMP '2026-09-07 11:00:00 UTC', 2000000, 20000000, 20);

@@ -48,6 +48,65 @@ models:
         description: Offset of the winning record within that file.
         tests: [not_null]
 
+  - name: speedtest_averages
+    description: >
+      Rolling speedtest average per hotspot, one row per speedtest report: the
+      hotspot's newest (up to) `speedtest_average_max_samples` speedtests within
+      `speedtest_average_window_hours` before and including that report,
+      averaged. Facts only -- no tier, multiplier or validity; deciding what
+      counts as a good average is the reader's job.
+
+      The replacement for the `hotspots.speedtest_avgs` /
+      `invalid_speedtest_avgs` tables mobile-verifier writes. The oracle keeps
+      writing those during a transition period, so the two can be compared on
+      live data.
+
+      Starts with reports from `speedtest_averages_start` (2026-11-01);
+      earlier averages are in the verifier's `speedtest_avgs` tables.
+
+      Append-only: each run inserts averages for new reports and never
+      rewrites a row, so every run commits an Iceberg `append` snapshot that
+      streaming readers (helium-iceberg's stream poller, Spark Structured
+      Streaming) can follow.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [hotspot_pubkey, timestamp]
+    columns:
+      - name: hotspot_pubkey
+        tests: [not_null]
+      - name: timestamp
+        description: >
+          Device-reported time of the speedtest report this average is for --
+          the newest sample in the window, NOT when the average was calculated.
+          Together with hotspot_pubkey, the grain. Partition key, by day.
+        tests: [not_null]
+      - name: upload_speed_avg_bps
+        description: Mean upload speed of the samples, bytes per second, truncated.
+        tests: [not_null]
+      - name: download_speed_avg_bps
+        description: Mean download speed of the samples, bytes per second, truncated.
+        tests: [not_null]
+      - name: latency_avg_ms
+        description: Mean latency of the samples, milliseconds, truncated.
+        tests: [not_null]
+      - name: sample_count
+        description: >
+          How many speedtests were averaged, 1 to
+          `speedtest_average_max_samples`. Never 0 -- the report itself is
+          always a sample. A low count is a thin average; weigh it accordingly.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: "{{ var('speedtest_average_max_samples') }}"
+      - name: speedtests
+        description: >
+          array(row(upload_speed_bps, download_speed_bps, latency_ms,
+          timestamp)), newest first. The samples behind the averages; the first
+          element's timestamp equals the row's.
+
   - name: mobile_hotspot_assertions
     description: >
       One row per assertion of each mobile hotspot: the chain time
@@ -91,3 +150,57 @@ models:
       - name: received_timestamp
         description: When ingest saw the update. The incremental watermark only.
         tests: [not_null]
+
+  - name: heartbeat_locations
+    description: >
+      Each valid wifi heartbeat as the hotspot reported it, beside the
+      assertion in effect when it arrived (`received_timestamp`) and the
+      distance between them, in meters, measured as mobile-verifier measures
+      `distance_to_asserted`. Facts only: no fix-age limit, distance bands or
+      trust score; eligibility models apply those.
+
+      Append-only, so it can be streamed: each run appends heartbeats not
+      measured yet, once they are `heartbeat_locations_settle_minutes` old,
+      and never rewrites a row. See the model's header.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [hotspot_pubkey, received_timestamp]
+    columns:
+      - name: received_timestamp
+        description: When ingest received the heartbeat. Partition key and watermark.
+        tests: [not_null]
+      - name: hotspot_pubkey
+        tests: [not_null]
+      - name: heartbeat_timestamp
+        description: Device clock.
+        tests: [not_null]
+      - name: heartbeat_lat
+        description: The heartbeat's own reported latitude.
+        tests: [not_null]
+      - name: heartbeat_lon
+        description: The heartbeat's own reported longitude.
+        tests: [not_null]
+      - name: location_validation_timestamp
+        description: >
+          When that location was validated; readers judge fix age from it.
+          Null when the device sent none.
+      - name: location_source
+        description: >
+          `asserted`, `gps`, `skyhook` or `unknown`. `asserted` means the
+          device reported its asserted location, so its distance is about 0 by
+          construction.
+        tests: [not_null]
+      - name: asserted_hex
+        description: >
+          The assertion in effect at `received_timestamp`. Null when the
+          hotspot has no assertion period covering it yet, or was unasserted.
+      - name: asserted_lat
+        description: Center of `asserted_hex`, from icicle.
+      - name: asserted_lon
+        description: Center of `asserted_hex`, from icicle.
+      - name: distance_to_asserted
+        description: >
+          Meters, rounded, from the heartbeat's resolution-12 cell center to the
+          asserted cell's center (h3o's haversine and earth radius). Null when
+          there is no assertion.

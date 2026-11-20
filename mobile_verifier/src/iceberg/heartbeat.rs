@@ -161,7 +161,10 @@ fn device_type_string(device_type: DeviceType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{cell_type::CellType, heartbeats::Heartbeat};
+    use crate::{
+        cell_type::CellType,
+        heartbeats::{Heartbeat, ReportedLocation},
+    };
     use chrono::Utc;
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
@@ -187,6 +190,11 @@ mod tests {
                 location_source: LocationSource::Skyhook,
                 timestamp: now,
                 heartbeat_timestamp: now - chrono::Duration::seconds(30),
+                reported: ReportedLocation {
+                    lat: 37.7749,
+                    lon: -122.4194,
+                    location_validation_timestamp,
+                },
             },
             cell_type: CellType::NovaGenericWifiIndoor,
             location_trust_score_multiplier: trust_score,

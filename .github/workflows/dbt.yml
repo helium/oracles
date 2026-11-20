@@ -3,13 +3,12 @@ name: dbt
 # NOTE: the third-party actions below are pinned by tag, not by commit SHA as
 # the Rust workflows in this repo are. Pin them before merging.
 
-# Triggers on the dbt project and on the local warehouse it is built against.
-#
-# No Rust paths: the only source this project declares is written by a pipeline
-# outside this repo, so there is no `table_definition()` here for CI to create a
-# table from. Add the relevant `*/src/iceberg/**` path back alongside the first
-# model over an oracle table -- that is what makes a source declaration
-# verifiable rather than just written down.
+# Triggers on the dbt project, the local warehouse it is built against, and the
+# Rust that defines the oracle-written tables its models read. CI creates those
+# tables from their `table_definition()`s, so a Rust change to one has to
+# rebuild the models -- that is what makes a source declaration verifiable
+# rather than just written down. Add a path here when a model starts reading a
+# new crate's tables.
 on:
   pull_request:
     branches: ["main"]
@@ -18,6 +17,11 @@ on:
       - "docker-compose.yml"
       - "infra/**"
       - ".github/workflows/dbt.yml"
+      - "mobile_verifier/src/iceberg/**"
+      - "mobile_verifier/examples/create_dbt_sources.rs"
+      - "icicle/src/data/**"
+      - "icicle/examples/create_dbt_sources.rs"
+      - "helium_iceberg/src/**"
   push:
     branches: ["main"]
     tags: ["*"]
@@ -64,8 +68,8 @@ jobs:
         run: dbt parse
 
   # Stands up the repo's own Trino/Polaris/Iceberg stack, creates the source
-  # table from the mirrored DDL, loads fixtures, then builds and tests. Docker
-  # and Python only -- no Rust toolchain, no cargo cache.
+  # tables -- external ones from mirrored DDL, oracle ones from their Rust
+  # definitions -- loads fixtures, then builds and tests.
   build:
     runs-on: ubuntu-latest
     concurrency:
@@ -95,6 +99,24 @@ jobs:
         # definition to create them from. This applies a hand-maintained copy of
         # their production DDL -- see the header of the .sql file.
         run: ./dbt/scripts/create_external_sources.sh
+
+      - name: Install protoc
+        # mobile-verifier's build compiles protobufs; the Rust workflows get
+        # this from their base image.
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache Cargo Target Directory
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        with:
+          path: target
+          key: dbt-sources-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            dbt-sources-
+
+      - name: Create oracle source tables
+        # From the Rust `table_definition()`s, not a copy of their DDL. The
+        # toolchain comes from rust-toolchain.toml via the runner's rustup.
+        run: ./dbt/scripts/create_oracle_sources.sh
 
       - name: Load fixtures
         # So the data tests run against rows rather than passing trivially on
