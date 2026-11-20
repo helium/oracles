@@ -52,6 +52,11 @@ vars:
   speedtest_average_window_hours: 48
   speedtest_average_max_samples: 6
 
+  # The first report time `speedtest_averages` averages, a date at 00:00 UTC.
+  # Earlier averages stay in mobile-verifier's speedtest_avgs tables. Bounds the
+  # first build (and any --full-refresh) to the reports since then.
+  speedtest_averages_start: '2026-11-01'
+
 models:
   mobile_dbt:
     marts:

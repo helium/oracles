@@ -61,6 +61,9 @@ models:
       writing those during a transition period, so the two can be compared on
       live data.
 
+      Starts with reports from `speedtest_averages_start` (2026-11-01);
+      earlier averages are in the verifier's `speedtest_avgs` tables.
+
       Append-only: each run inserts averages for new reports and never
       rewrites a row, so every run commits an Iceberg `append` snapshot that
       streaming readers (helium-iceberg's stream poller, Spark Structured
