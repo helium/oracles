@@ -134,6 +134,12 @@ jobs:
         working-directory: dbt
         run: pip install -r requirements.txt && dbt deps
 
+      - name: Load seeds
+        # The offload eligibility rules (seeds/*.csv). Models join to them, so
+        # they load before `dbt run`.
+        working-directory: dbt
+        run: dbt seed
+
       # `run` then `test`, not `build`. `dbt build` runs a model's unit tests
       # before the model itself, and a unit test that supplies `this` needs the
       # relation to exist to read its column types -- so on a fresh warehouse

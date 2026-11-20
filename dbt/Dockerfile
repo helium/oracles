@@ -30,6 +30,7 @@ RUN dbt deps
 
 COPY macros/ ./macros/
 COPY models/ ./models/
+COPY seeds/ ./seeds/
 COPY tests/ ./tests/
 
 # Only the connection probe -- the rest of scripts/ drives docker compose and
@@ -45,5 +46,5 @@ RUN dbt parse
 # dbt; see its header. No default target and no default command: the profile
 # takes its target from DBT_TARGET, every connection value comes from the
 # environment (see profiles.yml), and no arguments means the full
-# `dbt run` + `dbt test` cycle.
+# `dbt seed` + `dbt run` + `dbt test` cycle.
 ENTRYPOINT ["/dbt/docker-entrypoint.sh"]
