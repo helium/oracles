@@ -213,14 +213,19 @@ models:
       every rule failing at `changed_at` (`no_heartbeats`, `location`,
       `no_recent_speedtest`, `below_floor`); empty means eligible. Rules come
       from the seeds `offload_heartbeat_rules` and `offload_speedtest_floors`,
-      each row in effect from its date. Covers every asserted WIFI_INDOOR or
-      WIFI_OUTDOOR hotspot.
+      each row in effect from its date; a run fails rather than judge with
+      either one empty. Covers every asserted WIFI_INDOOR or WIFI_OUTDOOR
+      hotspot. One reasserted out of coverage gets a final row whose only
+      reason is `not_covered`, and is judged afresh if it comes back.
 
       Append-only, so it can be streamed: each run judges the moments since the
       last run, up to where both inputs are complete, and appends only changes.
-      Any split of the work into runs writes the same rows as one run. Each
-      hotspot's status starts at the first judged moment or its current
-      assertion, whichever is later. See the model's header.
+      Any split of the work into runs writes the same rows as one run, except
+      for what is learned late: a hotspot whose assertion lands after its
+      moment was judged, or that leaves or rejoins coverage, is recorded at
+      the start of the next run's interval. Each hotspot's status starts at
+      the first judged moment or its first assertion, whichever is later. See
+      the model's header.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -231,8 +236,8 @@ models:
       - name: changed_at
         description: >
           When the status took effect: a heartbeat, a speedtest average, a
-          limit running out, a rule taking effect, or the hotspot's first
-          judged moment. Partition key and watermark.
+          limit running out, a rule taking effect, the hotspot's first judged
+          moment, or a coverage change. Partition key and watermark.
         tests: [not_null]
       - name: eligible
         description: True when `reasons` is empty.

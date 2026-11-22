@@ -33,17 +33,24 @@
 --   below_floor          the latest average misses the speedtest floor in
 --                        effect at t: download or upload below it, or latency
 --                        above it. Floors are inclusive.
+--   not_covered          the hotspot is no longer an asserted wifi hotspot
+--                        (see WHO). Always alone.
 --
 -- The thresholds come from the seeds `offload_heartbeat_rules` and
 -- `offload_speedtest_floors` (`applies_to = 'active'`), each row in effect from
 -- 00:00 UTC on its `effective_from` until the next. A moment is judged by the
 -- rules in effect then; a heartbeat's fix age and distance by the rules in
 -- effect when it arrived. Before the first active floor no speedtest reason
--- applies.
+-- applies. A run fails rather than judge with an empty rules table: `dbt seed`
+-- reloads a seed by dropping and refilling it, and a run caught in between
+-- would otherwise append rows judged without the speedtest floors.
 --
 -- WHO. Every hotspot whose current assertion is WIFI_INDOOR or WIFI_OUTDOOR
 -- with an asserted cell, from `chain.mobile_hotspot_assertions`. A hotspot that
--- never heartbeats is listed as failing `no_heartbeats`, not left out.
+-- never heartbeats is listed as failing `no_heartbeats`, not left out. A
+-- hotspot reasserted out of coverage (another device type, or no cell) gets a
+-- final `not_covered` row, so a stream reader doesn't keep its last status as
+-- current; if it comes back it is judged afresh from its new assertion.
 --
 -- CARRIED FIXES. Fixes arrive about every 12 hours and heartbeats every 15
 -- minutes, so most heartbeats carry no fix of their own. Such a heartbeat is
@@ -69,34 +76,64 @@
 --   * The watermark is this table's newest `changed_at`. Moments between it and
 --     the previous run's `settled_until` are judged again; inputs are
 --     append-only, so they give the same answer and write nothing.
---   * Judging a moment needs history before it: a fix may be up to 48 hours
---     old. Each run reads heartbeats from 97 hours before the watermark and
---     speedtest averages from 49 hours before it.
+--   * Judging a moment needs history before it. Each run judges heartbeats
+--     from `history_hours` before the watermark: the longest fix age plus the
+--     longest silence or low-run limit in the rules, plus an hour (97 hours
+--     with today's rules). Their fixes are read from a further fix age back,
+--     so every heartbeat it judges sees the fix it would see in one long run.
+--     Speedtest averages are read from 49 hours before the watermark.
 --   * What the window cannot hold, each hotspot's latest written row carries:
 --     rows are written when a low run starts or ends, not only when reasons
---     change, so the latest row knows whether a low run is open and since when.
---     A low run older than the window, or a hotspot silent longer than it,
---     continues from that row instead of being forgotten.
---   * Judging starts 97 hours after the first heartbeat location, so the first
---     answers don't rest on missing history. Each hotspot is judged from then,
---     or from its current assertion if later, so a hotspot with no data still
---     gets a row, at a moment that doesn't depend on when runs happen.
+--     change, so the latest row knows whether a low run is open and since
+--     when, and when the last heartbeat was. A low run older than the window,
+--     or a silence longer than it, continues from that row.
+--   * Judging starts `history_hours` after the first heartbeat location, so
+--     the first answers don't rest on missing history. Each hotspot is judged
+--     from then, or from its first assertion if later, so a hotspot with no
+--     data still gets a row, at a moment that doesn't depend on when runs
+--     happen.
 --
--- A speedtest report that arrives after the moment it covers was already
--- judged is not revisited: the row written then stands.
+-- WHAT DEPENDS ON RUN TIMING. Changes that only become known after the moment
+-- they belong to was judged are recorded at the start of the next run's
+-- interval (one millisecond after the watermark), not at their own time: a
+-- hotspot whose assertion reaches the assertions table late, a hotspot leaving
+-- or rejoining coverage likewise, and a speedtest average that arrives late
+-- (its moment's row stands). A rebuild from scratch would place them at their
+-- own time, and leaves out hotspots no longer covered.
 --
 -- COST. Trino inlines a CTE at every reference, so each input is read once:
 -- every event family is built from a single pass over its source with
 -- `unnest`, and the per-heartbeat windows share one partitioning.
 --
--- The watermark, `settled_until` and the first heartbeat are read once at
--- compile time from Iceberg metadata, as in `speedtest_averages`. Unit tests
--- set `offload_eligibility_watermark`, `offload_eligibility_settled_until` and
--- `offload_eligibility_data_start` instead.
+-- The watermark, `settled_until`, the first heartbeat and the rules' longest
+-- limits are read once at compile time, the first three from Iceberg metadata
+-- as in `speedtest_averages`. Unit tests set `offload_eligibility_watermark`,
+-- `offload_eligibility_settled_until`, `offload_eligibility_data_start` and
+-- `offload_eligibility_rule_hours` instead.
 
 {%- set window_hours = var('speedtest_average_window_hours') -%}
-{%- set history_hours = 97 -%}
 {%- set speedtest_history_hours = window_hours + 1 -%}
+
+{#- The rules' longest fix age, and longest silence or low-run limit, size the
+    window. Read from the seed so a new rule row can't silently outgrow it. -#}
+{%- set rule_hours = var('offload_eligibility_rule_hours', none) -%}
+{%- if rule_hours is none -%}
+  {%- if execute -%}
+    {%- set rule_hours_query -%}
+      select max(max_fix_age_hours), max(greatest(max_hours_below, max_hours_silent))
+      from {{ ref('offload_heartbeat_rules') }}
+    {%- endset -%}
+    {%- set rule_row = run_query(rule_hours_query).rows[0] -%}
+    {%- if rule_row[0] is none or rule_row[1] is none -%}
+      {{ exceptions.raise_compiler_error("offload_heartbeat_rules is empty; run `dbt seed` before this model") }}
+    {%- endif -%}
+    {%- set rule_hours = {'max_fix_age': rule_row[0] | int, 'lookback': rule_row[1] | int} -%}
+  {%- else -%}
+    {%- set rule_hours = {'max_fix_age': 0, 'lookback': 0} -%}
+  {%- endif -%}
+{%- endif -%}
+{%- set fix_age_hours = rule_hours['max_fix_age'] -%}
+{%- set history_hours = fix_age_hours + rule_hours['lookback'] + 1 -%}
 
 {%- set ts = 'timestamp(6) with time zone' -%}
 {%- set heartbeat_state = 'row(passes boolean, low_since ' ~ ts ~ ')' -%}
@@ -149,8 +186,10 @@
   {%- endif -%}
 {%- endif -%}
 
-{#- The interval this run judges: (zone_start, zone_end]. -#}
-{%- if watermark is not none -%}
+{#- The interval this run judges: (zone_start, zone_end], or [zone_start,
+    zone_end] when nothing has been written yet. -#}
+{%- set resuming = watermark is not none -%}
+{%- if resuming -%}
   {%- set zone_start = "timestamp '" ~ watermark ~ "'" -%}
 {%- elif data_start is not none -%}
   {%- set zone_start = "timestamp '" ~ data_start ~ "' + interval '" ~ history_hours ~ "' hour" -%}
@@ -160,8 +199,11 @@
 {%- set zone_end = "timestamp '" ~ settled_until ~ "'" if settled_until is not none else none -%}
 {%- set has_zone = zone_start is not none and zone_end is not none -%}
 {#- The first moment ever judged: every hotspot's status starts there, or at its
-    assertion if later, whichever run covers that moment. -#}
+    first assertion if later, whichever run covers that moment. -#}
 {%- set first_judged = "timestamp '" ~ data_start ~ "' + interval '" ~ history_hours ~ "' hour" if data_start is not none else none -%}
+{#- The first moment of a resumed run's interval: where it records what it
+    learns late. -#}
+{%- set zone_opening = zone_start ~ " + interval '0.001' second" if resuming else none -%}
 {%- set incremental = is_incremental() %}
 
 with heartbeat_rules as (
@@ -207,26 +249,53 @@ floors as (
 
 ),
 
-hotspots as (
+rules_present as (
 
-    -- Asserted wifi hotspots, by their current assertion.
-    select pub_key as hotspot_pubkey, valid_from as asserted_from
+    -- `dbt seed` drops a seed's table, recreates it and refills it. A run that
+    -- reads one in between sees no rows; fail rather than judge without them.
+    -- Every judgement joins this, so no row is written unless it held.
+    select
+        case
+            when (select count(*) from {{ ref('offload_heartbeat_rules') }}) > 0
+                and (select count(*) from {{ ref('offload_speedtest_floors') }}) > 0
+                then true
+            else fail('offload eligibility rules tables are empty (a dbt seed reload in progress?)')
+        end as ok
+
+),
+
+assertions as (
+
+    -- Each hotspot's current assertion, whether that puts it in scope, and
+    -- when it was first asserted.
+    select
+        pub_key as hotspot_pubkey,
+        valid_from as asserted_from,
+        first_asserted,
+        coalesce(asserted_hex is not null and device_type in ('WIFI_INDOOR', 'WIFI_OUTDOOR'), false) as covered
     from (
         select
             pub_key,
             valid_from,
             asserted_hex,
             device_type,
+            min(valid_from) over (partition by pub_key) as first_asserted,
             row_number() over (
                 partition by pub_key
                 order by valid_from desc, block desc, file_ts desc, record_index desc
             ) as recency_rank
         from {{ ref('mobile_hotspot_assertions') }}
     )
-    where
-        recency_rank = 1
-        and asserted_hex is not null
-        and device_type in ('WIFI_INDOOR', 'WIFI_OUTDOOR')
+    where recency_rank = 1
+
+),
+
+hotspots as (
+
+    -- Asserted wifi hotspots, by their current assertion.
+    select hotspot_pubkey, asserted_from, first_asserted
+    from assertions
+    where covered
 
 ),
 
@@ -236,12 +305,13 @@ written as (
 
     -- Each hotspot's latest row: what new judgements are compared against, and
     -- the state a run's window cannot see (an open low run, a last heartbeat
-    -- older than the window).
+    -- older than the window, having left coverage).
     select
         hotspot_pubkey,
         max(changed_at) as changed_at,
         max_by(cast(row(reasons, location_low_since) as {{ status }}), changed_at) as status,
-        max_by(last_heartbeat_at, changed_at) as last_heartbeat_at
+        max_by(last_heartbeat_at, changed_at) as last_heartbeat_at,
+        contains(max_by(reasons, changed_at), 'not_covered') as not_covered
     from {{ this }}
     group by hotspot_pubkey
 
@@ -253,6 +323,8 @@ judged_heartbeats as (
 
     -- Each heartbeat in the window, passing or failing the location check by
     -- its newest fix under the same cell and the rules in effect when it came.
+    -- Fixes are read from a fix age before the window, so the window's first
+    -- heartbeats are judged as they would be with all of history.
     select
         b.hotspot_pubkey,
         b.at,
@@ -283,7 +355,7 @@ judged_heartbeats as (
             on l.hotspot_pubkey = h.hotspot_pubkey
         where
             {%- if has_zone %}
-            l.received_timestamp >= {{ zone_start }} - interval '{{ history_hours }}' hour
+            l.received_timestamp >= {{ zone_start }} - interval '{{ history_hours + fix_age_hours }}' hour
             and l.received_timestamp <= {{ zone_end }}
             {%- else %}
             false
@@ -291,6 +363,9 @@ judged_heartbeats as (
     ) as b
     inner join heartbeat_rules as r
         on b.at >= r.valid_from and (r.valid_to is null or b.at < r.valid_to)
+    {%- if has_zone %}
+    where b.at >= {{ zone_start }} - interval '{{ history_hours }}' hour
+    {%- endif %}
 
 ),
 
@@ -425,9 +500,14 @@ carried_in as (
 
     -- The latest written row as an event at its own time: a hotspot with no
     -- heartbeat in the window still has its last heartbeat and open low run,
-    -- and that run still reaches its limit.
+    -- its silence still runs out and its run still reaches its limit, each
+    -- under every rule row. A `not_covered` row carries no low run, so a
+    -- hotspot back in coverage starts clean. Deadlines a later heartbeat
+    -- overtakes are judged and change nothing.
     select w.hotspot_pubkey, e.at, e.heartbeat_at, e.heartbeat, e.average
     from written as w
+    inner join hotspots as h
+        on w.hotspot_pubkey = h.hotspot_pubkey
     cross join rule_list
     cross join unnest(
         concat(
@@ -444,6 +524,17 @@ carried_in as (
                     ) as {{ event }}
                 )
             ],
+            filter(
+                transform(
+                    rule_list.rules,
+                    rule -> case
+                        when w.last_heartbeat_at + rule.max_hours_silent * interval '1' hour >= rule.valid_from
+                            and (rule.valid_to is null or w.last_heartbeat_at + rule.max_hours_silent * interval '1' hour < rule.valid_to)
+                            then cast(row(w.last_heartbeat_at + rule.max_hours_silent * interval '1' hour, null, null, null) as {{ event }})
+                    end
+                ),
+                deadline -> deadline is not null
+            ),
             filter(
                 transform(
                     rule_list.rules,
@@ -465,9 +556,12 @@ carried_in as (
 boundary_events as (
 
     -- Rule starts, and each hotspot's first moment: the first judged moment or
-    -- its current assertion, whichever is later. That moment falls in exactly
+    -- its first assertion, whichever is later. That moment falls in exactly
     -- one run, so a hotspot with no data at all still gets a row, and the same
-    -- one however the runs fall.
+    -- one however the runs fall. A resumed run also starts the hotspots it has
+    -- no live row for -- new to the assertions table since its moment was
+    -- judged, or back in coverage -- at their moment or this interval's
+    -- opening, whichever is later.
     select h.hotspot_pubkey, s.at, null as heartbeat_at, null as heartbeat, null as average
     from hotspots as h
     cross join (
@@ -476,11 +570,29 @@ boundary_events as (
         select valid_from from floors
     ) as s
 
-    {%- if first_judged is not none %}
+    {%- if resuming %}
 
     union all
 
-    select hotspot_pubkey, greatest(asserted_from, {{ first_judged }}), null, null, null
+    select
+        h.hotspot_pubkey,
+        greatest(
+            case when w.hotspot_pubkey is null then h.first_asserted else h.asserted_from end,
+            {{ zone_opening }}
+        ),
+        null,
+        null,
+        null
+    from hotspots as h
+    left join written as w
+        on h.hotspot_pubkey = w.hotspot_pubkey
+    where w.hotspot_pubkey is null or w.not_covered
+
+    {%- elif first_judged is not none %}
+
+    union all
+
+    select hotspot_pubkey, greatest(first_asserted, {{ first_judged }}), null, null, null
     from hotspots
     {%- endif %}
 
@@ -576,6 +688,8 @@ judged as (
             reason -> reason is not null
         ) as reasons
     from states as s
+    inner join rules_present as g
+        on g.ok
     inner join heartbeat_rules as r
         on s.at >= r.valid_from and (r.valid_to is null or s.at < r.valid_to)
     left join floors as f
@@ -585,7 +699,7 @@ judged as (
         {%- if has_zone %}
         -- The interval is (zone_start, zone_end], except the first run's, which
         -- includes its start: every hotspot's first moment can be exactly there.
-        and s.at {{ '>' if watermark is not none else '>=' }} {{ zone_start }}
+        and s.at {{ '>' if resuming else '>=' }} {{ zone_start }}
         and s.at <= {{ zone_end }}
         {%- else %}
         and false
@@ -624,3 +738,31 @@ where
     {%- else %}
     s.previous_status is distinct from s.status
     {%- endif %}
+
+{%- if resuming %}
+
+union all
+
+-- Hotspots that left coverage since their latest row: one final row, at the
+-- assertion that took them out or this interval's opening, whichever is later.
+select
+    w.hotspot_pubkey,
+    greatest(coalesce(a.asserted_from, {{ zone_opening }}), {{ zone_opening }}) as changed_at,
+    false as eligible,
+    cast(array['not_covered'] as array(varchar)) as reasons,
+    cast(null as {{ ts }}) as location_low_since,
+    w.last_heartbeat_at,
+    cast(null as {{ ts }}) as last_average_at,
+    cast(null as {{ ts }}) as speedtest_floor_from
+from written as w
+left join assertions as a
+    on w.hotspot_pubkey = a.hotspot_pubkey
+where
+    not w.not_covered
+    and not coalesce(a.covered, false)
+    {%- if has_zone %}
+    and greatest(coalesce(a.asserted_from, {{ zone_opening }}), {{ zone_opening }}) <= {{ zone_end }}
+    {%- else %}
+    and false
+    {%- endif %}
+{%- endif %}

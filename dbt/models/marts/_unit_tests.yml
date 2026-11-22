@@ -532,10 +532,16 @@ unit_tests:
 
   # -------------------------------------------------- offload_eligibility_history
   #
-  # Rules in every test: fix at most 48 h old and within 300 m, fail after 48 h
-  # below or 48 h silent. Times are UTC. `offload_eligibility_data_start` puts
-  # the first judged moment 97 h after it; `settled_until` ends the interval.
-  # Heartbeats before the interval are history the model reads, not judges.
+  # Rules in every test unless it says otherwise: fix at most 48 h old and
+  # within 300 m, fail after 48 h below or 48 h silent. Times are UTC.
+  # `offload_eligibility_rule_hours` stands in for the model's compile-time
+  # read of the rules' longest limits (it would read the real seed, not the
+  # fixture) and must match the fixture's rules: 48 + 48 + 1 makes a 97 h
+  # window. `offload_eligibility_data_start` puts the first judged moment that
+  # window after it; `settled_until` ends the interval. Heartbeats before the
+  # interval are history the model reads, not judges. The boundary fixtures
+  # sit exactly on the limits (48 h fix, 300 m, 2 samples, 75 Mbps), since
+  # every limit is inclusive.
 
   - name: eligibility_heartbeat_silence_and_carried_fix
     model: offload_eligibility_history
@@ -551,6 +557,7 @@ unit_tests:
       macros:
         is_incremental: false
       vars:
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2027-01-01 00:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
     given:
@@ -584,16 +591,19 @@ unit_tests:
   - name: eligibility_location_low_run_and_reassertion
     model: offload_eligibility_history
     description: >
-      First run. hs_b passes at 01-05 12:00 on its carried fix. It reasserts to
+      First run, judged from 01-05 05:00. hs_b starts there, eligible on its
+      01-05 00:00 heartbeat: its status starts at its first assertion, not the
+      01-06 reassertion (verified). It reasserts to
       y at 01-06 00:00: the fix under x does not carry, so it has no fix and
       fails, opening a low run. Its first fix under y is 350 m away, still
       failing. 48 h after the run began, 01-08 00:00, it fails `location`, between heartbeats: no data arrives at that moment, so dropping the model's low-run deadline event moves the failure to the next heartbeat (verified). A fix
-      100 m away at 01-08 12:00 passes and ends the run. Heartbeats every 12 h
+      exactly 300 m away at 01-08 12:00 passes (inclusive, verified) and ends the run. Heartbeats every 12 h
       keep it clear of no_heartbeats.
     overrides:
       macros:
         is_incremental: false
       vars:
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2027-01-01 04:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
     given:
@@ -616,13 +626,13 @@ unit_tests:
           - {hotspot_pubkey: "hs_b", received_timestamp: "2027-01-07 00:00:00+00", asserted_hex: "y", location_validation_timestamp: "2027-01-06 23:00:00+00", distance_to_asserted: 350}
           - {hotspot_pubkey: "hs_b", received_timestamp: "2027-01-07 12:00:00+00", asserted_hex: "y", location_validation_timestamp: null, distance_to_asserted: null}
           - {hotspot_pubkey: "hs_b", received_timestamp: "2027-01-08 06:00:00+00", asserted_hex: "y", location_validation_timestamp: null, distance_to_asserted: null}
-          - {hotspot_pubkey: "hs_b", received_timestamp: "2027-01-08 12:00:00+00", asserted_hex: "y", location_validation_timestamp: "2027-01-08 11:00:00+00", distance_to_asserted: 100}
+          - {hotspot_pubkey: "hs_b", received_timestamp: "2027-01-08 12:00:00+00", asserted_hex: "y", location_validation_timestamp: "2027-01-08 11:00:00+00", distance_to_asserted: 300}
       - input: ref('speedtest_averages')
         rows: []
     expect:
       format: sql
       rows: |
-        select 'hs_b' as hotspot_pubkey, timestamp '2027-01-05 12:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-05 12:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+        select 'hs_b' as hotspot_pubkey, timestamp '2027-01-05 05:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-05 00:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
         union all
         select 'hs_b' as hotspot_pubkey, timestamp '2027-01-06 00:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, timestamp '2027-01-06 00:00:00 UTC' as location_low_since, timestamp '2027-01-06 00:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
         union all
@@ -633,11 +643,12 @@ unit_tests:
     model: offload_eligibility_history
     description: >
       First run, across the March 1 step. hs_c heartbeats every 12 h with fresh
-      fixes, so only speedtests decide. Its 02-24 average is exactly 8 Mbps up
-      and 60 ms, the January floor's limits, and passes: floors are inclusive.
+      fixes, so only speedtests decide. Its 02-24 average is exactly 75 Mbps down,
+      8 Mbps up and 60 ms, the January floor's limits, and passes: floors are
+      inclusive.
       No average follows within 48 h, so at 02-26 00:00 it fails
       no_recent_speedtest. The 02-27 00:00 average has one sample, under
-      min_sample_count, so it still fails; the 02-27 12:00 one with three
+      min_sample_count, so it still fails; the 02-27 12:00 one with exactly two
       restores it. At 03-01 00:00 the 115 Mbps floor takes effect and its 100
       Mbps fails below_floor with no new data. At 03-01 12:00 that average is 48
       h old: no_recent_speedtest replaces below_floor.
@@ -645,6 +656,7 @@ unit_tests:
       macros:
         is_incremental: false
       vars:
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2027-02-20 04:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-03-02 12:00:00.000000 UTC"
     given:
@@ -678,9 +690,9 @@ unit_tests:
           - {hotspot_pubkey: "hs_c", received_timestamp: "2027-03-02 06:00:00+00", asserted_hex: "x", location_validation_timestamp: "2027-03-02 05:00:00+00", distance_to_asserted: 10}
       - input: ref('speedtest_averages')
         rows:
-          - {hotspot_pubkey: "hs_c", timestamp: "2027-02-24 00:00:00+00", sample_count: 4, download_speed_avg_bps: 12500000, upload_speed_avg_bps: 1000000, latency_avg_ms: 60}
+          - {hotspot_pubkey: "hs_c", timestamp: "2027-02-24 00:00:00+00", sample_count: 4, download_speed_avg_bps: 9375000, upload_speed_avg_bps: 1000000, latency_avg_ms: 60}
           - {hotspot_pubkey: "hs_c", timestamp: "2027-02-27 00:00:00+00", sample_count: 1, download_speed_avg_bps: 12500000, upload_speed_avg_bps: 1000000, latency_avg_ms: 60}
-          - {hotspot_pubkey: "hs_c", timestamp: "2027-02-27 12:00:00+00", sample_count: 3, download_speed_avg_bps: 12500000, upload_speed_avg_bps: 1000000, latency_avg_ms: 60}
+          - {hotspot_pubkey: "hs_c", timestamp: "2027-02-27 12:00:00+00", sample_count: 2, download_speed_avg_bps: 12500000, upload_speed_avg_bps: 1000000, latency_avg_ms: 60}
     expect:
       format: sql
       rows: |
@@ -711,6 +723,7 @@ unit_tests:
         is_incremental: true
       vars:
         offload_eligibility_watermark: "2027-01-07 02:00:00.000000 UTC"
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2027-01-01 04:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
     given:
@@ -765,6 +778,7 @@ unit_tests:
         is_incremental: true
       vars:
         offload_eligibility_watermark: "2027-01-08 00:00:00.000000 UTC"
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2026-12-01 00:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
     given:
@@ -798,8 +812,8 @@ unit_tests:
     model: offload_eligibility_history
     description: >
       A second heartbeat rule row from 01-07 shortens the silence limit to
-      24 h. hs_a's last heartbeat is 01-06 20:00 (passing on a 45 h old fix,
-      under the rule in effect then). Under the new rule it falls silent at
+      24 h. hs_a's last heartbeat is 01-06 20:00, passing on a fix exactly 48 h
+      old: the fix-age limit is inclusive, so it opens no low run (verified). Under the new rule it falls silent at
       01-07 20:00, 24 h after that heartbeat, not 01-08 20:00 as the old rule
       would say: each limit is computed under every rule row it can fall
       under. Computing it only under the rule at the heartbeat records the
@@ -808,6 +822,7 @@ unit_tests:
       macros:
         is_incremental: false
       vars:
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
         offload_eligibility_data_start: "2027-01-01 00:00:00.000000 UTC"
         offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
     given:
@@ -823,7 +838,7 @@ unit_tests:
           - {pub_key: "hs_a", asserted_hex: "x", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 10, file_ts: 100, record_index: 0}
       - input: ref('heartbeat_locations')
         rows:
-          - {hotspot_pubkey: "hs_a", received_timestamp: "2027-01-05 00:00:00+00", asserted_hex: "x", location_validation_timestamp: "2027-01-04 23:00:00+00", distance_to_asserted: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2027-01-05 00:00:00+00", asserted_hex: "x", location_validation_timestamp: "2027-01-04 20:00:00+00", distance_to_asserted: 10}
           - {hotspot_pubkey: "hs_a", received_timestamp: "2027-01-06 20:00:00+00", asserted_hex: "x", location_validation_timestamp: null, distance_to_asserted: null}
       - input: ref('speedtest_averages')
         rows: []
@@ -833,3 +848,165 @@ unit_tests:
         select 'hs_a' as hotspot_pubkey, timestamp '2027-01-05 01:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-05 00:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
         union all
         select 'hs_a' as hotspot_pubkey, timestamp '2027-01-07 20:00:00 UTC' as changed_at, false as eligible, cast(array['no_heartbeats'] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-06 20:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+
+  - name: eligibility_fixes_before_the_window
+    model: offload_eligibility_history
+    description: >
+      THE FIX-HISTORY GUARD. hs_m's 01-03 21:30 heartbeat has its own fix; its
+      01-04 00:00 one carries it (2.5 h old) and passes. Then silence, written
+      as no_heartbeats at 01-06 00:00. The watermark is 01-08 00:00 (hs_n's
+      row), so the run judges heartbeats from 01-03 23:00: the fix lies before
+      that. hs_m returns at 01-08 06:00 with no fix, now 57 h old, and fails,
+      opening a low run there. Read fixes only from the judged window and the
+      01-04 heartbeat fails too, so the run dates from 01-04 and hs_m is
+      written failing `location` at once, unlike one long run (verified).
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        offload_eligibility_watermark: "2027-01-08 00:00:00.000000 UTC"
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
+        offload_eligibility_data_start: "2026-12-25 00:00:00.000000 UTC"
+        offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
+    given:
+      - input: ref('offload_heartbeat_rules')
+        rows:
+          - {effective_from: "2026-11-16", max_fix_age_hours: 48, max_distance_m: 300, max_hours_below: 48, max_hours_silent: 48}
+      - input: ref('offload_speedtest_floors')
+        rows:
+          - {applies_to: "new", effective_from: "2026-11-17", min_download_mbps: 100, min_upload_mbps: 10, max_latency_ms: 50, min_sample_count: 2}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_m", asserted_hex: "x", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 10, file_ts: 100, record_index: 0}
+          - {pub_key: "hs_n", asserted_hex: "y", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 11, file_ts: 101, record_index: 0}
+      - input: ref('heartbeat_locations')
+        rows:
+          - {hotspot_pubkey: "hs_m", received_timestamp: "2027-01-03 21:30:00+00", asserted_hex: "x", location_validation_timestamp: "2027-01-03 21:30:00+00", distance_to_asserted: 10}
+          - {hotspot_pubkey: "hs_m", received_timestamp: "2027-01-04 00:00:00+00", asserted_hex: "x", location_validation_timestamp: null, distance_to_asserted: null}
+          - {hotspot_pubkey: "hs_m", received_timestamp: "2027-01-08 06:00:00+00", asserted_hex: "x", location_validation_timestamp: null, distance_to_asserted: null}
+      - input: ref('speedtest_averages')
+        rows: []
+      - input: this
+        format: sql
+        rows: |
+          select 'hs_m' as hotspot_pubkey, timestamp '2026-12-29 01:00:00 UTC' as changed_at, false as eligible, cast(array['no_heartbeats'] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, cast(null as timestamp(6) with time zone) as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+          union all
+          select 'hs_m', timestamp '2027-01-03 21:30:00 UTC', true, cast(array[] as array(varchar)), null, timestamp '2027-01-03 21:30:00 UTC', null, null
+          union all
+          select 'hs_m', timestamp '2027-01-06 00:00:00 UTC', false, cast(array['no_heartbeats'] as array(varchar)), null, timestamp '2027-01-04 00:00:00 UTC', null, null
+          union all
+          select 'hs_n', timestamp '2027-01-08 00:00:00 UTC', false, cast(array['no_heartbeats'] as array(varchar)), null, null, null, null
+    expect:
+      format: sql
+      rows: |
+        select 'hs_m' as hotspot_pubkey, timestamp '2027-01-08 06:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, timestamp '2027-01-08 06:00:00 UTC' as location_low_since, timestamp '2027-01-08 06:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+
+  - name: eligibility_window_follows_the_rules
+    model: offload_eligibility_history
+    description: >
+      THE WINDOW-SIZE GUARD. The rules allow 120 h of silence, so the window
+      is 48 + 120 + 1 = 169 h. hs_s last heartbeated at 01-03 20:00 and falls
+      silent at 01-08 20:00. With the window fixed at 97 h that heartbeat is
+      outside it, and the written row's last heartbeat must carry the silence
+      deadline instead: drop both and nothing is written (verified).
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        offload_eligibility_watermark: "2027-01-08 00:00:00.000000 UTC"
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 120}
+        offload_eligibility_data_start: "2026-12-01 00:00:00.000000 UTC"
+        offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
+    given:
+      - input: ref('offload_heartbeat_rules')
+        rows:
+          - {effective_from: "2026-11-16", max_fix_age_hours: 48, max_distance_m: 300, max_hours_below: 48, max_hours_silent: 120}
+      - input: ref('offload_speedtest_floors')
+        rows:
+          - {applies_to: "new", effective_from: "2026-11-17", min_download_mbps: 100, min_upload_mbps: 10, max_latency_ms: 50, min_sample_count: 2}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_s", asserted_hex: "x", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 10, file_ts: 100, record_index: 0}
+          - {pub_key: "hs_n", asserted_hex: "y", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 11, file_ts: 101, record_index: 0}
+      - input: ref('heartbeat_locations')
+        rows:
+          - {hotspot_pubkey: "hs_s", received_timestamp: "2027-01-03 20:00:00+00", asserted_hex: "x", location_validation_timestamp: "2027-01-03 19:00:00+00", distance_to_asserted: 10}
+      - input: ref('speedtest_averages')
+        rows: []
+      - input: this
+        format: sql
+        rows: |
+          select 'hs_s' as hotspot_pubkey, timestamp '2027-01-03 20:00:00 UTC' as changed_at, true as eligible, cast(array[] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-03 20:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+          union all
+          select 'hs_n', timestamp '2027-01-08 00:00:00 UTC', false, cast(array['no_heartbeats'] as array(varchar)), null, null, null, null
+    expect:
+      format: sql
+      rows: |
+        select 'hs_s' as hotspot_pubkey, timestamp '2027-01-08 20:00:00 UTC' as changed_at, false as eligible, cast(array['no_heartbeats'] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-03 20:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+
+  - name: eligibility_coverage_changes
+    model: offload_eligibility_history
+    description: >
+      Hotspots entering and leaving coverage, watermark 01-07 02:00. hs_l was
+      asserted at 01-06 00:00 but reached the assertions table after that
+      moment was judged: it has no row, so it starts at the interval's
+      opening, 01-07 02:00:00.001, failing no_heartbeats, rather than waiting
+      for a heartbeat (verified). hs_k is reasserted as data-only at 01-08
+      00:00 and gets a final not_covered row there; hs_i was reasserted
+      before the watermark and gets it at the opening. hs_u is already
+      not_covered and gets nothing more. hs_j, not_covered since 01-02, is
+      reasserted as wifi at 01-07 12:00: it starts afresh there, then a
+      heartbeat with a fix under its new cell restores it.
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        offload_eligibility_watermark: "2027-01-07 02:00:00.000000 UTC"
+        offload_eligibility_rule_hours: {max_fix_age: 48, lookback: 48}
+        offload_eligibility_data_start: "2027-01-01 04:00:00.000000 UTC"
+        offload_eligibility_settled_until: "2027-01-09 00:00:00.000000 UTC"
+    given:
+      - input: ref('offload_heartbeat_rules')
+        rows:
+          - {effective_from: "2026-11-16", max_fix_age_hours: 48, max_distance_m: 300, max_hours_below: 48, max_hours_silent: 48}
+      - input: ref('offload_speedtest_floors')
+        rows:
+          - {applies_to: "new", effective_from: "2026-11-17", min_download_mbps: 100, min_upload_mbps: 10, max_latency_ms: 50, min_sample_count: 2}
+      - input: ref('mobile_hotspot_assertions')
+        rows:
+          - {pub_key: "hs_l", asserted_hex: "l", device_type: "WIFI_INDOOR", valid_from: "2027-01-06 00:00:00+00", block: 20, file_ts: 200, record_index: 0}
+          - {pub_key: "hs_k", asserted_hex: "k", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 10, file_ts: 100, record_index: 0}
+          - {pub_key: "hs_k", asserted_hex: "k", device_type: "WIFI_DATA_ONLY", valid_from: "2027-01-08 00:00:00+00", block: 21, file_ts: 201, record_index: 0}
+          - {pub_key: "hs_i", asserted_hex: "i", device_type: "WIFI_OUTDOOR", valid_from: "2026-12-01 00:00:00+00", block: 11, file_ts: 101, record_index: 0}
+          - {pub_key: "hs_i", asserted_hex: null, device_type: "WIFI_OUTDOOR", valid_from: "2027-01-06 00:00:00+00", block: 19, file_ts: 199, record_index: 0}
+          - {pub_key: "hs_u", asserted_hex: "u", device_type: "WIFI_DATA_ONLY", valid_from: "2026-12-01 00:00:00+00", block: 12, file_ts: 102, record_index: 0}
+          - {pub_key: "hs_j", asserted_hex: "x", device_type: "WIFI_INDOOR", valid_from: "2026-12-01 00:00:00+00", block: 13, file_ts: 103, record_index: 0}
+          - {pub_key: "hs_j", asserted_hex: "x", device_type: "WIFI_DATA_ONLY", valid_from: "2027-01-01 12:00:00+00", block: 14, file_ts: 104, record_index: 0}
+          - {pub_key: "hs_j", asserted_hex: "y", device_type: "WIFI_INDOOR", valid_from: "2027-01-07 12:00:00+00", block: 22, file_ts: 202, record_index: 0}
+      - input: ref('heartbeat_locations')
+        rows:
+          - {hotspot_pubkey: "hs_j", received_timestamp: "2027-01-08 00:00:00+00", asserted_hex: "y", location_validation_timestamp: "2027-01-07 23:00:00+00", distance_to_asserted: 10}
+      - input: ref('speedtest_averages')
+        rows: []
+      - input: this
+        format: sql
+        rows: |
+          select 'hs_k' as hotspot_pubkey, timestamp '2027-01-03 00:00:00 UTC' as changed_at, false as eligible, cast(array['no_heartbeats'] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, timestamp '2027-01-01 00:00:00 UTC' as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+          union all
+          select 'hs_i', timestamp '2027-01-05 05:00:00 UTC', false, cast(array['no_heartbeats'] as array(varchar)), null, null, null, null
+          union all
+          select 'hs_u', timestamp '2027-01-07 02:00:00 UTC', false, cast(array['not_covered'] as array(varchar)), null, null, null, null
+          union all
+          select 'hs_j', timestamp '2027-01-02 00:00:00 UTC', false, cast(array['not_covered'] as array(varchar)), null, null, null, null
+    expect:
+      format: sql
+      rows: |
+        select 'hs_l' as hotspot_pubkey, timestamp '2027-01-07 02:00:00.001 UTC' as changed_at, false as eligible, cast(array['no_heartbeats'] as array(varchar)) as reasons, cast(null as timestamp(6) with time zone) as location_low_since, cast(null as timestamp(6) with time zone) as last_heartbeat_at, cast(null as timestamp(6) with time zone) as last_average_at, cast(null as timestamp(6) with time zone) as speedtest_floor_from
+        union all
+        select 'hs_k', timestamp '2027-01-08 00:00:00 UTC', false, cast(array['not_covered'] as array(varchar)), null, timestamp '2027-01-01 00:00:00 UTC', null, null
+        union all
+        select 'hs_i', timestamp '2027-01-07 02:00:00.001 UTC', false, cast(array['not_covered'] as array(varchar)), null, null, null, null
+        union all
+        select 'hs_j', timestamp '2027-01-07 12:00:00 UTC', false, cast(array['no_heartbeats'] as array(varchar)), null, null, null, null
+        union all
+        select 'hs_j', timestamp '2027-01-08 00:00:00 UTC', true, cast(array[] as array(varchar)), null, timestamp '2027-01-08 00:00:00 UTC', null, null
