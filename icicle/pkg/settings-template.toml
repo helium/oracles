@@ -4,8 +4,7 @@
 # ICICLE__MOBILE_HOTSPOT_HISTORY__INPUTS__CHAIN__BUCKET__BUCKET.
 #
 # Process-wide settings come first; everything else belongs to one route and
-# sits under that route's section. Omit a route's section entirely to leave it
-# out of this process.
+# sits under that route's section.
 
 # RUST_LOG-compatible filter.
 log = "icicle=info"

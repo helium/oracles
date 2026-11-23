@@ -30,6 +30,9 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         let settings = Settings::new(self.config.as_ref()).context("loading settings")?;
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+        // Secrets (catalog credential and token, S3 and bucket keys) are
+        // `skip_serializing` in helium_iceberg and file_store.
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
         metrics::start(&settings.metrics)?;
 
         match self.cmd {
