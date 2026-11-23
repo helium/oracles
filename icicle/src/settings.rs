@@ -3,15 +3,14 @@
 //!
 //! Only what is true of the whole process lives here. Everything about a data
 //! type -- its bucket, its ledger, its table -- lives with that data type, in
-//! `data::<type>::Settings`, and appears here as one optional section.
+//! `data::<type>::Settings`, and appears here as one section.
 
 use crate::data::mobile_hotspot_history;
 use config::{Config, Environment, File};
-use glacon_helium::FreshState;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// `RUST_LOG`-compatible log filter.
     #[serde(default = "default_log")]
@@ -23,10 +22,8 @@ pub struct Settings {
     #[serde(default)]
     pub metrics: crate::metrics::Settings,
 
-    /// The mobile hotspot history route. Omit the section to leave it out of
-    /// this process.
-    #[serde(default)]
-    pub mobile_hotspot_history: Option<mobile_hotspot_history::Settings>,
+    /// The mobile hotspot history route.
+    pub mobile_hotspot_history: mobile_hotspot_history::Settings,
 }
 
 fn default_log() -> String {
@@ -51,48 +48,8 @@ impl Settings {
         Ok(settings)
     }
 
-    /// Names of the routes this process is configured to run.
-    pub fn configured(&self) -> Vec<&'static str> {
-        let mut names = Vec::new();
-        if self.mobile_hotspot_history.is_some() {
-            names.push(mobile_hotspot_history::ROUTE);
-        }
-        names
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
-        if let Some(history) = &self.mobile_hotspot_history {
-            history.validate()?;
-        }
-
-        if self.configured().is_empty() {
-            anyhow::bail!("no data types configured: nothing to run");
-        }
-
-        Ok(())
-    }
-}
-
-/// `glacon`'s [`FreshState`] is not `Deserialize`, so configuration goes
-/// through this mirror of it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FreshStateSetting {
-    /// Refuse to start when the ledger is empty but the table already holds
-    /// rows. The default: a lost state volume becomes a loud failure instead
-    /// of a silent re-ingest.
-    #[default]
-    Refuse,
-    /// Start anyway, each input from its `start_after`.
-    Proceed,
-}
-
-impl From<FreshStateSetting> for FreshState {
-    fn from(value: FreshStateSetting) -> Self {
-        match value {
-            FreshStateSetting::Refuse => FreshState::Refuse,
-            FreshStateSetting::Proceed => FreshState::Proceed,
-        }
+        self.mobile_hotspot_history.validate()
     }
 }
 
@@ -129,11 +86,11 @@ bucket = "ingest-chain"
 "#;
 
     #[test]
-    fn a_process_with_no_data_types_is_refused() {
+    fn a_process_with_no_route_section_is_refused() {
         let f = write_settings("log = \"icicle=debug\"\n");
         let err = Settings::new(Some(f.path())).expect_err("must be refused");
         assert!(
-            err.to_string().contains("no data types configured"),
+            err.to_string().contains("mobile_hotspot_history"),
             "unexpected error: {err}"
         );
     }
@@ -174,16 +131,65 @@ bucket = "ingest-chain"
         );
     }
 
+    /// The settings are printed at startup: no secret may reach the log.
+    #[test]
+    fn printed_settings_leave_out_every_secret() {
+        let body = HISTORY
+            .replace(
+                "catalog_name = \"mobile\"\n",
+                "catalog_name = \"mobile\"\n\
+                 [mobile_hotspot_history.output.catalog.auth]\n\
+                 credential = \"id:CATALOG-SECRET\"\n\
+                 token = \"TOKEN-SECRET\"\n\
+                 [mobile_hotspot_history.output.catalog.s3]\n\
+                 access_key_id = \"S3-KEY-ID\"\n\
+                 secret_access_key = \"S3-SECRET\"\n",
+            )
+            .replace(
+                "bucket = \"ingest-chain\"\n",
+                "bucket = \"ingest-chain\"\n\
+                 access_key_id = \"BUCKET-KEY-ID\"\n\
+                 secret_access_key = \"BUCKET-SECRET\"\n",
+            );
+        let f = write_settings(&body);
+        let settings = Settings::new(Some(f.path())).expect("settings must load");
+
+        let history = &settings.mobile_hotspot_history;
+        assert_eq!(
+            history.output.catalog.auth.credential.as_deref(),
+            Some("id:CATALOG-SECRET"),
+            "the secrets must be loaded for this test to mean anything"
+        );
+        assert_eq!(
+            history.inputs["chain"]
+                .bucket
+                .settings
+                .secret_access_key
+                .as_deref(),
+            Some("BUCKET-SECRET")
+        );
+
+        let printed = serde_json::to_string_pretty(&settings).expect("serialize");
+        for secret in [
+            "CATALOG-SECRET",
+            "TOKEN-SECRET",
+            "S3-KEY-ID",
+            "S3-SECRET",
+            "BUCKET-KEY-ID",
+            "BUCKET-SECRET",
+        ] {
+            assert!(!printed.contains(secret), "{secret} leaked:\n{printed}");
+        }
+        assert!(printed.contains("ingest-chain"), "{printed}");
+    }
+
     /// The template ships as documentation and as the starting point for a
     /// deployment, so it has to stay loadable as the settings evolve.
     #[test]
     fn the_shipped_settings_template_loads() {
         let template = concat!(env!("CARGO_MANIFEST_DIR"), "/pkg/settings-template.toml");
         let settings = Settings::new(Some(template)).expect("template must load");
-        let history = settings
-            .mobile_hotspot_history
-            .as_ref()
-            .expect("route configured");
+        let history = &settings.mobile_hotspot_history;
 
         assert_eq!(
             history
@@ -196,6 +202,6 @@ bucket = "ingest-chain"
         assert_eq!(history.inputs["chain"].start_after.timestamp(), 0);
         assert_eq!(history.table.namespace, "chain");
         assert_eq!(history.table.name, "mobile_hotspot_history");
-        assert_eq!(history.fresh_state, FreshStateSetting::Refuse);
+        assert_eq!(history.fresh_state, glacon_helium::FreshState::Refuse);
     }
 }

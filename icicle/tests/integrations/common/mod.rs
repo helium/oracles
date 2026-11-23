@@ -1,28 +1,19 @@
 //! Test environment for the routes: a private Iceberg catalog, a private
 //! bucket, and private spool and state directories per test.
-//!
-//! # One runtime for every test
-//!
-//! The route connects to its bucket from `BucketSettings`, and `file_store`
-//! caches the S3 client it builds, keyed by endpoint and credentials, for the
-//! life of the process. Every test here uses the same RustFS, so they all get
-//! the same cached client, and a client is tied to the Tokio runtime that
-//! built it. Under `cargo test`, each `#[tokio::test]` has its own runtime,
-//! so the second test would get a client whose runtime is gone. The tests
-//! therefore share one runtime through [`run_test`].
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::{aws_local::AwsLocal, BucketSettings};
 use glacon_helium::{
-    task_manager::ManagedTask, FileStoreInputSettings, IcebergOutputSettings, RouteSettings,
+    task_manager::ManagedTask, FileStoreInputSettings, FreshState, IcebergOutputSettings,
+    RouteSettings,
 };
 use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::chain_rewardable_entities::{
     HeliumPubKey, MobileHotspotChangeReportV1, MobileHotspotChangeReqV1, MobileHotspotChangeV1,
     MobileHotspotDeviceType, MobileHotspotMetadata, SolanaPubKey,
 };
-use icicle::{data::mobile_hotspot_history, settings::FreshStateSetting};
-use std::{collections::BTreeMap, future::Future, sync::LazyLock};
+use icicle::data::mobile_hotspot_history;
+use std::collections::BTreeMap;
 use trino_rust_client::Trino;
 
 /// Region and credentials `AwsLocal` uses for its buckets.
@@ -31,21 +22,6 @@ const S3_CREDENTIAL: &str = "admin";
 
 /// Polaris answers 500 when several catalogs are created at once.
 const CATALOG_ATTEMPTS: u32 = 5;
-
-static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("test runtime")
-});
-
-/// Run one test on the runtime every test shares. See the module docs.
-pub fn run_test<F>(test: F) -> anyhow::Result<()>
-where
-    F: Future<Output = anyhow::Result<()>>,
-{
-    RUNTIME.block_on(test)
-}
 
 pub struct Harness {
     pub iceberg: IcebergTestHarness,
@@ -126,7 +102,7 @@ impl Harness {
                 max_batch_rows: 10_000,
                 batch_timeout: humantime::parse_duration("1s")?,
             },
-            fresh_state: FreshStateSetting::Refuse,
+            fresh_state: FreshState::Refuse,
         })
     }
 

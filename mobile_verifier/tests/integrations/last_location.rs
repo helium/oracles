@@ -6,7 +6,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::LocationSource;
 use mobile_verifier::{
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{last_location::LocationCache, Heartbeat, ReportedLocation, ValidatedHeartbeat},
     iceberg::{heartbeat as iceberg_heartbeat, IcebergHeartbeat},
 };
 use rust_decimal_macros::dec;
@@ -240,6 +240,11 @@ impl HeartbeatBuilder {
             timestamp: self.timestamp.unwrap_or(Utc::now()),
             heartbeat_timestamp: self.timestamp.unwrap_or(Utc::now()),
             location_source: LocationSource::Skyhook,
+            reported: ReportedLocation {
+                lat,
+                lon,
+                location_validation_timestamp: self.location_validation_timestamp,
+            },
         }
     }
 }

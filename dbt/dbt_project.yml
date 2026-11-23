@@ -42,6 +42,21 @@ vars:
   # this one: `incremental_window(..., lookback_minutes=3*24*60)`.
   incremental_lookback_minutes: 30
 
+  # The speedtest average window: the newest `max_samples` speedtests a hotspot
+  # reported within `window_hours` before (and including) each report. The same
+  # window mobile-verifier uses for its own in-memory average, so the two agree
+  # while both run; change one without the other and they stop agreeing. This
+  # is policy, so in dbt it lives here in one place. Changing it changes the
+  # meaning of every row, so rebuild the model with `--full-refresh` when it
+  # moves.
+  speedtest_average_window_hours: 48
+  speedtest_average_max_samples: 6
+
+  # The first report time `speedtest_averages` averages, a date at 00:00 UTC.
+  # Earlier averages stay in mobile-verifier's speedtest_avgs tables. Bounds the
+  # first build (and any --full-refresh) to the reports since then.
+  speedtest_averages_start: '2026-11-01'
+
 models:
   mobile_dbt:
     marts:

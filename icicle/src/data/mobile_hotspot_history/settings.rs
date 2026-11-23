@@ -1,17 +1,16 @@
 //! Settings of the mobile hotspot history route: its bucket, its ledger, its
 //! table. The process-wide settings live in [`crate::settings`], which holds
-//! this as one optional section.
+//! this as one section.
 
 use super::{MobileHotspotHistoryTable, DEFAULT_NAMESPACE, DEFAULT_TABLE_NAME};
-use crate::settings::FreshStateSetting;
-use glacon_helium::{FileStoreInputSettings, IcebergOutputSettings, RouteSettings};
-use serde::Deserialize;
+use glacon_helium::{FileStoreInputSettings, FreshState, IcebergOutputSettings, RouteSettings};
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
 /// `file_store`'s own default when an input does not set `offset`.
 const DEFAULT_POLLER_OFFSET: Duration = Duration::from_secs(10 * 60);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// `state_dir` (the ledger) and `processed_retention`. `state_dir` MUST
     /// be on a durable volume: it is the only record of what was delivered.
@@ -33,12 +32,12 @@ pub struct Settings {
 
     /// What to do when the ledger is empty but the table already holds rows.
     #[serde(default)]
-    pub fresh_state: FreshStateSetting,
+    pub fresh_state: FreshState,
 }
 
 /// Which table the route writes to; the configured half of
 /// [`MobileHotspotHistoryTable`].
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TableSettings {
     #[serde(default = "default_namespace")]
     pub namespace: String,
