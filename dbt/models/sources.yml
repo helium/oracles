@@ -79,6 +79,55 @@ sources:
             description: Milliseconds.
             tests: [not_null]
 
+      - name: heartbeat_reports
+        description: >
+          ORACLE-WRITTEN by mobile-verifier
+          (`mobile_verifier/src/iceberg/heartbeat_report.rs`). Every wifi
+          heartbeat that passed validation, as the hotspot reported it: no
+          location carried forward, no fix-age filter, no score. Rejected
+          heartbeats go to `invalid_heartbeat_reports` with a reason and are
+          not declared here.
+
+          A HISTORY table, one row per heartbeat, keyed by (hotspot_pubkey,
+          received_timestamp). Written idempotently per ingest file, so a
+          reprocessed file does not duplicate rows.
+
+          Two clocks: `received_timestamp` is assigned at ingest and is the
+          partition key; `heartbeat_timestamp` is the device's own.
+        loaded_at_field: received_timestamp
+        freshness:
+          warn_after: { count: 6, period: hour }
+          error_after: { count: 24, period: hour }
+        columns:
+          - name: hotspot_pubkey
+            tests: [not_null]
+          - name: received_timestamp
+            description: When ingest received the heartbeat. Partition key.
+            tests: [not_null]
+          - name: heartbeat_timestamp
+            description: Device-reported time of the heartbeat.
+            tests: [not_null]
+          - name: lat
+            description: Reported latitude, degrees.
+            tests: [not_null]
+          - name: lon
+            description: Reported longitude, degrees.
+            tests: [not_null]
+          - name: centered_lat
+            description: >
+              Center of the resolution-12 H3 cell holding (lat, lon), computed
+              by the verifier since Trino has no H3 functions. Null only for a
+              non-finite coordinate.
+          - name: centered_lon
+            description: As `centered_lat`.
+          - name: location_validation_timestamp
+            description: >
+              When the device's location fix was validated. Null when the
+              device sent none. Not filtered by age.
+          - name: location_source
+            description: "`asserted`, `gps`, `skyhook` or `unknown`."
+            tests: [not_null]
+
       - name: enabled_carriers_history
         description: >
           EXTERNAL -- written by the S3 binary-file ingest pipeline outside this

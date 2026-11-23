@@ -57,6 +57,13 @@ vars:
   # first build (and any --full-refresh) to the reports since then.
   speedtest_averages_start: '2026-11-01'
 
+  # How long after ingest received a heartbeat `heartbeat_locations` waits
+  # before measuring it. Its rows are written once and never corrected (the
+  # table is append-only so it can be streamed), so this is the time icicle has
+  # to land a reassertion before the heartbeats after it are measured against
+  # the old one. The table trails ingest by this much.
+  heartbeat_locations_settle_minutes: 60
+
 models:
   mobile_dbt:
     marts:
