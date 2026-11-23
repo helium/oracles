@@ -7,11 +7,12 @@
 //! `glacon_batch_lag_ms`, `glacon_last_batch_timestamp_ms`, ... -- each
 //! labelled with `route` and either `input` or `output`.
 
+use anyhow::Context;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     #[serde(default = "default_endpoint")]
     pub endpoint: SocketAddr,
@@ -30,14 +31,15 @@ fn default_endpoint() -> SocketAddr {
 }
 
 pub fn start(settings: &Settings) -> anyhow::Result<()> {
-    match PrometheusBuilder::new()
+    PrometheusBuilder::new()
         .with_http_listener(settings.endpoint)
         .install()
-    {
-        Ok(()) => {
-            tracing::info!(endpoint = %settings.endpoint, "metrics scrape endpoint listening")
-        }
-        Err(err) => tracing::error!(%err, "failed to install the Prometheus scrape endpoint"),
-    }
+        .with_context(|| {
+            format!(
+                "installing the Prometheus scrape endpoint on {}",
+                settings.endpoint
+            )
+        })?;
+    tracing::info!(endpoint = %settings.endpoint, "metrics scrape endpoint listening");
     Ok(())
 }

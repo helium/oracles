@@ -148,8 +148,8 @@ bucket.
      rejecting with a `GlaconRecordError` reason;
    - an output (a `GlaconOutput`);
    - a `route()` that wires them together.
-2. Add an optional `<route>` section to `Settings` in `src/settings.rs`, and a
-   branch for it in `src/cli/server.rs`.
+2. Add a `<route>` section to `Settings` in `src/settings.rs`, and add its
+   route in `src/cli/server.rs`.
 3. Add its section to `pkg/settings-template.toml`.
 4. Add a section for it under [Data](#data) in this README.
 
@@ -171,8 +171,8 @@ icicle -c settings.toml server
   also come from the environment: uppercase, prefixed with `ICICLE`, with
   `__` between levels. For example,
   `ICICLE__MOBILE_HOTSPOT_HISTORY__INPUTS__CHAIN__BUCKET__BUCKET=...`.
-- **Which routes run.** A route runs only if its section is present, and the
-  server refuses to start with none.
+- **Required section.** The `mobile_hotspot_history` section is required:
+  the server refuses to start without it.
 - **Durable volumes.** Each route's `route.state_dir` (the ledger) and
   `output.spool_dir` (rows not yet committed) must be on a durable volume.
   If a route's ledger is lost while its table holds data, startup refuses,
