@@ -2,7 +2,7 @@
 
 Oracles for the Helium Mobile Network.
 
-> **Note**: This repository was split from the main [helium/oracles](https://github.com/helium/oracles) repository. For IoT oracles, see [helium/oracles-iot](https://github.com/helium/oracles-iot).
+> **Note**: The IoT oracles were split out of this repository into [helium/oracles-iot](https://github.com/helium/oracles-iot). This repository now contains only the Mobile oracles.
 
 ## Architecture
 
