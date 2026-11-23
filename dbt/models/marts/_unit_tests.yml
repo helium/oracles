@@ -371,7 +371,7 @@ unit_tests:
       30-minute lookback re-reads from 23:30:05 on day 1.
 
         * hs_a's day-2 update renames it at X: compared against the seed X, it
-          starts nothing. Its day-3 move to Y is new and is appended.
+          writes no row. Its day-3 move to Y is new and is appended.
         * hs_a's day-1 update is redelivered: it sorts at the seed, not after
           it, so it is not considered and X is not written twice.
         * hs_b's day-2 update is re-read by the lookback: it IS the seed, so
