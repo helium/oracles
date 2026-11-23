@@ -19,6 +19,8 @@ on:
       - ".github/workflows/dbt.yml"
       - "mobile_verifier/src/iceberg/**"
       - "mobile_verifier/examples/create_dbt_sources.rs"
+      - "icicle/src/data/**"
+      - "icicle/examples/create_dbt_sources.rs"
       - "helium_iceberg/src/**"
   push:
     branches: ["main"]

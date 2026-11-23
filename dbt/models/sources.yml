@@ -143,3 +143,51 @@ sources:
           - name: signer
             description: Key that signed the report.
             tests: [not_null]
+
+  - name: chain
+    database: "{{ target.database }}"
+    schema: chain
+    description: >
+      Chain state, as icicle mirrors it from the ingest service's chain change
+      reports into the `mobile` catalog.
+    tables:
+      - name: mobile_hotspot_history
+        description: >
+          WRITTEN BY icicle (`icicle/src/data/mobile_hotspot_history/output.rs`),
+          an oracle in this repo; created in CI from that definition by
+          `cargo run -p icicle --example create_dbt_sources`.
+
+          An EVENT LOG, one row per chain update to a mobile hotspot -- the
+          columns of `network.chain.mobile_hotspot_history` plus
+          `asserted_lat` / `asserted_lon`, the center of the asserted H3 cell.
+          Opens with a snapshot of every hotspot on 2025-10-30.
+
+          Delivery is AT LEAST ONCE: a crash between commit and cleanup
+          re-commits a batch, so `(file_ts, record_index)` is the identity of
+          an update but is NOT unique here. Dedupe in the model.
+
+          Two clocks: `timestamp` is when the update happened on chain and
+          orders a hotspot's history; `received_timestamp` is when ingest saw
+          it.
+        loaded_at_field: received_timestamp
+        columns:
+          - name: file_ts
+            tests: [not_null]
+          - name: record_index
+            tests: [not_null]
+          - name: timestamp
+            description: Chain time of the update. Partition key (day).
+            tests: [not_null]
+          - name: block
+            tests: [not_null]
+          - name: pub_key
+            tests: [not_null]
+          - name: asserted_hex
+            description: Resolution-12 H3 cell, no `0x`. Null when unasserted.
+          - name: asserted_lat
+            description: Center of `asserted_hex`, degrees. Null when it is.
+          - name: asserted_lon
+            description: Center of `asserted_hex`, degrees. Null when it is.
+          - name: device_type
+            description: "`WIFI_INDOOR`, `WIFI_OUTDOOR`, `WIFI_DATA_ONLY`."
+            tests: [not_null]
