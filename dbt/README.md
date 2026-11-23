@@ -278,10 +278,14 @@ failure arrives as an authentication error that reads like a wrong password
 rather than an absent one. The probe runs first and says which.
 
 ```bash
-docker run IMAGE                     # wait for Trino, then `dbt seed` + `dbt run` + `dbt test`
-docker run IMAGE run --select foo    # wait, then that command
-DBT_SKIP_TRINO_WAIT=1 docker run …   # straight to dbt (parse, deps, --version)
+docker run IMAGE                     # wait for Trino, `dbt seed`, then `dbt run` + `dbt test`
+docker run IMAGE run --select foo    # wait, `dbt seed`, then that command
+DBT_SKIP_TRINO_WAIT=1 docker run …   # straight to dbt, no seed (parse, deps, --version)
 ```
+
+Every command against a warehouse loads the seeds first, so a scheduler that
+passes its own command (production runs `run --select +tag:1h`) still gets the
+eligibility rules, and the reload stays inside the job rather than racing it.
 
 ### The cluster sleeps
 
