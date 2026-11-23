@@ -31,11 +31,12 @@
 -- row per chain update to a hotspot, with the asserted cell's center already
 -- computed (Trino has no H3 functions). Written to `chain` beside it.
 --
--- A ROW IS WRITTEN ONLY WHEN `asserted_hex` OR `device_type` CHANGES. History
--- rows that change something else -- the serial, the asset, the name -- start
--- nothing (about 1 in 10 history rows as of 2026-11). Comparisons are
--- `is distinct from`, so going from asserted to unasserted (a null hex) or back
--- also counts. A hotspot's first history row always starts one; the history
+-- A ROW IS WRITTEN ONLY WHEN `asserted_hex` OR `device_type` CHANGES. A
+-- history row that changes only something else -- the serial, the asset, the
+-- name -- writes no row here; the hotspot's current assertion just continues
+-- (about 1 in 10 history rows as of 2026-11). Comparisons are `is distinct
+-- from`, so going from asserted to unasserted (a null hex) or back also
+-- counts. A hotspot's first history row always writes one; the history
 -- opens with a snapshot of every hotspot on 2025-10-30, so a hotspot asserted
 -- before then starts there, not at its real assertion time.
 --
