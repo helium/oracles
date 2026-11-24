@@ -1,0 +1,5 @@
+applies_to,effective_from,min_download_mbps,min_upload_mbps,max_latency_ms,min_sample_count
+new,2026-11-17,100,10,50,2
+active,2026-12-01,50,5,75,2
+active,2027-01-01,75,8,60,2
+active,2027-03-01,115,15,40,2

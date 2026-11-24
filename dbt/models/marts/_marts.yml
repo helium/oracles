@@ -204,3 +204,84 @@ models:
           Meters, rounded, from the heartbeat's resolution-12 cell center to the
           asserted cell's center (h3o's haversine and earth radius). Null when
           there is no assertion.
+
+  - name: offload_eligibility_history
+    description: >
+      Carrier offload eligibility over time: one row each time a hotspot's
+      failing reasons change, or a location low run starts or ends (so the
+      latest row always shows whether a low run is open). `reasons` lists
+      every rule failing at `changed_at` (`no_heartbeats`, `location`,
+      `no_recent_speedtest`, `below_floor`); empty means eligible. Rules come
+      from the seeds `offload_heartbeat_rules` and `offload_speedtest_floors`,
+      each row in effect from its date; a run fails rather than judge with
+      either one empty. Covers every asserted WIFI_INDOOR or WIFI_OUTDOOR
+      hotspot. One reasserted out of coverage gets a final row whose only
+      reason is `not_covered`, and is judged afresh if it comes back.
+
+      Append-only, so it can be streamed: each run judges the moments since the
+      last run, up to where both inputs are complete, and appends only changes.
+      Any split of the work into runs writes the same rows as one run, except
+      for what is learned late: a hotspot whose assertion lands after its
+      moment was judged, or that leaves or rejoins coverage, is recorded at
+      the start of the next run's interval. Each hotspot's status starts at
+      the first judged moment or its first assertion, whichever is later. See
+      the model's header.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [hotspot_pubkey, changed_at]
+    columns:
+      - name: hotspot_pubkey
+        tests: [not_null]
+      - name: changed_at
+        description: >
+          When the status took effect: a heartbeat, a speedtest average, a
+          limit running out, a rule taking effect, the hotspot's first judged
+          moment, or a coverage change. Partition key and watermark.
+        tests: [not_null]
+      - name: eligible
+        description: True when `reasons` is empty.
+        tests: [not_null]
+      - name: reasons
+        description: array(varchar), in a fixed order; empty when eligible.
+        tests: [not_null]
+      - name: location_low_since
+        description: >
+          When the current location low run began, while the latest heartbeat
+          fails the location check; null otherwise. Set before the run reaches
+          its limit, so a row can be eligible with a low run open.
+      - name: last_heartbeat_at
+        description: The latest valid heartbeat at `changed_at`.
+      - name: last_average_at
+        description: >
+          The latest speedtest average's report time at `changed_at`, while it
+          is within the 48-hour window; null once it is too old to count.
+      - name: speedtest_floor_from
+        description: The active floor in effect at `changed_at`, by its start; null before the first.
+
+  - name: offload_eligibility
+    description: >
+      Current carrier offload eligibility, one row per asserted wifi hotspot:
+      its latest row in `offload_eligibility_history`, plus whether its latest
+      speedtest average meets the bar for submitting a new hotspot. A snapshot
+      rebuilt each run, not a stream; follow the history for changes.
+    columns:
+      - name: hotspot_pubkey
+        tests: [not_null, unique]
+      - name: eligible
+        tests: [not_null]
+      - name: reasons
+        tests: [not_null]
+      - name: since
+        description: When the current status took effect.
+        tests: [not_null]
+      - name: location_low_since
+        description: >
+          When the location low run began, while `location` is a failing
+          reason; null otherwise.
+      - name: meets_new_hotspot_bar
+        description: >
+          The latest average from the last 48 hours meets the `applies_to =
+          'new'` floor in effect now, with enough samples. For submissions
+          only; nothing removes offload by it.
+        tests: [not_null]

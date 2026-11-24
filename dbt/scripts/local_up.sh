@@ -70,7 +70,7 @@ cat <<'DONE'
 
 == ready
 
-  cd dbt && dbt run && dbt test
+  cd dbt && dbt seed && dbt run && dbt test
 
 Trino is on localhost:8080. To query it directly:
 

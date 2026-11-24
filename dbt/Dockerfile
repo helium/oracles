@@ -30,6 +30,7 @@ RUN dbt deps
 
 COPY macros/ ./macros/
 COPY models/ ./models/
+COPY seeds/ ./seeds/
 COPY tests/ ./tests/
 
 # Only the connection probe -- the rest of scripts/ drives docker compose and
@@ -44,6 +45,6 @@ RUN dbt parse
 # The entrypoint waits for Trino to be awake and serving before handing over to
 # dbt; see its header. No default target and no default command: the profile
 # takes its target from DBT_TARGET, every connection value comes from the
-# environment (see profiles.yml), and no arguments means the full
-# `dbt run` + `dbt test` cycle.
+# environment (see profiles.yml). Every command loads the seeds first; no
+# arguments means `dbt run` + `dbt test` after them.
 ENTRYPOINT ["/dbt/docker-entrypoint.sh"]
