@@ -11,13 +11,10 @@ use crate::common::{self, reward_info_24_hours};
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::Decimal;
 
-// No postgres involved: these exercise the pool split and the file sink only.
-// The iceberg writers are built to satisfy the signature — while the pool is
-// zero the rewarder returns before it ever writes a row.
+// No postgres involved: these exercise the pool split and the reward tables
+// only. While the pool is zero the rewarder returns before it ever writes a row.
 #[tokio::test]
 async fn test_no_service_provider_rewards_while_contribution_active() -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-
     let reward_info = reward_info_24_hours();
 
     let harness = common::setup_iceberg().await?;
@@ -29,15 +26,9 @@ async fn test_no_service_provider_rewards_while_contribution_active() -> anyhow:
         0
     );
 
-    rewarder::reward_service_providers(
-        mobile_rewards_client,
-        &reward_info,
-        &reward_writers,
-        "test-epoch",
-    )
-    .await?;
+    rewarder::reward_service_providers(&reward_info, &reward_writers, "test-epoch").await?;
 
-    let rewards = mobile_rewards.finish().await?;
+    let rewards = common::written_rewards(&harness).await?;
 
     // ...and no reward is written at all — not a reward of zero. A consumer sees
     // no service-provider rows for the epoch rather than a row claiming an award
@@ -73,11 +64,11 @@ async fn test_no_service_provider_rewards_across_cap_and_backstop() -> anyhow::R
     let reward_writers = common::reward_writers(&harness).await?;
 
     async fn sp_reward_count(
+        harness: &helium_iceberg::IcebergTestHarness,
         reward_writers: &mobile_verifier::iceberg::RewardWriters,
         hnt_issued: u64,
         delegation: u64,
     ) -> anyhow::Result<usize> {
-        let (client, sink) = common::create_file_sink();
         let mut reward_info = reward_info_24_hours();
         reward_info.epoch_emissions = Decimal::from(hnt_issued + delegation);
         reward_info.hnt_rewards_issued = Decimal::from(hnt_issued);
@@ -86,16 +77,26 @@ async fn test_no_service_provider_rewards_across_cap_and_backstop() -> anyhow::R
         // A distinct write id per call: the writers are idempotent, so reusing
         // one would silently drop the second epoch's row.
         let write_id = format!("test-epoch-{hnt_issued}-{delegation}");
-        rewarder::reward_service_providers(client, &reward_info, reward_writers, &write_id).await?;
-        let rewards = sink.finish().await?;
+        rewarder::reward_service_providers(&reward_info, reward_writers, &write_id).await?;
+        let rewards = common::written_rewards(harness).await?;
         Ok(rewards.sp_rewards.len())
     }
 
     // Cap: issued 80%, delegation 20%. Backstop: issued 98%, delegation 2%.
-    let capped =
-        sp_reward_count(&reward_writers, EMISSIONS * 80 / 100, EMISSIONS * 20 / 100).await?;
-    let backstopped =
-        sp_reward_count(&reward_writers, EMISSIONS * 98 / 100, EMISSIONS * 2 / 100).await?;
+    let capped = sp_reward_count(
+        &harness,
+        &reward_writers,
+        EMISSIONS * 80 / 100,
+        EMISSIONS * 20 / 100,
+    )
+    .await?;
+    let backstopped = sp_reward_count(
+        &harness,
+        &reward_writers,
+        EMISSIONS * 98 / 100,
+        EMISSIONS * 2 / 100,
+    )
+    .await?;
 
     assert_eq!(capped, 0, "cap must not produce a service provider reward");
     assert_eq!(

@@ -3,10 +3,13 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
 use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
+use helium_iceberg::IcebergTestHarness;
 use helium_proto::services::poc_mobile::{
     SpeedtestAvgValidity, SpeedtestVerificationResult as SpeedtestResult,
 };
+use mobile_verifier::iceberg::{self, speedtest_avg::IcebergSpeedtestAvgSample};
 use mobile_verifier::speedtests::{RecentSpeedtests, SpeedtestDaemon, BYTES_PER_MEGABIT};
+use mobile_verifier::speedtests_average::SpeedtestAverage;
 use mobile_verifier::{GatewayResolution, GatewayResolver};
 use sqlx::{Pool, Postgres};
 
@@ -32,8 +35,6 @@ async fn speedtests_average_should_only_include_last_48_hours(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -47,29 +48,29 @@ async fn speedtests_average_should_only_include_last_48_hours(
         speedtest(&hotspot, "2024-01-06 01:00:00", 10, 100, 10),
     ]);
 
-    // Drop the daemon when it's done running to close the channel
-    {
-        let harness = common::setup_iceberg().await?;
-        let poc_writers = common::poc_writers(&harness).await?;
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
 
-        let daemon = SpeedtestDaemon::new(
-            pool.clone(),
-            RecentSpeedtests::new(),
-            gateway_info_resolver,
-            rx,
-            speedtest_avg_client,
-            verified_client,
-            poc_writers.speedtest,
-            poc_writers.speedtest_avg,
-        );
+    let daemon = SpeedtestDaemon::new(
+        pool.clone(),
+        RecentSpeedtests::new(),
+        gateway_info_resolver,
+        rx,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
+    );
 
-        daemon.process_file(stream).await?;
-    }
+    daemon.process_file(stream).await?;
 
-    let avgs = speedtest_avg_receiver.finish().await?;
+    let avgs = written_averages(&harness).await?;
 
     assert_eq!(6, avgs.len());
-    assert_eq!(SpeedtestAvgValidity::TooFewSamples, avgs[0].validity());
+    assert_eq!(
+        Some(too_few_samples_reason()),
+        avgs[0].reason,
+        "the first average has too few samples"
+    );
+    assert_eq!(None, avgs[5].reason, "the last average is valid");
     assert_eq!(1.0, avgs[5].reward_multiplier);
 
     Ok(())
@@ -79,8 +80,6 @@ async fn speedtests_average_should_only_include_last_48_hours(
 async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -93,8 +92,6 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
         RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
-        verified_client,
         poc_writers.speedtest,
         poc_writers.speedtest_avg,
     );
@@ -123,8 +120,6 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -137,8 +132,6 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
         RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
-        verified_client,
         poc_writers.speedtest,
         poc_writers.speedtest_avg,
     );
@@ -168,8 +161,6 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -182,8 +173,6 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
         RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
-        verified_client,
         poc_writers.speedtest,
         poc_writers.speedtest_avg,
     );
@@ -213,8 +202,6 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -227,8 +214,6 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
         RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
-        verified_client,
         poc_writers.speedtest,
         poc_writers.speedtest_avg,
     );
@@ -258,8 +243,6 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -272,8 +255,6 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
         RecentSpeedtests::new(),
         gateway_info_resolver,
         rx,
-        speedtest_avg_client,
-        verified_client,
         poc_writers.speedtest,
         poc_writers.speedtest_avg,
     );
@@ -301,8 +282,6 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
 async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, speedtest_avg_receiver) = common::create_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -371,26 +350,21 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
 
     let stream = file_info_stream(speedtests);
 
-    // Drop the daemon when it's done running to close the channel
-    {
-        let harness = common::setup_iceberg().await?;
-        let poc_writers = common::poc_writers(&harness).await?;
+    let harness = common::setup_iceberg().await?;
+    let poc_writers = common::poc_writers(&harness).await?;
 
-        let daemon = SpeedtestDaemon::new(
-            pool.clone(),
-            RecentSpeedtests::new(),
-            gateway_info_resolver,
-            rx,
-            speedtest_avg_client,
-            verified_client,
-            poc_writers.speedtest,
-            poc_writers.speedtest_avg,
-        );
+    let daemon = SpeedtestDaemon::new(
+        pool.clone(),
+        RecentSpeedtests::new(),
+        gateway_info_resolver,
+        rx,
+        poc_writers.speedtest,
+        poc_writers.speedtest_avg,
+    );
 
-        daemon.process_file(stream).await?;
-    }
+    daemon.process_file(stream).await?;
 
-    let avgs = speedtest_avg_receiver.finish().await?;
+    let avgs = written_averages(&harness).await?;
 
     // Should have 2 average entries (one for each valid speedtest)
     // Invalid speedtests with speeds > 300Mbits should NOT generate averages
@@ -430,6 +404,63 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
     );
 
     Ok(())
+}
+
+/// An average as written to Iceberg, valid or not.
+struct WrittenAverage {
+    /// `None` for a valid average, otherwise why it is not.
+    reason: Option<String>,
+    upload_speed_avg_bps: u64,
+    download_speed_avg_bps: u64,
+    reward_multiplier: f32,
+    /// The newest speedtest in the average, which is the one that produced it.
+    latest_sample: DateTime<Utc>,
+}
+
+/// Every average the daemon wrote to `speedtest_avgs` and
+/// `invalid_speedtest_avgs`, oldest first.
+async fn written_averages(harness: &IcebergTestHarness) -> anyhow::Result<Vec<WrittenAverage>> {
+    fn latest(samples: &[IcebergSpeedtestAvgSample]) -> DateTime<Utc> {
+        samples
+            .iter()
+            .map(|sample| sample.timestamp.to_utc())
+            .max()
+            .expect("an average has at least one sample")
+    }
+
+    let trino = harness.trino();
+    let valid = iceberg::speedtest_avg::get_all(trino)
+        .await?
+        .into_iter()
+        .map(|avg| WrittenAverage {
+            reason: None,
+            upload_speed_avg_bps: avg.upload_speed_avg_bps,
+            download_speed_avg_bps: avg.download_speed_avg_bps,
+            reward_multiplier: avg.reward_multiplier,
+            latest_sample: latest(&avg.speedtests),
+        });
+    let invalid = iceberg::invalid_speedtest_avg::get_all(trino)
+        .await?
+        .into_iter()
+        .map(|avg| WrittenAverage {
+            latest_sample: latest(&avg.speedtests),
+            reason: Some(avg.reason),
+            upload_speed_avg_bps: avg.upload_speed_avg_bps,
+            download_speed_avg_bps: avg.download_speed_avg_bps,
+            reward_multiplier: avg.reward_multiplier,
+        });
+
+    let mut avgs = valid.chain(invalid).collect::<Vec<_>>();
+    avgs.sort_by_key(|avg| avg.latest_sample);
+    Ok(avgs)
+}
+
+fn too_few_samples_reason() -> String {
+    iceberg::IcebergInvalidSpeedtestAvg::new(
+        iceberg::IcebergSpeedtestAvg::from(&SpeedtestAverage::from(vec![])),
+        SpeedtestAvgValidity::TooFewSamples,
+    )
+    .reason
 }
 
 fn speedtest(
