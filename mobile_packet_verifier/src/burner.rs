@@ -1,8 +1,10 @@
 use anyhow::Context;
-use chrono::{Duration, Utc};
 use file_store_oracles::mobile_transfer::ValidDataTransferSession;
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
+use solana::{
+    burn::{BurnOutcome, SolanaNetwork, BLOCKHASH_EXPIRY_MARGIN, BLOCKHASH_VALID_BLOCKS},
+    GetLastValidBlockHeight, GetSignature, Signature, SolanaRpcError,
+};
 use sqlx::PgPool;
 use tracing::Instrument;
 
@@ -11,10 +13,16 @@ use crate::{
     pending_burns, pending_txns,
 };
 
+/// How long [`Burner::settle`] waits on a burn that is still pending before
+/// leaving it for the next cycle. A burn normally settles within about two
+/// minutes of being signed.
+const SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 pub struct Burner<S> {
     solana: S,
     failed_retry_attempts: usize,
     failed_check_interval: std::time::Duration,
+    settle_timeout: std::time::Duration,
     iceberg_writer: BurnedDataTransferWriter,
 }
 
@@ -29,8 +37,16 @@ impl<S> Burner<S> {
             solana,
             failed_retry_attempts,
             failed_check_interval,
+            settle_timeout: SETTLE_TIMEOUT,
             iceberg_writer,
         }
+    }
+
+    /// How long to wait on a burn that is still pending before leaving it for
+    /// the next cycle. Five minutes unless set.
+    pub fn with_settle_timeout(mut self, settle_timeout: std::time::Duration) -> Self {
+        self.settle_timeout = settle_timeout;
+        self
     }
 }
 
@@ -51,28 +67,31 @@ where
         tracing::info!(count = pending_txns.len(), "confirming pending txns");
 
         for pending in pending_txns {
-            // Sleep for at least a minute since the time of submission to
-            // give the transaction plenty of time to be finalized
-            let time_since_submission = Utc::now() - pending.time_of_submission;
-            if Duration::minutes(1) > time_since_submission {
-                let delay = Duration::minutes(1) - time_since_submission;
-                tracing::info!(?pending, %delay, "waiting to confirm pending txn");
-                tokio::time::sleep(delay.to_std()?).await;
-            }
-
             let signature = pending.signature;
-            let confirmed = self.solana.confirm_transaction(&signature).await?;
-            tracing::info!(?pending, confirmed, "confirming pending txn");
+            let last_valid_block_height = match pending.last_valid_block_height {
+                0 => self.bound_unrecorded_expiry(pool, &signature).await?,
+                recorded => recorded,
+            };
+            let burned = self.settle(&signature, last_valid_block_height).await?;
+            tracing::info!(?pending, burned, "settled pending txn");
 
-            if confirmed {
+            if burned {
                 let sessions =
                     pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
 
-                write_burned_data_transfer_sessions(sessions, &self.iceberg_writer).await?;
+                let written =
+                    write_burned_data_transfer_sessions(sessions, &self.iceberg_writer).await?;
 
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
+                count_settled_burn(&pending.payer, pending.amount, true);
+                count_burned_by_multiplier(&written);
+                // The gauge still includes this burn. `burn` runs next and
+                // sets it again for every payer with sessions left, so the 0
+                // stays only for a payer with none.
+                pending_burns::set_metric(&pending.payer, 0);
             } else {
                 pending_txns::remove_pending_txn_failure(pool, &signature).await?;
+                count_settled_burn(&pending.payer, pending.amount, false);
             }
         }
 
@@ -107,9 +126,16 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature(), &rows)
-                .await
-                .context("adding pending txns and moving sessions")?;
+            pending_txns::add_pending_txn(
+                pool,
+                &payer,
+                total_dcs,
+                txn.get_signature(),
+                txn.last_valid_block_height(),
+                &rows,
+            )
+            .await
+            .context("adding pending txns and moving sessions")?;
             match self.solana.submit_transaction(&txn).await {
                 Ok(()) => {
                     handle_transaction_success(
@@ -123,16 +149,16 @@ where
                     .await?;
                 }
                 Err(err) => {
-                    // NOTE: The next time we burn, pending txns will be
-                    // checked. If this txn is not finalized by that time, th
-                    // txn and pending data sessions will be moved back to the
-                    // pending_burns table in `confirm_pending_txns()`
+                    // The send failed, but the txn may still land. Wait for
+                    // the chain to settle it. If the chain can't be reached,
+                    // the txn stays pending and `confirm_pending_txns()`
+                    // settles it on the next burn.
                     let span = tracing::info_span!(
                         "txn_confirmation",
                         signature = %txn.get_signature(),
                         %payer,
                         total_dcs,
-                        max_attempts = self.failed_retry_attempts
+                        max_rpc_errors = self.failed_retry_attempts
                     );
 
                     // block on confirmation
@@ -159,50 +185,174 @@ where
         // We don't know if the txn actually made it, maybe it did
 
         let signature = txn.get_signature();
-
-        let mut attempt = 0;
-        while attempt <= self.failed_retry_attempts {
-            tokio::time::sleep(self.failed_check_interval).await;
-            match self.solana.confirm_transaction(signature).await {
-                Ok(true) => {
-                    tracing::debug!("txn confirmed on chain");
-                    let txn_success = handle_transaction_success(
-                        pool,
-                        signature,
-                        payer,
-                        total_dcs,
-                        sessions,
-                        &self.iceberg_writer,
-                    )
-                    .await;
-                    if let Err(err) = txn_success {
-                        tracing::error!(?err, "txn succeeded, something else failed");
-                    }
-
-                    return;
-                }
-                Ok(false) => {
-                    tracing::info!(attempt, "txn not confirmed, yet...");
-                    attempt += 1;
-                    continue;
-                }
-                Err(err) => {
-                    // Client errors do not count against retry attempts
-                    tracing::error!(?err, attempt, "failed to confirm txn");
-                    continue;
-                }
+        let burned = match self.settle(signature, txn.last_valid_block_height()).await {
+            Ok(burned) => burned,
+            Err(err) => {
+                tracing::error!(?err, "failed to confirm txn, leaving it pending");
+                return;
             }
+        };
+
+        if burned {
+            tracing::debug!("txn confirmed on chain");
+            let txn_success = handle_transaction_success(
+                pool,
+                signature,
+                payer,
+                total_dcs,
+                sessions,
+                &self.iceberg_writer,
+            )
+            .await;
+            if let Err(err) = txn_success {
+                tracing::error!(?err, "txn succeeded, something else failed");
+            }
+
+            return;
         }
 
-        tracing::warn!("failed to confirm txn");
+        tracing::warn!("txn can no longer land, moving its sessions back");
+        match pending_txns::remove_pending_txn_failure(pool, signature).await {
+            Ok(()) => count_settled_burn(&payer, total_dcs, false),
+            // Still pending, so `confirm_pending_txns()` releases and counts it
+            // next burn.
+            Err(err) => tracing::error!(?err, "failed to move sessions back"),
+        }
+    }
 
-        // We have failed to burn data credits:
-        metrics::counter!(
-            "burned",
-            "payer" => payer.to_string(),
-            "success" => "false"
-        )
-        .increment(total_dcs);
+    /// The expiry to settle a pending txn against when it was written without
+    /// one.
+    ///
+    /// The binaries before this one don't record `last_valid_block_height`,
+    /// so their pending txns read 0. They sign with the latest finalized
+    /// blockhash, which expires [`BLOCKHASH_VALID_BLOCKS`] blocks past the
+    /// finalized height at signing. The txn was signed before now, so the
+    /// finalized height now plus [`BLOCKHASH_VALID_BLOCKS`] is at or past its
+    /// real expiry. A node serving this read that is behind the one that
+    /// served the blockhash is covered by [`BLOCKHASH_EXPIRY_MARGIN`], the same
+    /// as for a recorded expiry.
+    ///
+    /// The bound is stored on the first read and reused after that. Otherwise
+    /// a settle that times out would take a new, later bound on the next cycle
+    /// and push the release out again.
+    ///
+    /// A wait measured in time would not do: time keeps passing while the
+    /// chain is stalled, which is when a burn that can still land would be
+    /// released. This bound only expires as the chain advances.
+    async fn bound_unrecorded_expiry(
+        &self,
+        pool: &PgPool,
+        signature: &Signature,
+    ) -> anyhow::Result<u64> {
+        let finalized_block_height = self
+            .solana
+            .finalized_block_height()
+            .await
+            .context("reading the finalized block height to bound an unrecorded expiry")?;
+        let bound = finalized_block_height.saturating_add(BLOCKHASH_VALID_BLOCKS);
+        let last_valid_block_height =
+            pending_txns::bound_unrecorded_expiry(pool, signature, bound).await?;
+        tracing::info!(
+            %signature,
+            finalized_block_height,
+            last_valid_block_height,
+            "pending txn was written without its expiry, settling against a bound"
+        );
+        Ok(last_valid_block_height)
+    }
+
+    /// Wait for the chain to settle a burn, and return whether it spent the DC.
+    ///
+    /// Loops while the burn is [`BurnOutcome::Pending`]. That ends once the
+    /// finalized block height passes the burn's expiry, about two minutes
+    /// after it was signed. RPC errors are retried `failed_retry_attempts`
+    /// times in a row before giving up.
+    ///
+    /// A burn still pending after `settle_timeout` is an error, so a stalled
+    /// chain or a lagging RPC can't hold the daemon here. The burn may still
+    /// land, so it is left as it is, never released, and the next cycle
+    /// settles it.
+    async fn settle(
+        &self,
+        signature: &Signature,
+        last_valid_block_height: u64,
+    ) -> anyhow::Result<bool> {
+        let expiry = last_valid_block_height.saturating_add(BLOCKHASH_EXPIRY_MARGIN);
+        let started = std::time::Instant::now();
+        let mut checks = 0;
+        let mut rpc_errors = 0;
+
+        tracing::info!(%signature, last_valid_block_height, expiry, "settling txn");
+
+        loop {
+            checks += 1;
+            match self
+                .solana
+                .burn_outcome(signature, last_valid_block_height)
+                .await
+            {
+                Ok(BurnOutcome::Pending {
+                    finalized_block_height,
+                }) => {
+                    rpc_errors = 0;
+                    if started.elapsed() >= self.settle_timeout {
+                        tracing::warn!(
+                            %signature,
+                            checks,
+                            elapsed = ?started.elapsed(),
+                            finalized_block_height,
+                            blocks_until_expiry = expiry.saturating_sub(finalized_block_height),
+                            "txn still pending at the settle timeout, leaving it for the next cycle"
+                        );
+                        anyhow::bail!(
+                            "txn {signature} still pending after {:?}",
+                            self.settle_timeout
+                        );
+                    }
+                    tracing::info!(
+                        %signature,
+                        checks,
+                        elapsed = ?started.elapsed(),
+                        finalized_block_height,
+                        blocks_until_expiry = expiry.saturating_sub(finalized_block_height),
+                        next_check_in = ?self.failed_check_interval,
+                        "txn not settled yet, waiting"
+                    );
+                }
+                Ok(outcome) => {
+                    tracing::info!(
+                        %signature,
+                        ?outcome,
+                        checks,
+                        elapsed = ?started.elapsed(),
+                        "txn settled"
+                    );
+                    return Ok(outcome == BurnOutcome::Burned);
+                }
+                Err(err) if rpc_errors < self.failed_retry_attempts => {
+                    rpc_errors += 1;
+                    tracing::warn!(
+                        ?err,
+                        %signature,
+                        checks,
+                        rpc_errors,
+                        max_rpc_errors = self.failed_retry_attempts,
+                        "failed to check txn, retrying"
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        %signature,
+                        checks,
+                        rpc_errors,
+                        elapsed = ?started.elapsed(),
+                        "too many rpc errors, giving up settling txn"
+                    );
+                    return Err(err).context("checking burn outcome");
+                }
+            }
+            tokio::time::sleep(self.failed_check_interval).await;
+        }
     }
 }
 
@@ -214,31 +364,67 @@ async fn handle_transaction_success(
     sessions: Vec<pending_burns::DataTransferSession>,
     iceberg_writer: &BurnedDataTransferWriter,
 ) -> Result<(), anyhow::Error> {
-    // We successfully managed to burn data credits:
-    metrics::counter!(
-        "burned",
-        "payer" => payer.to_string(),
-        "success" => "true"
-    )
-    .increment(total_dcs);
-
     // Delete from the data transfer session and write out to Iceberg
     pending_burns::delete_for_payer(pool, &payer).await?;
+    pending_txns::remove_pending_txn_success(pool, signature).await?;
+    count_settled_burn(&payer, total_dcs, true);
     // The payer has no rows left, so 0 is exact. Setting rather than
     // subtracting the burned amount because that only lands on 0 while the two
     // figures agree, and `accumulate` counts differently from the burn.
     pending_burns::set_metric(&payer, 0);
-    pending_txns::remove_pending_txn_success(pool, signature).await?;
 
-    write_burned_data_transfer_sessions(sessions, iceberg_writer).await?;
+    let written = write_burned_data_transfer_sessions(sessions, iceberg_writer).await?;
+    count_burned_by_multiplier(&written);
 
     Ok(())
 }
 
+/// Count a settled burn's DC in `burned`, as `success` true or false.
+///
+/// Called right after the burn's pending txn is removed, and only once that
+/// removal has committed. Burns are settled one at a time, and a removed
+/// pending txn is never read again, so each burn is counted exactly once: on
+/// whichever path settles it, however many times settling it was retried
+/// first. A burn whose settling gives up stays pending and is counted when
+/// `confirm_pending_txns` settles it.
+fn count_settled_burn(payer: &PublicKeyBinary, total_dcs: u64, burned: bool) {
+    metrics::counter!(
+        "burned",
+        "payer" => payer.to_string(),
+        "success" => if burned { "true" } else { "false" }
+    )
+    .increment(total_dcs);
+}
+
+/// Count a successful burn's DC again, split by the multiplier that produced
+/// it.
+///
+/// `burned` counts what the transaction charged, which is the right number
+/// but says nothing about where it came from. This splits the same total, so
+/// summing it back up gives `burned{success="true"}` again, and grouping by
+/// multiplier shows how much of the burn is coming from ticketed hotspots.
+///
+/// Called next to [`count_settled_burn`], once the burn's sessions are
+/// written, so a burn is counted here once, and only if its sessions were
+/// recorded. The two totals differ only by burns whose sessions failed to
+/// write. The multiplier is normalized, so `1.5` and `1.50` are one series
+/// rather than two.
+fn count_burned_by_multiplier(sessions: &[ValidDataTransferSession]) {
+    for session in sessions {
+        metrics::counter!(
+            "burned_dc_by_multiplier",
+            "payer" => session.payer.to_string(),
+            "multiplier" => session.multiplier.to_string(),
+        )
+        .increment(session.num_dcs);
+    }
+}
+
+/// Write a burn's sessions to Iceberg, and return them as written.
 async fn write_burned_data_transfer_sessions(
     sessions: Vec<pending_burns::DataTransferSession>,
     iceberg_sink: &BurnedDataTransferWriter,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<ValidDataTransferSession>> {
     // Fallible now: a session whose multiplier cannot be applied has no price,
     // and a burned record without one would be a lie about what was charged.
     // This runs after the burn has settled, so it cannot prevent the spend — it
@@ -249,33 +435,15 @@ async fn write_burned_data_transfer_sessions(
         .map(ValidDataTransferSession::try_from)
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // DC burned, split by the multiplier that produced it.
-    //
-    // `burned` counts what the transaction charged, which is the right number
-    // but says nothing about where it came from. This splits the same total, so
-    // summing it back up gives `burned` again, and grouping by multiplier shows
-    // how much of the burn is coming from ticketed hotspots.
-    //
-    // Both burn paths pass through here, so this counts a burn once, after it
-    // has settled. The multiplier is normalized, so `1.5` and `1.50` are one
-    // series rather than two.
-    for session in &sessions {
-        metrics::counter!(
-            "burned_dc_by_multiplier",
-            "payer" => session.payer.to_string(),
-            "multiplier" => session.multiplier.to_string(),
-        )
-        .increment(session.num_dcs);
-    }
-
-    let sessions = sessions
-        .into_iter()
+    let iceberg_sessions = sessions
+        .iter()
+        .cloned()
         .map(IcebergBurnedDataTransferSession::from)
         .collect::<Vec<_>>();
 
     // NOTE: Burned Sessions are not tied to a file like regular data
     // transfer sessions. Do we want to use transaction semantics here?
-    iceberg_sink.write(sessions).await?;
+    iceberg_sink.write(iceberg_sessions).await?;
 
-    Ok(())
+    Ok(sessions)
 }

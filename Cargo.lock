@@ -5796,6 +5796,7 @@ dependencies = [
  "http-serde",
  "humantime-serde",
  "metrics",
+ "metrics-util",
  "poc-metrics",
  "prost",
  "reqwest 0.12.28",
