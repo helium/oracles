@@ -58,6 +58,13 @@ vars:
   # first build (and any --full-refresh) to the reports since then.
   speedtest_averages_start: '2026-11-01'
 
+  # How far a speedtest's device `timestamp` may run ahead of the time ingest
+  # received it and still be averaged. Device clocks drift by seconds; a report
+  # further ahead than this is dropped. Must stay well under
+  # `incremental_lookback_minutes`, which has to cover a watermark this far
+  # ahead of the last run (compilation fails otherwise).
+  speedtest_clock_grace_minutes: 1
+
   # How long after ingest received a heartbeat `heartbeat_locations` waits
   # before measuring it. Its rows are written once and never corrected (the
   # table is append-only so it can be streamed), so this is the time icicle has

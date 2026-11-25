@@ -140,8 +140,9 @@ unit_tests:
       Three rules at once. hs_a's 10:00 report was stored twice; the earliest
       received copy (10) wins and is counted once -- the replay's 99s never
       show up. hs_a's 11:00 report was received at 10:30, so its device clock is
-      ahead: it is dropped, neither a report nor a sample. hs_b's report is
-      averaged on its own, untouched by hs_a's.
+      30 minutes ahead, far past the 1-minute grace: it is dropped, neither a
+      report nor a sample. hs_b's report is averaged on its own, untouched by
+      hs_a's.
     overrides:
       macros:
         is_incremental: false
@@ -223,6 +224,62 @@ unit_tests:
     expect:
       rows:
         - {hotspot_pubkey: "hs_a", timestamp: "2024-01-02 06:00:00+00", upload_speed_avg_bps: 20, download_speed_avg_bps: 200, latency_avg_ms: 20, sample_count: 2}
+
+  - name: speedtest_clock_grace
+    model: speedtest_averages
+    description: >
+      A device clock up to `speedtest_clock_grace_minutes` (1) ahead of ingest
+      is drift, not a bad report. hs_a's 10:00 report arrived at 09:59, exactly
+      a minute early by its own clock: it is kept, as a report and as a sample.
+      Its 11:00:01 report arrived at 10:59:00, 61 seconds early: it is dropped,
+      so the 12:00 report averages 10:00 and 12:00 only. hs_b's report is
+      30 seconds ahead of a start date it falls after, and received just
+      before it: the start bound on `received_timestamp` allows for the grace,
+      so it still gets an average.
+    overrides:
+      macros:
+        is_incremental: false
+      vars:
+        speedtest_averages_start: "2024-01-01"
+    given:
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 09:59:00+00", timestamp: "2024-01-01 10:00:00+00", upload_speed: 10, download_speed: 10, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 10:59:00+00", timestamp: "2024-01-01 11:00:01+00", upload_speed: 90, download_speed: 90, latency: 90}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 12:00:00+00", timestamp: "2024-01-01 12:00:00+00", upload_speed: 30, download_speed: 30, latency: 30}
+          - {hotspot_pubkey: "hs_b", received_timestamp: "2023-12-31 23:59:45+00", timestamp: "2024-01-01 00:00:15+00", upload_speed: 40, download_speed: 40, latency: 40}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 10:00:00+00", upload_speed_avg_bps: 10, download_speed_avg_bps: 10, latency_avg_ms: 10, sample_count: 1}
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-01 12:00:00+00", upload_speed_avg_bps: 20, download_speed_avg_bps: 20, latency_avg_ms: 20, sample_count: 2}
+        - {hotspot_pubkey: "hs_b", timestamp: "2024-01-01 00:00:15+00", upload_speed_avg_bps: 40, download_speed_avg_bps: 40, latency_avg_ms: 40, sample_count: 1}
+
+  - name: speedtest_clock_grace_incremental_samples
+    model: speedtest_averages
+    description: >
+      On the incremental branch, the samples' `received_timestamp` pruning
+      bound allows for the grace. N (01-03 12:10) is new; its window opens at
+      01-01 12:10, and S sits exactly there by device time but was received 30
+      seconds earlier. N averages N, H and S. Without the grace on the bound,
+      S is pruned and N averages only N and H.
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        speedtest_averages_start: "2024-01-01"
+        speedtest_averages_watermark: "2024-01-03 11:00:00.000000 UTC"
+    given:
+      - input: this
+        rows:
+          - {hotspot_pubkey: "hs_a", timestamp: "2024-01-03 11:00:00+00", upload_speed_avg_bps: 15, download_speed_avg_bps: 15, latency_avg_ms: 15, sample_count: 2}
+      - input: source('hotspots', 'speedtests')
+        rows:
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-01 12:09:30+00", timestamp: "2024-01-01 12:10:00+00", upload_speed: 10, download_speed: 10, latency: 10}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-03 11:00:00+00", timestamp: "2024-01-03 11:00:00+00", upload_speed: 20, download_speed: 20, latency: 20}
+          - {hotspot_pubkey: "hs_a", received_timestamp: "2024-01-03 12:10:00+00", timestamp: "2024-01-03 12:10:00+00", upload_speed: 30, download_speed: 30, latency: 30}
+    expect:
+      rows:
+        - {hotspot_pubkey: "hs_a", timestamp: "2024-01-03 12:10:00+00", upload_speed_avg_bps: 20, download_speed_avg_bps: 20, latency_avg_ms: 20, sample_count: 3}
 
   - name: speedtest_samples_are_listed_newest_first
     model: speedtest_averages

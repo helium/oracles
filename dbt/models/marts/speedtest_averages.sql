@@ -33,10 +33,12 @@
 -- history rather than from them. Differences from the oracle, all deliberate:
 --
 --   * `timestamp` is the report's time, not when the average was calculated.
---   * Future-dated reports (device `timestamp` after `received_timestamp`) are
---     dropped entirely -- neither averaged nor used as a sample. They are
---     dropped rather than tolerated because they would also break the
---     watermark below.
+--   * Future-dated reports -- device `timestamp` more than
+--     `speedtest_clock_grace_minutes` (1) after `received_timestamp` -- are
+--     dropped entirely, neither averaged nor used as a sample. The oracle
+--     accepts any device time. A clock a few seconds fast is common and
+--     harmless, so it is forgiven; one further ahead than that is dropped
+--     rather than tolerated because it would also break the watermark below.
 --   * A replayed report is averaged once.
 --
 -- APPEND-ONLY, SO THE TABLE CAN BE STREAMED. Every run only inserts, and only
@@ -64,18 +66,20 @@
 --   1. CANDIDATE REPORTS -- received since the last run. The watermark is
 --      `max(timestamp)` of this table, the device clock. That is safe only
 --      because future-dated reports are filtered: every row here has
---      `timestamp <= received_timestamp <= previous run`, so anything received
---      after the previous run has `received_timestamp` above the watermark.
---      The lookback (`incremental_lookback_minutes`) covers ingest commit
---      skew, as in the `incremental_window` macro's header.
+--      `timestamp <= received_timestamp + grace <= previous run + grace`, so
+--      anything received after the previous run has `received_timestamp`
+--      above `watermark - grace`. The lookback (`incremental_lookback_minutes`)
+--      covers that grace and ingest commit skew (as in the
+--      `incremental_window` macro's header), which is why the grace must stay
+--      well under the lookback; compilation fails if it is not under it.
 --   2. NEW REPORTS -- candidates without a row here yet. The lookback re-reads
 --      reports the previous run already averaged; they are dropped here, which
 --      is what keeps the run an insert of new rows only.
 --   3. SAMPLES -- per hotspot, everything from `window_hours` before its
 --      earliest new report up to its latest. The `received_timestamp`
 --      predicate on it is for partition pruning only and never excludes a
---      needed row, because `received_timestamp >= timestamp` for every row that
---      survives the future-dated filter.
+--      needed row, because `received_timestamp >= timestamp - grace` for every
+--      row that survives the future-dated filter.
 --
 -- THE WATERMARK IS A LITERAL, looked up once at compile time, not the
 -- `incremental_window` macro's `(select max(...) from this)`. Trino inlines a
@@ -94,6 +98,15 @@
 {%- set max_samples = var('speedtest_average_max_samples') -%}
 {%- set lookback_minutes = var('incremental_lookback_minutes') -%}
 {%- set start = "timestamp '" ~ var('speedtest_averages_start') ~ " 00:00:00 UTC'" -%}
+{%- set grace_minutes = var('speedtest_clock_grace_minutes') -%}
+{%- if grace_minutes >= lookback_minutes -%}
+  {{ exceptions.raise_compiler_error(
+      "speedtest_clock_grace_minutes (" ~ grace_minutes ~ ") must be less than "
+      ~ "incremental_lookback_minutes (" ~ lookback_minutes ~ "): the lookback "
+      ~ "has to cover a watermark that far ahead of the last run"
+  ) }}
+{%- endif -%}
+{%- set grace = "interval '" ~ grace_minutes ~ "' minute" -%}
 
 {%- set watermark = none -%}
 {%- if is_incremental() -%}
@@ -117,7 +130,9 @@ with speedtests as (
         download_speed,
         latency
     from {{ source('hotspots', 'speedtests') }}
-    where "timestamp" <= received_timestamp
+    -- A device clock up to the grace ahead of ingest's is drift, not a bad
+    -- report.
+    where "timestamp" <= received_timestamp + {{ grace }}
 
 ),
 
@@ -126,12 +141,13 @@ candidate_reports as (
     -- Reports from `speedtest_averages_start` on. No watermark means a first
     -- run, a full refresh, or an empty table: take every one of those. The
     -- `received_timestamp` bound prunes partitions and excludes nothing,
-    -- since a report is never received before its own time.
+    -- since a report is never received more than the grace before its own
+    -- time.
     select distinct hotspot_pubkey, "timestamp"
     from speedtests
     where
         "timestamp" >= {{ start }}
-        and received_timestamp >= {{ start }}
+        and received_timestamp >= {{ start }} - {{ grace }}
         {%- if watermark is not none %}
         and received_timestamp
             >= timestamp '{{ watermark }}' - interval '{{ lookback_minutes }}' minute
@@ -207,11 +223,12 @@ samples as (
         -- Samples may predate the start date: a report just after it still
         -- averages its whole window. Both bounds only prune partitions.
         where
-            s.received_timestamp >= {{ start }} - interval '{{ window_hours }}' hour
+            s.received_timestamp
+                >= {{ start }} - interval '{{ window_hours }}' hour - {{ grace }}
             {%- if watermark is not none %}
             and s.received_timestamp >= (
                 select min(first_sample) from sample_ranges
-            )
+            ) - {{ grace }}
             {%- endif %}
     )
     where copy_rank = 1
